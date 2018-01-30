@@ -214,82 +214,76 @@ class TradesTestCase(TradeXmlSnippetTestCase, unittest.TestCase):
         t0 = parser.Trade(memo='Something', fitid=None, dttrade=None,
                           uniqueidtype=None, uniqueid=None, units=None,
                           currency=None, total=None, reportdate=None,
-                          tradeID=None, notes=None)
+                          notes=None)
         self.assertEqual(self.reader.filterTrades(t0), True)
 
         t1 = parser.Trade(memo='USD.CAD', fitid=None, dttrade=None,
                           uniqueidtype=None, uniqueid=None, units=None,
                           currency=None, total=None, reportdate=None,
-                          tradeID=None, notes=None)
+                          notes=None)
         self.assertEqual(self.reader.filterTrades(t1), False)
 
         t2 = parser.Trade(memo='CAD.USD', fitid=None, dttrade=None,
                           uniqueidtype=None, uniqueid=None, units=None,
                           currency=None, total=None, reportdate=None,
-                          tradeID=None, notes=None)
+                          notes=None)
         self.assertEqual(self.reader.filterTrades(t2), False)
 
         t3 = parser.Trade(memo='USD.EUR', fitid=None, dttrade=None,
                           uniqueidtype=None, uniqueid=None, units=None,
                           currency=None, total=None, reportdate=None,
-                          tradeID=None, notes=None)
+                          notes=None)
         self.assertEqual(self.reader.filterTrades(t3), False)
 
         t4 = parser.Trade(memo='EUR.USD', fitid=None, dttrade=None,
                           uniqueidtype=None, uniqueid=None, units=None,
                           currency=None, total=None, reportdate=None,
-                          tradeID=None, notes=None)
+                          notes=None)
         self.assertEqual(self.reader.filterTrades(t4), False)
 
     def testFilterTradeCancels(self):
         t0 = parser.Trade(notes=['Ca', 'P'],
                           fitid=None, dttrade=None, memo=None,
                           uniqueidtype=None, uniqueid=None, units=None,
-                          currency=None, total=None, reportdate=None,
-                          tradeID=None)
+                          currency=None, total=None, reportdate=None)
         self.assertEqual(self.reader.filterTradeCancels(t0), True)
 
         t1 = parser.Trade(notes=['O', 'C'],
                           fitid=None, dttrade=None, memo=None,
                           uniqueidtype=None, uniqueid=None, units=None,
-                          currency=None, total=None, reportdate=None,
-                          tradeID=None)
+                          currency=None, total=None, reportdate=None)
         self.assertEqual(self.reader.filterTradeCancels(t1), False)
 
     def testSortCanceledTrades(self):
         t0 = parser.Trade(reportdate='something',
                           fitid=None, dttrade=None, memo=None,
                           uniqueidtype=None, uniqueid=None, units=None,
-                          currency=None, total=None, tradeID=None, notes=None)
+                          currency=None, total=None, notes=None)
         self.assertEqual(self.reader.sortCanceledTrades(t0), 'something')
 
     def testSortForTrade(self):
         t0 = parser.Trade(notes=['ML', 'C'],
                           fitid=None, dttrade=None, memo=None,
                           uniqueidtype=None, uniqueid=None, units=None,
-                          currency=None, total=None, reportdate=None,
-                          tradeID=None)
+                          currency=None, total=None, reportdate=None)
         self.assertEqual(self.reader.sortForTrade(t0), 'MINGAIN')
 
         t1 = parser.Trade(notes=['LI', 'C'],
                           fitid=None, dttrade=None, memo=None,
                           uniqueidtype=None, uniqueid=None, units=None,
-                          currency=None, total=None, reportdate=None,
-                          tradeID=None)
+                          currency=None, total=None, reportdate=None)
         self.assertEqual(self.reader.sortForTrade(t1), 'LIFO')
 
         t2 = parser.Trade(notes=['Ca', 'O'],
                           fitid=None, dttrade=None, memo=None,
                           uniqueidtype=None, uniqueid=None, units=None,
-                          currency=None, total=None, reportdate=None,
-                          tradeID=None)
+                          currency=None, total=None, reportdate=None)
         self.assertEqual(self.reader.sortForTrade(t2), None)
 
         t3 = parser.Trade(notes=['ML', 'LI'],
                           fitid=None, dttrade=None, memo=None,
                           uniqueidtype=None, uniqueid=None, units=None,
-                          currency=None, total=None, reportdate=None,
-                          tradeID=None)
+                          currency=None, total=None, reportdate=None)
         with self.assertRaises(AssertionError):
             self.reader.sortForTrade(t3)
 
@@ -368,7 +362,7 @@ class TradesTestCase(TradeXmlSnippetTestCase, unittest.TestCase):
         tx0, tx1 = trans
 
         self.assertIsInstance(tx0, Transaction)
-        self.assertEqual(tx0.uniqueid, '5690844790')
+        self.assertEqual(tx0.uniqueid, '1389985080')
         self.assertEqual(tx0.datetime, datetime(2015, 9, 10, 15, 51, 34))
         self.assertEqual(tx0.type, 'trade')
         self.assertEqual(tx0.memo, 'SATURNS SEARS ROEBUCK ACCEPTANCE CO')
@@ -387,7 +381,7 @@ class TradesTestCase(TradeXmlSnippetTestCase, unittest.TestCase):
         self.assertEqual(tx0.sort, None)
 
         self.assertIsInstance(tx1, Transaction)
-        self.assertEqual(tx1.uniqueid, '5690854717')
+        self.assertEqual(tx1.uniqueid, '1389987599')
         self.assertEqual(tx1.datetime, datetime(2015, 9, 10, 15, 52, 20))
         self.assertEqual(tx1.type, 'trade')
         self.assertEqual(tx1.memo, 'SATURNS SEARS ROEBUCK ACCEPTANCE CO')
@@ -420,7 +414,7 @@ class TradesTestCase(TradeXmlSnippetTestCase, unittest.TestCase):
         tx0 = trans[0]
 
         self.assertIsInstance(tx0, Transaction)
-        self.assertEqual(tx0.uniqueid, '1920980366')
+        self.assertEqual(tx0.uniqueid, '478725910')
         self.assertEqual(tx0.datetime, datetime(2010, 10, 29, 14, 38, 9))
         self.assertEqual(tx0.type, 'trade')
         self.assertEqual(tx0.memo, 'PILGRIMS PRIDE CORP-NEW')
