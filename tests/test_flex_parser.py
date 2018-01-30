@@ -14,22 +14,6 @@ from ibflex import schemata
 
 # local imports
 from capgains.flex import parser
-# from capgains.flex.parser import (
-    # FlexStatement, Account, Security,
-    # Trade, CashTransaction, Transfer, CorporateAction,
-# )
-
-
-# class UidTestCase(unittest.TestCase):
-    # def testMakeUidWrongType(self):
-        # """ make_uid() only accepts ElementTree.ElementTree instances """
-        # with self.assertRaises(AssertionError):
-            # parser.make_uid('25')
-
-    # def testMakeUidWrongTag(self):
-        # """ make_uid() only accepts XML tags 'CorporateAction', 'Transfer """
-        # with self.assertRaises(AssertionError):
-            # parser.make_uid(ET.Element('Trade'))
 
 
 class FlexParserTestCase(unittest.TestCase):
@@ -75,7 +59,7 @@ class FlexParserTestCase(unittest.TestCase):
         trade = schemata.Trade.convert(ET.fromstring(xml))
         tran = parser.parse_trade(trade)
         self.assertIsInstance(tran, parser.Trade)
-        self.assertEqual(tran.fitid, '7533686121')
+        self.assertEqual(tran.fitid, '1802867961')
         self.assertEqual(tran.dttrade, datetime.datetime(2017, 4, 25, 10, 55, 58))
         self.assertEqual(tran.memo, 'SPDR BBG BARC 1-3 MONTH TBIL')
         self.assertEqual(tran.uniqueidtype, 'CONID')

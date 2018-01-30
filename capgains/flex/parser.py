@@ -148,6 +148,8 @@ def parse_corporate_actions(report):
 
 
 def parse_corporate_action(tx):
+    # CorporateActions don't include any sort of unique transaction identifier.
+    # This generally works out OK b/c they're batch-processed at end of day.
     return CorporateAction(
         fitid=None, dttrade=tx['dateTime'], memo=tx['description'],
         uniqueidtype='CONID', uniqueid=tx['conid'], units=tx['quantity'],
@@ -163,6 +165,8 @@ def parse_transfers(report):
 
 
 def parse_transfer(tx):
+    # Transfers don't include any sort of unique transaction identifier.
+    # This generally works out OK b/c they're batch-processed at end of day.
     return Transfer(
         fitid=None, dttrade=tx['date'], memo=tx['description'],
         uniqueidtype='CONID', uniqueid=tx['conid'], units=tx['quantity'],
