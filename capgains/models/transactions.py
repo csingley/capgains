@@ -87,7 +87,6 @@ class Security(Base):
     ticker = Column(String)
 
     ids = relationship('SecurityId', back_populates='security')
-    # transactions = relationship('Transaction', back_populates='security')
 
     def __getitem__(self, uniqueidtype):
         ids = [id for id in self.ids if id.uniqueidtype == uniqueidtype]
@@ -186,14 +185,21 @@ class Transaction(Base, Mergeable):
     fiaccount_id = Column(Integer,
                           ForeignKey('fiaccount.id', onupdate='CASCADE'),
                           nullable=False)
-    # fiaccount = relationship('FiAccount', foreign_keys=[fiaccount_id],
-                             # back_populates='transactions')
-    fiaccount = relationship('FiAccount', foreign_keys=[fiaccount_id], )
+    # Multiple join paths from Transaction to FiAccount(
+    # fiaccount; fiaccountFromFrom)  so can't use relationship(back_populates)
+    # on both sides of the the join; must use relationship(backref) on the
+    # ForeignKey side.
+    fiaccount = relationship('FiAccount', foreign_keys=[fiaccount_id],
+                             backref='transactions')
     # Security or other asset
     security_id = Column(Integer,
                          ForeignKey('security.id', onupdate='CASCADE'),
                          nullable=False)
-    security = relationship('Security', foreign_keys=[security_id])
+    # Multiple join paths from Transaction to Security (security; securityFrom)
+    # so can't use relationship(back_populates) on both sides of the the join;
+    # must use relationship(backref) on the ForeignKey side.
+    security = relationship('Security', foreign_keys=[security_id],
+                            backref='transactions')
     # Change in Security quantity caused by Transaction
     units = Column(Numeric)
     # For spinoffs: FMV of source security post-spin
@@ -201,13 +207,20 @@ class Transaction(Base, Mergeable):
     # For transfers: source FI acount
     fiaccountFrom_id = Column(Integer,
                               ForeignKey('fiaccount.id', onupdate='CASCADE'), )
-    # fiaccountFrom = relationship('FiAccount', foreign_keys=[fiaccountFrom_id],
-                                 # back_populates='transactionsFrom')
-    fiaccountFrom = relationship('FiAccount', foreign_keys=[fiaccountFrom_id])
+    # Multiple join paths from Transaction to FiAccount(
+    # fiaccount; fiaccountFromFrom)  so can't use relationship(back_populates)
+    # on both sides of the the join; must use relationship(backref) on the
+    # ForeignKey side.
+    fiaccountFrom = relationship('FiAccount', foreign_keys=[fiaccountFrom_id],
+                                 backref='transactionsFrom')
     # For transfers, spinoffs, exercise: source Security
     securityFrom_id = Column(Integer,
                              ForeignKey('security.id', onupdate='CASCADE'), )
-    securityFrom = relationship('Security', foreign_keys=[securityFrom_id])
+    # Multiple join paths from Transaction to Security (security; securityFrom)
+    # so can't use relationship(back_populates) on both sides of the the join;
+    # must use relationship(backref) on the ForeignKey side.
+    securityFrom = relationship('Security', foreign_keys=[securityFrom_id],
+                                backref='transactionsFrom')
     # For splits, transfers, exercise: change in quantity of source Security
     # caused by Transaction
     unitsFrom = Column(Numeric)
