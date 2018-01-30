@@ -89,14 +89,25 @@ def parse_trades(report):
 
 
 def parse_trade(tx, description=None):
-    # IB uses `tradeID` as a unique identifier for Trades and TradeTransfers,
-    # not `transactionID` which is used for other Transaction types.
+    # IB's scheme for Trade unique identifiers is messy & inconsistent.
     #
-    # TradeTransfers don't even have a `transactionID`;
-    # options exercises refer to opening trade by `tradeID`.
+    # Every Trade has a `transactionID` (like CashTransactions), but
+    # no TradeTransfer has a `transactionID`.
+    #
+    # Every TradeTransfer has a `tradeID`; most Trades have a `tradeID`
+    # (Trades where `exchange` is blank have empty `tradeID`).
+    #
+    # Options exercise transactions refer to opening trades by `tradeID`
+    # not `transactionID`.
+    #
+    # The best approach is therefore to use `tradeID` as unique identifier
+    # for Trades and TradeTransfers when it's available, which is 99% of cases.
+    # For Trades where `tradeID` is not available, use `transactionID` instead
+    # (rather than leaving it blank, which would cause OfxReader.make_uid()
+    # to generate one by hashing the relevant data fields).
     description = description or tx['description']
     return Trade(
-        fitid=tx['tradeID'],
+        fitid=tx['tradeID'] or tx['transactionID'],
         dttrade=datetime.combine(tx['tradeDate'], tx['tradeTime']),
         memo=description, uniqueidtype='CONID', uniqueid=tx['conid'],
         units=tx['quantity'], currency=tx['currency'], total=tx['netCash'],
