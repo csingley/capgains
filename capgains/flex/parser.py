@@ -88,25 +88,27 @@ def parse_trades(report):
     return [parse_trade(tx) for tx in report]
 
 
-def parse_trade(tx, transactionID=None, description=None):
-    transactionID = transactionID or tx['transactionID']
+def parse_trade(tx, description=None):
+    # IB uses `tradeID` as a unique identifier for Trades and TradeTransfers,
+    # not `transactionID` which is used for other Transaction types.
+    #
+    # TradeTransfers don't even have a `transactionID`;
+    # options exercises refer to opening trade by `tradeID`.
     description = description or tx['description']
     return Trade(
-        fitid=transactionID,
+        fitid=tx['tradeID'],
         dttrade=datetime.combine(tx['tradeDate'], tx['tradeTime']),
         memo=description, uniqueidtype='CONID', uniqueid=tx['conid'],
         units=tx['quantity'], currency=tx['currency'], total=tx['netCash'],
-        reportdate=tx['reportDate'], tradeID=tx['tradeID'],
-        notes=tx['notes'])
+        reportdate=tx['reportDate'], notes=tx['notes'])
 
 
 ###########################################################################
 # TRADE TRANSFERS
 ###########################################################################
 def parse_trade_transfers(report):
-    # transactionID is blank on TradeTransfers
     return [parse_trade(
-        tx, transactionID=None,
+        tx,
         description='{} {} {} {} {}: {}'.format(
             tx['transactionType'], tx['deliveredReceived'],
             tx['direction'], tx['brokerName'], tx['brokerAccount'],
@@ -209,7 +211,7 @@ def parse_optionEAE(report, trades):
 
 def pluck_trade(elem, trades):
     hits = [index for index, tx in enumerate(trades)
-            if tx.tradeID == elem['tradeID']]
+            if tx.fitid == elem['tradeID']]
     assert len(hits) == 1
     trade = trades.pop(hits.pop())
 
@@ -245,7 +247,7 @@ Dividend = namedtuple('Dividend', ['conid', 'exDate', 'payDate', 'quantity',
                                    'grossRate', 'taxesAndFees', 'total'])
 Trade = namedtuple('Trade', [
     'fitid', 'dttrade', 'memo', 'uniqueidtype', 'uniqueid', 'units',
-    'currency', 'total', 'reportdate', 'tradeID', 'notes'])
+    'currency', 'total', 'reportdate', 'notes'])
 CashTransaction = namedtuple('CashTransaction', [
     'fitid', 'dttrade', 'dtsettle', 'memo', 'uniqueidtype', 'uniqueid',
     'incometype', 'currency', 'total'])
