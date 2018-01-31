@@ -463,8 +463,8 @@ class FlexStatementReader(OfxStatementReader):
         if len(corpActs) == 1:
             # Split without CUSIP change
             return self.merge_split(transaction=corpActs.pop().raw,
-                                    numerator=match.group('numerator0'),
-                                    denominator=match.group('denominator0'),
+                                    numerator=Decimal(match.group('numerator0')),
+                                    denominator=Decimal(match.group('denominator0')),
                                     memo=memo)
 
         elif len(corpActs) == 2:
