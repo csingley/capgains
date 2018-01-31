@@ -127,8 +127,8 @@ def make_argparser():
     drop_parser.set_defaults(func=drop_all_tables)
 
     import_parser = subparsers.add_parser('import',
-                                          help='Import FlexQuery file(s)')
-    import_parser.add_argument('file', nargs='+', help='FlexQuery file(s)')
+                                          help='Import OFX/Flex/CSV data')
+    import_parser.add_argument('file', nargs='+', help='Broker data file(s)')
     import_parser.set_defaults(func=import_transactions)
 
     dump_parser = subparsers.add_parser('lots', aliases=['dump'],

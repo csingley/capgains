@@ -8,8 +8,179 @@ import functools
 
 
 # local imports
-from capgains.models.transactions import (Security, SecurityId, FiAccount)
-from capgains.inventory import Transaction, Lot
+from capgains.models.transactions import (
+    Transaction, Security, SecurityId, FiAccount)
+from capgains import inventory
+
+
+class CsvTransactionReader(csv.DictReader):
+    def __init__(self, session, csvfile):
+        self.session = session
+        super(CsvTransactionReader, self).__init__(csvfile)
+
+    def read(self):
+        return [self.read_row(row) for row in self]
+
+    def read_row(self, row):
+        row = {k: v or None for k, v in row.items()}
+        acct_attrs = {attr: row.pop(attr)
+                      for attr in ('fiaccount_brokerid', 'fiaccount_number')}
+        account = FiAccount.merge(self.session,
+                                  brokerid=acct_attrs['fiaccount_brokerid'],
+                                  number=acct_attrs['fiaccount_number'])
+
+        acctfrom_attrs = {attr: row.pop(attr)
+                          for attr in ('fiaccountfrom_brokerid',
+                                       'fiaccountfrom_number')}
+        if acctfrom_attrs['fiaccountfrom_brokerid'] is not None:
+            accountFrom = FiAccount.merge(
+                self.session,
+                brokerid=acctfrom_attrs['fiaccountfrom_brokerid'],
+                number=acctfrom_attrs['fiaccountfrom_number'])
+        else:
+            accountFrom = None
+
+        sec_attrs = {attr: row.pop(attr)
+                     for attr in ('security_uniqueidtype',
+                                  'security_uniqueid',
+                                  'security_ticker',
+                                  'security_name')}
+        if sec_attrs['security_uniqueidtype'] is not None:
+            security = Security.merge(
+                self.session,
+                uniqueidtype=sec_attrs['security_uniqueidtype'],
+                uniqueid=sec_attrs['security_uniqueid'],
+                ticker=sec_attrs['security_ticker'],
+                name=sec_attrs['security_name'])
+        else:
+            security = None
+
+        secfrom_attrs = {attr: row.pop(attr)
+                         for attr in ('securityfrom_uniqueidtype',
+                                      'securityfrom_uniqueid',
+                                      'securityfrom_ticker',
+                                      'securityfrom_name')}
+        if secfrom_attrs['securityfrom_uniqueidtype'] is not None:
+            securityFrom = Security.merge(
+                self.session,
+                uniqueidtype=secfrom_attrs['securityfrom_uniqueidtype'],
+                uniqueid=secfrom_attrs['securityfrom_uniqueid'],
+                ticker=secfrom_attrs['securityfrom_ticker'],
+                name=secfrom_attrs['securityfrom_name'])
+        else:
+            securityFrom = None
+
+        datetime_ = datetime.strptime(row.pop('datetime'), '%Y-%m-%dT%H:%M:%S')
+        dtsettle = row.pop('dtsettle')
+        if dtsettle:
+            dtsettle = datetime.strptime(dtsettle, '%Y-%m-%dT%H:%M:%S')
+        securityPrice = row.pop('securityprice')
+        if securityPrice is not None:
+            securityPrice = Decimal(securityPrice)
+        unitsFrom = row.pop('unitsfrom')
+        if unitsFrom is not None:
+            unitsFrom = Decimal(unitsFrom)
+        securityFromPrice = row.pop('securityfromprice')
+        if securityFromPrice is not None:
+            securityFromPrice = Decimal(securityFromPrice)
+        numerator = row.pop('numerator')
+        if numerator is not None:
+            numerator = Decimal(numerator)
+        denominator = row.pop('denominator')
+        if denominator is not None:
+            denominator = Decimal(denominator)
+        cash = row.pop('cash')
+        if cash is not None:
+            cash = Decimal(cash)
+        units = row.pop('units')
+        if units is not None:
+            units = Decimal(units)
+
+        transaction = Transaction.merge(
+            self.session, fiaccount=account, fiaccountFrom=accountFrom,
+            security=security, securityFrom=securityFrom,
+            datetime=datetime_, dtsettle=dtsettle,
+            securityPrice=securityPrice, unitsFrom=unitsFrom,
+            securityFromPrice=securityFromPrice, numerator=numerator,
+            denominator=denominator, cash=cash, units=units, **row)
+
+        return transaction
+
+
+class CsvTransactionWriter(csv.DictWriter):
+    csvFields = [
+        'uniqueid', 'datetime', 'dtsettle', 'type', 'memo', 'currency', 'cash',
+        'fiaccount_brokerid', 'fiaccount_number', 'security_uniqueidtype',
+        'security_uniqueid', 'security_ticker', 'security_name', 'units',
+        'securityprice', 'fiaccountfrom_brokerid', 'fiaccountfrom_number',
+        'securityfrom_uniqueidtype', 'securityfrom_uniqueid',
+        'securityfrom_ticker', 'securityfrom_name', 'unitsfrom',
+        'securityfromprice', 'numerator', 'denominator', 'sort']
+
+    def __init__(self, session, csvfile):
+        self.session = session
+        self.csvfile = csvfile
+
+        super(CsvTransactionWriter, self).__init__(
+            csvfile, self.csvFields, delimiter=',', quoting=csv.QUOTE_NONNUMERIC)
+
+    def writerows(self, transactions):
+        """ """
+        for transaction in transactions:
+            # Mandatory fields
+            row = {'uniqueid': transaction.uniqueid,
+                   'datetime': transaction.datetime.isoformat(),
+                   'type': transaction.type}
+
+            account = transaction.fiaccount
+            row.update({'fiaccount_brokerid': account.fi.brokerid,
+                        'fiaccount_number': account.number})
+
+            security = transaction.security
+            # Prefer any uniqueidtype other than `TICKER`
+            security_ids = sorted(security.ids,
+                                  key=lambda x: x.uniqueidtype.lower() == 'ticker')
+            security_id = security_ids[0]
+            security_uniqueidtype = security_id.uniqueidtype
+            security_uniqueid = security_id.uniqueid
+            security_ticker = security.ticker
+            security_name = security.name
+            row.update({'security_uniqueidtype': security_uniqueidtype,
+                        'security_uniqueid': security_uniqueid,
+                        'security_ticker': security_ticker,
+                        'security_name': security_name})
+
+            # Optional fields that can be taken as-is
+            row.update({
+                'memo': transaction.memo, 'currency': transaction.currency,
+                'cash': transaction.cash, 'units': transaction.units,
+                'securityprice': transaction.securityPrice,
+                'unitsfrom': transaction.unitsFrom,
+                'securityfromprice': transaction.securityFromPrice,
+                'numerator': transaction.numerator,
+                'denominator': transaction.denominator,
+                'sort': transaction.sort,
+            })
+
+            # Optional fields needing preprocessing
+            accountFrom = transaction.fiaccountFrom
+            if accountFrom is not None:
+                row.update({'fiaccountfrom_brokerid': accountFrom.fi.brokerid,
+                            'fiaccountfrom_number': accountFrom.number})
+
+            securityFrom = transaction.securityFrom
+            if securityFrom is not None:
+                securityfrom_id = securityFrom.ids[0]
+                securityfrom_uniqueidtype = securityfrom_id.uniqueidtype
+                securityfrom_uniqueid = securityfrom_id.uniqueid
+                securityfrom_ticker = securityFrom.ticker
+                securityfrom_name = securityFrom.name
+                row.update({'securityfrom_uniqueidtype': securityfrom_uniqueidtype,
+                            'securityfrom_uniqueid': securityfrom_uniqueid,
+                            'securityfrom_ticker': securityfrom_ticker,
+                            'securityfrom_name': securityfrom_name})
+
+            self.writerow(row)
 
 
 class CsvLotReader(csv.DictReader):
@@ -31,7 +202,7 @@ class CsvLotReader(csv.DictReader):
         # Create mock opentransaction
         opendt = datetime.strptime(row.pop('opendt'), '%Y-%m-%d %H:%M:%S')
         opentxid = row.pop('opentxid')
-        opentransaction = Transaction(
+        opentransaction = inventory.Transaction(
             id=self.transaction_id, uniqueid=opentxid, datetime=opendt)
 
         # Leftovers in row are SecurityId
@@ -61,7 +232,7 @@ class CsvLotReader(csv.DictReader):
         #  to avoid annoying nested tuples.
         yield account
         yield security
-        yield Lot(**lot_attrs)
+        yield inventory.Lot(**lot_attrs)
 
 
 class CsvLotWriter(csv.DictWriter):

@@ -48,6 +48,7 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
         txs = enumerate(reversed(list(self)))
         self.statement.transactions = [self.parse(i, tx) for i, tx in txs]
         self.read_transactions()
+        return self.transactions
 
     def parse(self, index, row):
         dt = datetime.strptime(row['TransactionDate'], '%m/%d/%y')
