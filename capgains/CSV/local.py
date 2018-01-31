@@ -23,88 +23,55 @@ class CsvTransactionReader(csv.DictReader):
 
     def read_row(self, row):
         row = {k: v or None for k, v in row.items()}
-        acct_attrs = {attr: row.pop(attr)
-                      for attr in ('fiaccount_brokerid', 'fiaccount_number')}
-        account = FiAccount.merge(self.session,
-                                  brokerid=acct_attrs['fiaccount_brokerid'],
-                                  number=acct_attrs['fiaccount_number'])
 
-        acctfrom_attrs = {attr: row.pop(attr)
-                          for attr in ('fiaccountfrom_brokerid',
-                                       'fiaccountfrom_number')}
-        if acctfrom_attrs['fiaccountfrom_brokerid'] is not None:
-            accountFrom = FiAccount.merge(
-                self.session,
-                brokerid=acctfrom_attrs['fiaccountfrom_brokerid'],
-                number=acctfrom_attrs['fiaccountfrom_number'])
-        else:
-            accountFrom = None
+        self._convert_account(row, 'fiaccount', 'fiaccount')
+        self._convert_account(row, 'fiaccountfrom', 'fiaccountFrom')
+        self._convert_security(row, 'security', 'security')
+        self._convert_security(row, 'securityfrom', 'securityFrom')
 
-        sec_attrs = {attr: row.pop(attr)
-                     for attr in ('security_uniqueidtype',
-                                  'security_uniqueid',
-                                  'security_ticker',
-                                  'security_name')}
-        if sec_attrs['security_uniqueidtype'] is not None:
-            security = Security.merge(
-                self.session,
-                uniqueidtype=sec_attrs['security_uniqueidtype'],
-                uniqueid=sec_attrs['security_uniqueid'],
-                ticker=sec_attrs['security_ticker'],
-                name=sec_attrs['security_name'])
-        else:
-            security = None
+        datetimes = (
+            ('datetime', 'datetime'),
+            ('dtsettle', 'dtsettle'),
+        )
+        for fromAttr, toAttr in datetimes:
+            self._convert_item(
+                row, fromAttr, toAttr,
+                lambda dt: datetime.strptime(dt, '%Y-%m-%dT%H:%M:%S'))
 
-        secfrom_attrs = {attr: row.pop(attr)
-                         for attr in ('securityfrom_uniqueidtype',
-                                      'securityfrom_uniqueid',
-                                      'securityfrom_ticker',
-                                      'securityfrom_name')}
-        if secfrom_attrs['securityfrom_uniqueidtype'] is not None:
-            securityFrom = Security.merge(
-                self.session,
-                uniqueidtype=secfrom_attrs['securityfrom_uniqueidtype'],
-                uniqueid=secfrom_attrs['securityfrom_uniqueid'],
-                ticker=secfrom_attrs['securityfrom_ticker'],
-                name=secfrom_attrs['securityfrom_name'])
-        else:
-            securityFrom = None
+        decimals = (
+            ('securityprice', 'securityPrice'), ('unitsfrom', 'unitsFrom'),
+            ('securityfromprice', 'securityFromPrice'),
+            ('numerator', 'numerator'), ('denominator', 'denominator'),
+            ('cash', 'cash'), ('units', 'units'),
+        )
 
-        datetime_ = datetime.strptime(row.pop('datetime'), '%Y-%m-%dT%H:%M:%S')
-        dtsettle = row.pop('dtsettle')
-        if dtsettle:
-            dtsettle = datetime.strptime(dtsettle, '%Y-%m-%dT%H:%M:%S')
-        securityPrice = row.pop('securityprice')
-        if securityPrice is not None:
-            securityPrice = Decimal(securityPrice)
-        unitsFrom = row.pop('unitsfrom')
-        if unitsFrom is not None:
-            unitsFrom = Decimal(unitsFrom)
-        securityFromPrice = row.pop('securityfromprice')
-        if securityFromPrice is not None:
-            securityFromPrice = Decimal(securityFromPrice)
-        numerator = row.pop('numerator')
-        if numerator is not None:
-            numerator = Decimal(numerator)
-        denominator = row.pop('denominator')
-        if denominator is not None:
-            denominator = Decimal(denominator)
-        cash = row.pop('cash')
-        if cash is not None:
-            cash = Decimal(cash)
-        units = row.pop('units')
-        if units is not None:
-            units = Decimal(units)
+        for fromAttr, toAttr in decimals:
+            self._convert_item(row, fromAttr, toAttr, Decimal)
 
-        transaction = Transaction.merge(
-            self.session, fiaccount=account, fiaccountFrom=accountFrom,
-            security=security, securityFrom=securityFrom,
-            datetime=datetime_, dtsettle=dtsettle,
-            securityPrice=securityPrice, unitsFrom=unitsFrom,
-            securityFromPrice=securityFromPrice, numerator=numerator,
-            denominator=denominator, cash=cash, units=units, **row)
-
+        transaction = Transaction.merge(self.session, **row)
         return transaction
+
+    def _convert_item(self, row, fromAttr, toAttr, fn):
+        value = row.pop(fromAttr)
+        if value is not None:
+            value = fn(value)
+        row[toAttr] = value
+
+    def _convert_account(self, row, fromAttr, toAttr):
+        attrs = {attr: row.pop('_'.join((fromAttr, attr)))
+                 for attr in ('brokerid', 'number')}
+        if attrs['brokerid'] is not None:
+            row[toAttr] = FiAccount.merge(self.session, **attrs)
+        else:
+            row[toAttr] = None
+
+    def _convert_security(self, row, fromAttr, toAttr):
+        attrs = {attr: row.pop('_'.join((fromAttr, attr)))
+                 for attr in ('uniqueidtype', 'uniqueid', 'ticker', 'name')}
+        if attrs['uniqueidtype'] is not None:
+            row[toAttr] = Security.merge(self.session, **attrs)
+        else:
+            row[toAttr] = None
 
 
 class CsvTransactionWriter(csv.DictWriter):
