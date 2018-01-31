@@ -25,6 +25,11 @@ from ofxtools.models.i18n import CURRENCY_CODES
 from capgains.database import Base
 
 
+class ModelError(Exception):
+    """ Base class for exceptions raised by this module.  """
+    pass
+
+
 class Mergeable(object):
     """ Mixin implementing merge() classmethod """
     signature = NotImplemented
@@ -167,6 +172,7 @@ class Transaction(Base, Mergeable):
     id = Column(Integer, primary_key=True)
     # FI transaction unique identifier
     uniqueid = Column(String, nullable=False, unique=True)
+    # Effective date/time
     datetime = Column(DateTime, nullable=False)
     # The payment for cash distributions (datetime field records the ex-date)
     dtsettle = Column(DateTime)
@@ -175,7 +181,6 @@ class Transaction(Base, Mergeable):
     type = Column(Enum('returnofcapital', 'split', 'spinoff', 'transfer',
                        'trade', 'exercise', name='transaction_type'),
                   nullable=False)
-    # Effective date/time
     memo = Column(Text)
     # Currency denomination of Transaction.cash 
     currency = Column(Enum(*CURRENCY_CODES, name='transaction_currency'))
@@ -237,64 +242,100 @@ class Transaction(Base, Mergeable):
     signature = ('fiaccount', 'uniqueid')
 
 
+class ModelConstraintError(ModelError):
+    """
+    Exception raised upon violation of a model constraint (outside sqlalchemy)
+    """
+    pass
+
+
 @event.listens_for(Transaction, 'before_insert')
 @event.listens_for(Transaction, 'before_update')
 def enforce_type_constraints(mapper, connection, instance):
-    enforcers = {'trade': enforce_trade_constraints,
-                 'returnofcapital': enforce_returnofcapital_constraints,
-                 'transfer': enforce_transfer_constraints,
-                 'split': enforce_split_constraints,
-                 'spinoff': enforce_spinoff_constraints,
-                 'exercise': enforce_exercise_constraints, }
-    enforcers[instance.type](instance)
+    enforcers = {'trade': TradeConstraint,
+                 'returnofcapital': ReturnOfCapitalConstraint,
+                 'transfer': TransferConstraint,
+                 'split': SplitConstraint,
+                 'spinoff': SpinoffConstraint,
+                 'exercise': ExerciseConstraint, }
+    enforcers[instance.type].enforce(instance)
 
 
-def enforce_trade_constraints(instance):
-    for attr in ('cash', 'units'):
-        assert getattr(instance, attr) is not None
-    for attr in ('securityPrice', 'fiaccountFrom', 'securityFrom', 'unitsFrom',
-                 'securityFromPrice', 'numerator', 'denominator',):
-        assert getattr(instance, attr) is None
+class Constraint(object):
+    isNone = ()
+    notNone = ()
 
-    assert instance.units != 0
+    @classmethod
+    def enforce(cls, instance):
+        cls.enforceNone(instance)
+        cls.enforceNotNone(instance)
 
+    @classmethod
+    def enforceNone(cls, instance):
+        for attr in cls.isNone:
+            if getattr(instance, attr) is not None:
+                msg = "Transaction.{} must be None if type='{}': {}"
+                raise ModelConstraintError(msg.format(
+                    attr, instance.type, instance))
 
-def enforce_returnofcapital_constraints(instance):
-    for attr in ('cash', ):
-        assert getattr(instance, attr) is not None
-    for attr in ('units', 'securityPrice', 'fiaccountFrom', 'securityFrom',
-                 'unitsFrom', 'securityFromPrice', 'numerator', 'denominator'):
-        assert getattr(instance, attr) is None
-
-
-def enforce_transfer_constraints(instance):
-    for attr in ('units', 'fiaccountFrom', 'securityFrom', 'unitsFrom', ):
-        assert getattr(instance, attr) is not None
-    for attr in ('cash',  'securityPrice', 'securityFromPrice', 'numerator',
-                 'denominator'):
-        assert getattr(instance, attr) is None
-
-
-def enforce_split_constraints(instance):
-    for attr in ('units', 'numerator', 'denominator'):
-        assert getattr(instance, attr) is not None
-    for attr in ('cash',  'securityPrice', 'securityFromPrice',
-                 'fiaccountFrom', 'securityFrom', 'unitsFrom', ):
-        assert getattr(instance, attr) is None
+    @classmethod
+    def enforceNotNone(cls, instance):
+        for attr in cls.notNone:
+            if getattr(instance, attr) is None:
+                msg = "Transaction.{} must not be None if type='{}': {}"
+                raise ModelConstraintError(msg.format(
+                    attr, instance.type, instance))
 
 
-def enforce_spinoff_constraints(instance):
-    for attr in ('units', 'securityFrom', 'numerator', 'denominator'):
-        assert getattr(instance, attr) is not None
-    for attr in ('cash', 'fiaccountFrom', 'unitsFrom', ):
-        assert getattr(instance, attr) is None
+class TradeConstraint(Constraint):
+    isNone = ('securityPrice', 'fiaccountFrom', 'securityFrom', 'unitsFrom',
+              'securityFromPrice', 'numerator', 'denominator')
+    notNone = ('cash', 'units')
 
-    assert instance.numerator > 0
-    assert instance.denominator > 0
+    @classmethod
+    def enforce(cls, instance):
+        super(TradeConstraint, cls).enforce(instance)
+        if instance.units == 0:
+            msg = "Transaction.units must be zero if type='{}': {}"
+            raise ModelConstraintError(msg.format(
+                instance.type, instance))
 
 
-def enforce_exercise_constraints(instance):
-    for attr in ('units', 'security', 'unitsFrom', 'securityFrom', 'cash', ):
-        assert getattr(instance, attr) is not None
-    for attr in ('numerator', 'denominator', 'fiaccountFrom', ):
-        assert getattr(instance, attr) is None
+class ReturnOfCapitalConstraint(Constraint):
+    isNone = ('units', 'securityPrice', 'fiaccountFrom', 'securityFrom',
+              'unitsFrom', 'securityFromPrice', 'numerator', 'denominator')
+    notNone = ('cash', )
+
+
+class TransferConstraint(Constraint):
+    isNone = ('cash',  'securityPrice', 'securityFromPrice', 'numerator',
+              'denominator')
+    notNone = ('units', 'fiaccountFrom', 'securityFrom', 'unitsFrom', )
+
+
+class SplitConstraint(Constraint):
+    isNone = ('cash',  'securityPrice', 'securityFromPrice',
+              'fiaccountFrom', 'securityFrom', 'unitsFrom', )
+    notNone = ('units', 'numerator', 'denominator')
+
+
+class SpinoffConstraint(Constraint):
+    isNone = ('cash', 'fiaccountFrom', 'unitsFrom', )
+    notNone = ('units', 'securityFrom', 'numerator', 'denominator')
+
+    @classmethod
+    def enforce(cls, instance):
+        super(SpinoffConstraint, cls).enforce(instance)
+        if not instance.numerator > 0:
+            msg = "Transaction.numerator must be >0 if type='{}': {}"
+            raise ModelConstraintError(msg.format(
+                instance.type, instance))
+        if not instance.denominator > 0:
+            msg = "Transaction.denominator must be >0 if type='{}': {}"
+            raise ModelConstraintError(msg.format(
+                instance.type, instance))
+
+
+class ExerciseConstraint(Constraint):
+    isNone = ('numerator', 'denominator', 'fiaccountFrom', )
+    notNone = ('units', 'security', 'unitsFrom', 'securityFrom', 'cash', )
