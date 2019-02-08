@@ -50,6 +50,7 @@ setup(
     install_requires = [
         'ofxtools >= 0.3.13',
         'sqlalchemy >= 1.0.0',
+        'ibflex',
     ],
 
     package_data = {

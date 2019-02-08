@@ -159,6 +159,7 @@ class CsvLotReader(csv.DictReader):
 
     def __next__(self):
         row = super(CsvLotReader, self).__next__()
+
         self.transaction_id += 1
         acct_attrs = {attr: row.pop(attr)
                       for attr in ('brokerid', 'acctid')}
@@ -197,9 +198,11 @@ class CsvLotReader(csv.DictReader):
         #  individual objects.  Since we're going to be calling tuple() on
         #  the returned generator object, we'll use the latter format in order
         #  to avoid annoying nested tuples.
+        #  yield account, security, inventory.Lot(**lot_attrs)
         yield account
         yield security
         yield inventory.Lot(**lot_attrs)
+
 
 
 class CsvLotWriter(csv.DictWriter):

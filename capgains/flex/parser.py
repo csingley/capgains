@@ -10,7 +10,7 @@ from functools import partial
 
 
 # 3rd party imports
-from ibflex import parser
+import ibflex.parser
 
 
 # local imports
@@ -20,7 +20,7 @@ from capgains.flex.regexes import secSymbolRE
 
 def parse(source):
     statements = []
-    response = parser.parse(source)
+    response = ibflex.parser.parse(source)
     for stmt in response['FlexStatements']:
         # First parse trades, so they can be associated with options activity
         trades = parse_trades(stmt['Trades'])
