@@ -114,29 +114,6 @@ class Inconsistent(InventoryError):
 
 
 ###############################################################################
-# POSITION - collection of Lots
-###############################################################################
-#  class Position:
-    #  """ Monadic wrapper for ordered sequence of Lots """
-    #  def __init__(self, lots=None, gains=None):
-        #  self.lots = lots or ()
-        #  self.gains = gains or ()
-
-    #  def bind(self, func, **args):
-        #  lots, gains = func(self.lots, **args)
-        #  return self.__class__(lots, self.gains + gains)
-
-    #  @property
-    #  def total(self):
-        #  """
-        #  Returns: (units, cost) tuple summed for entire position
-        #  """
-        #  totals = ((lot.units, lot.units * lot.price) for lot in self.lots)
-        #  return tuple(sum(t) for t in zip(*totals)) \
-                #  or (Decimal('0'), Decimal('0'))
-
-
-###############################################################################
 # FUNCTIONS OPERATING ON LOTS
 ###############################################################################
 def part_lot(lot, units):
@@ -313,6 +290,9 @@ class Portfolio(defaultdict):
 
         pocket = (transaction.fiaccount, transaction.security)
         position = self[pocket]
+
+        # First get a total of shares affected by return of capital,
+        # in order to determine RoC per share
         affected = list(filter(longAsOf(transaction.datetime), position))
         units = sum([lot.units for lot in affected])
         if units == 0:
@@ -322,17 +302,21 @@ class Portfolio(defaultdict):
             raise Inconsistent(transaction, msg)
         priceDelta = transaction.cash / units
 
+        position_new = []
         gains = []
 
-        for index, lot in affected:
-            netprice = lot.price - priceDelta
-            if netprice < 0:
-                gains.append(Gain(lot=lot, transaction=transaction,
-                                  price=priceDelta))
-                netprice = 0
-            position[index] = lot._replace(price=netprice)
+        for lot in position:
+            if lot in affected:
+                netprice = lot.price - priceDelta
+                if netprice < 0:
+                    gains.append(Gain(lot=lot, transaction=transaction,
+                                      price=priceDelta))
+                    netprice = 0
+                position_new.append(lot._replace(price=netprice))
+            else:
+                position_new.append(lot)
 
-        self[pocket] = position
+        self[pocket] = position_new
 
         return gains
 
@@ -347,16 +331,20 @@ class Portfolio(defaultdict):
 
         pocket = (transaction.fiaccount, transaction.security)
         position = self[pocket]
-        affected = list(filter(openAsOf(transaction.datetime), position))
 
+        criterion = openAsOf(transaction.datetime)
+        position_new = []
         unitsTo = Decimal('0'); unitsFrom = Decimal('0')
 
-        for index, lot in affected:
-            units = lot.units * splitRatio
-            price = lot.price / splitRatio
-            position[index] = lot._replace(units=units, price=price)
-            unitsFrom += lot.units
-            unitsTo += units
+        for lot in position:
+            if criterion(lot):
+                units = lot.units * splitRatio
+                price = lot.price / splitRatio
+                position_new.append(lot._replace(units=units, price=price))
+                unitsFrom += lot.units
+                unitsTo += units
+            else:
+                position_new.append(lot)
 
         calcUnits = unitsTo - unitsFrom
         if abs(calcUnits - transaction.units) > Decimal('0.001'):
@@ -366,7 +354,7 @@ class Portfolio(defaultdict):
                        transaction.denominator, calcUnits, transaction.units)
             raise Inconsistent(transaction, msg)
 
-        self[pocket] = position
+        self[pocket] = position_new
 
         # Stock splits don't realize Gains
         return []
