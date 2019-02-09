@@ -14,6 +14,7 @@ from capgains.inventory import (
     Lot, Gain,
     Portfolio, Transaction, Inconsistent,
     part_lot, take_lots, take_basis,
+    openAsOf,
 )
 
 
@@ -200,6 +201,36 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
             take_basis(self.lots, criterion=None, fraction=Decimal('0'))
         with self.assertRaises(ValueError):
             take_basis(self.lots, criterion=None, fraction=Decimal('1'))
+
+    def testTakeBasisCriterion(self):
+        """
+        take_basis() respects lot selection criteria
+        """
+        criterion = openAsOf(datetime(2016, 1, 2))
+
+        orig_cost = sum([(l.units * l.price) for l in self.lots])
+        fraction = Decimal('0.25')
+        taken_lots, left_lots = take_basis(self.lots, criterion=criterion,
+                                           fraction=fraction)
+
+        self.assertEqual(len(taken_lots), 2)
+        self.assertEqual(len(left_lots), 3)
+
+        taken_cost = sum([(l.units * l.price) for l in taken_lots])
+        left_cost = sum([(l.units * l.price) for l in left_lots])
+        self.assertEqual(taken_cost + left_cost, orig_cost)
+
+        affected_cost = sum([l.units * l.price for l in (self.lot1, self.lot2)])
+        self.assertEqual(taken_cost / affected_cost, fraction)
+
+        self.assertEqual(taken_lots,
+                         [self.lot1._replace(price=fraction * self.lot1.price),
+                          self.lot2._replace(price=fraction * self.lot2.price)])
+
+        self.assertEqual(left_lots,
+                         [self.lot1._replace(price=(1 - fraction) * self.lot1.price),
+                          self.lot2._replace(price=(1 - fraction) * self.lot2.price),
+                          self.lot3])
 
 
 class TradeTestCase(unittest.TestCase):

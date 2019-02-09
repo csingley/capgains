@@ -215,8 +215,10 @@ def take_basis(lots, criterion, fraction):
     for lot in lots:
         if criterion(lot):
             takenprice = lot.price * fraction
-            lots_taken += (lot._replace(price=takenprice), )
-            lots_left += (lot._replace(price=lot.price - takenprice), )
+            lots_taken.append(lot._replace(price=takenprice))
+            lots_left.append(lot._replace(price=lot.price - takenprice))
+        else:
+            lots_left.append(lot)
 
     return lots_taken, lots_left
 
