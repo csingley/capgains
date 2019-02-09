@@ -32,7 +32,6 @@ The main things to remember about this data model:
 from collections import (namedtuple, defaultdict)
 from decimal import Decimal
 
-
 ###############################################################################
 # BASIC DATA CONTAINERS
 ###############################################################################
@@ -46,6 +45,7 @@ Lot.units.__doc__ = '(type decimal.Decimal; nonzero)'
 Lot.price.__doc__ = '(type decimal.Decimal; positive or zero)'
 Lot.currency.__doc__ = 'Currency denomination of Lot.price'
 
+
 Gain = namedtuple('Gain', ['lot', 'transaction', 'price'])
 Gain.lot.__doc__ = 'Lot instance for which gain is realized'
 Gain.transaction.__doc__ = 'The Transaction instance realizing gain'
@@ -53,8 +53,8 @@ Gain.price.__doc__ = '(type decimal.Decimal; positive or zero)'
 
 
 ###############################################################################
-# TRANSACTION API
-# Persistent SQL implementation of this API in capgains.models.transactions
+# TRANSACTION MODEL
+# Persistent SQL implementation of this model in capgains.models.transactions
 ###############################################################################
 Transaction = namedtuple('Transaction', [
     'id', 'uniqueid', 'datetime', 'dtsettle', 'type', 'memo', 'currency',
@@ -114,142 +114,145 @@ class Inconsistent(InventoryError):
 
 
 ###############################################################################
-# POSITION - list container for Lots
+# POSITION - collection of Lots
 ###############################################################################
-class Position(list):
-    """ Ordered sequence of Lots """
-    @property
-    def total(self):
-        """
-        Returns: (units, cost) tuple summed for entire position
-        """
-        totals = [(lot.units, lot.units * lot.price) for lot in self]
-        return tuple(sum(t) for t in zip(*totals)) or (Decimal('0'),
-                                                       Decimal('0'))
+#  class Position:
+    #  """ Monadic wrapper for ordered sequence of Lots """
+    #  def __init__(self, lots=None, gains=None):
+        #  self.lots = lots or ()
+        #  self.gains = gains or ()
 
-    def cut(self, index, units):
-        """
-        Cleave Lot in twain at the specified # of units, immediately thereafter
-        inserting a new Lot holding the remaining units
+    #  def bind(self, func, **args):
+        #  lots, gains = func(self.lots, **args)
+        #  return self.__class__(lots, self.gains + gains)
 
-        Args: index - sequence index of the Lot to cut
-              units - # of units to partition
+    #  @property
+    #  def total(self):
+        #  """
+        #  Returns: (units, cost) tuple summed for entire position
+        #  """
+        #  totals = ((lot.units, lot.units * lot.price) for lot in self.lots)
+        #  return tuple(sum(t) for t in zip(*totals)) \
+                #  or (Decimal('0'), Decimal('0'))
 
-        Returns: the newly-inserted Lot holding the remaining units
-        """
-        if not isinstance(units, Decimal):
-            msg = "units must be type Decimal, not {}"
-            raise ValueError(msg.format(type(units).__name__))
-        l = self[index]._asdict()
-        u = l['units']
-        assert isinstance(u, Decimal)
 
-        assert abs(u) > abs(units)
-        l['units'] = u - units
-        self[index] = Lot(**l)
-        l['units'] = units
-        lot = Lot(**l)
-        self.insert(index, lot)
-        return lot
+###############################################################################
+# FUNCTIONS OPERATING ON LOTS
+###############################################################################
+def part_lot(lot, units):
+    """
+    Partition Lot at specified # of units, adding new Lot of leftover units.
 
-    def take(self, criterion, units=None):
-        """
-        Remove a selection of Lots from the Position in sequential order.
+    Args: lot - Lot instance
+          units - # of units to partition
 
-        Sign convention is SAME SIGN as position, i.e. units arg must be
-        positive for long, negative for short
+    Returns: 2-tuple of Lots
+    """
+    if not isinstance(units, Decimal):
+        msg = "units must be type decimal.Decimal, not '{}'"
+        raise ValueError(msg.format(units))
+    if not abs(units) < abs(lot.units):
+        msg = "units={} must have smaller magnitude than lot.units={}"
+        raise ValueError(msg.format(units, lot.units))
+    if not units * lot.units > 0:
+        msg = "units={} and lot.units={} must have same sign (non-zero)"
+        raise ValueError(msg.format(units, lot.units))
+    return (lot._replace(units=units), lot._replace(units=lot.units - units))
 
-        Args: criterion - filter function that accepts ENUMERATED list items
-                          i.e. (index, Lot) tuples
-              units - max units to take.  If units=None, take all units that
+
+def take_lots(lots, criterion=None, max_units=None):
+    """
+    Remove a selection of Lots from the Position in sequential order.
+
+    Sign convention is SAME SIGN as position, i.e. units arg must be
+    positive for long, negative for short
+
+    Args: lots - sequence of Lot instances
+          criterion - filter function that accepts Lot instance as arg
+          max_units - max units to take.  If units=None, take all units that
                       match criterion.
 
-        Returns: a list of Lot instances
-        """
-        if not isinstance(units, (type(None), Decimal)):
-            msg = "units must be type None or Decimal, not {}"
-            raise ValueError(msg.format(type(units).__name__))
+    Returns: 2-tuple of -
+                * list of Lots matching criterion/units
+                * list of other Lots
+    """
+    assert max_units is None or isinstance(max_units, Decimal)
 
-        lots = filter(criterion, enumerate(self))
+    if criterion is None:
+        def criterion(lot):
+            return True
 
-        if units is not None:
-            lots_ = []
+    lots_taken = []; lots_left = []
+    units_remain = max_units
 
-            for index, lot in lots:
-                if units == 0:
-                    break
-                if units * lot.units < 0:
-                    msg = "Lot(units={}) has the wrong sign".format(lot.units)
-                    # Don't have access to the Transaction here
-                    raise Inconsistent(None, msg)
-                if abs(units) >= abs(lot.units):
-                    # Mark the whole Lot to be taken.
-                    lots_.append((index, lot))
-                    units -= lot.units
-                else:
-                    # We've exhausted desired units and still have extra
-                    # units left over in this Lot.
-                    # Cut the Lot into desired units and leftover units;
-                    # mark Lot with desired units to be taken.
-                    lots_.append((index, self.cut(index, units)))
-                    units = 0
+    for lot in lots:
+        if units_remain is None:
+            lots_taken.append(lot)
+            units_remain -= lot.units
+        else:
+            if units_remain == 0 or not criterion(lot):
+                lots_left.append(lot)
+            elif abs(lot.units) <= abs(units_remain):
+                if not lot.units * units_remain > 0:
+                    msg = "units_remain={} and Lot.units={} must have opposite signs (nonzero)"
+                    raise Inconsistent(None, msg.format(units_remain, lot.units))
 
-            lots = lots_
+                lots_taken.append(lot)
+                units_remain -= lot.units
+            else:
+                if not lot.units * units_remain > 0:
+                    msg = "units_remain={} and Lot.units={} must have opposite signs (nonzero)"
+                    raise Inconsistent(None, msg.format(units_remain, lot.units))
 
-        lots = list(lots)
-        if not lots:
-            return []
-        indices, lots = zip(*lots)
-        # We need to remove items from the list backwards from the end in order
-        # to maintain stable ordering during iteration.
-        for index in sorted(indices, reverse=True):
-            del self[index]
+                taken, left = part_lot(lot, units_remain)
+                lots_taken.append(taken)
+                units_remain -= taken.units
+                lots_left.append(left)
 
-        return lots
+    return lots_taken, lots_left
 
-    def take_basis(self, criterion, fraction):
-        """
-        Remove a fraction of the cost from each Lot in the Position.
 
-        Args: criterion - filter function that accepts ENUMERATED list items
-                          i.e. (index, Lot) tuples
-              fraction - portion of cost to take.
+def take_basis(lots, criterion, fraction):
+    """
+    Remove a fraction of the cost from each Lot in the Position.
 
-        Returns: a list of Lot instances (copies of the Lots meeting criterion,
-                 with each price updated to reflect the basis removed).
-        """
-        if not (0 <= fraction <= 1):
-            msg = "fraction must be between 0 and 1, not '{}'"
-            raise ValueError(msg.format(fraction))
+    Args: lots - sequence of Lot instances
+          criterion - filter function that accepts Lot instance as arg
+          fraction - portion of cost to take.
 
-        lots = filter(criterion, enumerate(self))
+    Returns: 2-tuple of -
+                0) list of Lots (copies of Lots meeting criterion, with each
+                   price updated to reflect the basis removed)
+                1) list of Lots (original position, less basis removed)
+    """
+    if criterion is None:
+        def criterion(lot):
+            return True
 
-        def take_cost(index, lot, fraction):
-            price = lot.price
-            takenprice = price * fraction
-            taken = lot._replace(price=takenprice)
-            left = lot._replace(price=price - takenprice)
-            return taken, (index, left)
+    if not (0 < fraction < 1):
+        msg = "fraction must be between 0 and 1 (exclusive), not '{}'"
+        raise ValueError(msg.format(fraction))
 
-        results = [take_cost(index, lot, fraction) for index, lot in lots]
-        if len(results) == 0:
-            return []
-        taken, left = zip(*results)
-        for index, lot in left:
-            self[index] = lot
+    lots_taken = []; lots_left = []
 
-        return taken
+    for lot in lots:
+        if criterion(lot):
+            takenprice = lot.price * fraction
+            lots_taken += (lot._replace(price=takenprice), )
+            lots_left += (lot._replace(price=lot.price - takenprice), )
+
+    return lots_taken, lots_left
 
 
 ###############################################################################
-# PORTFOLIO - dict container for Positions
+# PORTFOLIO - dict container for positions
 ###############################################################################
 class Portfolio(defaultdict):
     """ """
-    default_factory = Position
+    default_factory = list
 
     def __init__(self, *args, **kwargs):
-        args = (self.default_factory,) + args
+        args = (self.default_factory, ) + args
         defaultdict.__init__(self, *args, **kwargs)
 
     def trade(self, transaction, opentransaction=None, createtransaction=None,
@@ -262,7 +265,7 @@ class Portfolio(defaultdict):
                                 lot.opentransaction to preserve holding period
               createtransaction - a Transaction instance; if present, overrides
                                   lot.createtransaction and gain.transaction
-              sort - a duple of (key func, reverse) such as FIFO/MINGAIN etc.
+              sort - a 2-tuple of (key func, reverse) such as FIFO/MINGAIN etc.
                      defined above, used to order Lots when closing them.
 
         Returns: a list of Gain instances
@@ -273,16 +276,20 @@ class Portfolio(defaultdict):
             msg = "units can't be zero: {}".format(transaction)
             raise ValueError(msg)
 
+        pocket = (transaction.fiaccount, transaction.security)
+        position = self[pocket]
         sort = sort or FIFO
-        position = self[(transaction.fiaccount, transaction.security)]
         position.sort(**sort)
 
         try:
-            lots = position.take(closableBy(transaction), -transaction.units)
+            lots_closed, position = take_lots(position,
+                                              closableBy(transaction),
+                                              -transaction.units)
         except Inconsistent as err:
             # Lot.units opposite sign from Transaction.units
             raise Inconsistent(transaction, err.msg)
-        units = transaction.units + sum([lot.units for lot in lots])
+
+        units = transaction.units + sum([lot.units for lot in lots_closed])
         price = abs(transaction.cash / transaction.units)
         if units != 0:
             position.append(
@@ -291,9 +298,10 @@ class Portfolio(defaultdict):
                     units=units, price=price,
                     currency=transaction.currency))
 
-        gains = [Gain(lot=lot, transaction=createtransaction or transaction,
-                      price=price) for lot in lots]
+        self[pocket] = position
 
+        gains = [Gain(lot=lot, transaction=createtransaction or transaction,
+                      price=price) for lot in lots_closed]
         return gains
 
     def returnofcapital(self, transaction, sort=None):
@@ -303,10 +311,10 @@ class Portfolio(defaultdict):
         """
         self._validate_args(transaction, cash=Decimal)
 
-        position = self[(transaction.fiaccount, transaction.security)]
-        lots = list(filter(longAsOf(transaction.datetime),
-                           enumerate(position)))
-        units = sum([lot.units for i, lot in lots])
+        pocket = (transaction.fiaccount, transaction.security)
+        position = self[pocket]
+        affected = list(filter(longAsOf(transaction.datetime), position))
+        units = sum([lot.units for lot in affected])
         if units == 0:
             msg = "no long position for {} in {} as of {}".format(
                 transaction.fiaccount, transaction.security,
@@ -316,13 +324,15 @@ class Portfolio(defaultdict):
 
         gains = []
 
-        for index, lot in lots:
+        for index, lot in affected:
             netprice = lot.price - priceDelta
             if netprice < 0:
                 gains.append(Gain(lot=lot, transaction=transaction,
                                   price=priceDelta))
                 netprice = 0
             position[index] = lot._replace(price=netprice)
+
+        self[pocket] = position
 
         return gains
 
@@ -335,14 +345,13 @@ class Portfolio(defaultdict):
 
         splitRatio = transaction.numerator / transaction.denominator
 
-        position = self[(transaction.fiaccount, transaction.security)]
-        lots = list(filter(openAsOf(transaction.datetime),
-                           enumerate(position)))
+        pocket = (transaction.fiaccount, transaction.security)
+        position = self[pocket]
+        affected = list(filter(openAsOf(transaction.datetime), position))
 
-        unitsTo = Decimal('0')
-        unitsFrom = Decimal('0')
+        unitsTo = Decimal('0'); unitsFrom = Decimal('0')
 
-        for index, lot in lots:
+        for index, lot in affected:
             units = lot.units * splitRatio
             price = lot.price / splitRatio
             position[index] = lot._replace(units=units, price=price)
@@ -356,6 +365,8 @@ class Portfolio(defaultdict):
                        unitsFrom, transaction.numerator,
                        transaction.denominator, calcUnits, transaction.units)
             raise Inconsistent(transaction, msg)
+
+        self[pocket] = position
 
         # Stock splits don't realize Gains
         return []
@@ -380,8 +391,9 @@ class Portfolio(defaultdict):
 
         # Remove the Lots from the source Position
         try:
-            lotsFrom = positionFrom.take(openAsOf(transaction.datetime),
-                                         -transaction.unitsFrom)
+            lotsFrom, positionFrom = take_lots(positionFrom,
+                                               openAsOf(transaction.datetime),
+                                               -transaction.unitsFrom)
         except Inconsistent as err:
             raise Inconsistent(transaction, err.msg)
 
@@ -392,6 +404,8 @@ class Portfolio(defaultdict):
                    "unitsFrom={}")
             raise Inconsistent(transaction,
                                msg.format(pocketFrom, lunitsFrom, tunitsFrom))
+
+        self[pocketFrom] = positionFrom
 
         # Transform Lots to the destination Security/units and apply
         # as a Trade (to order closed Lots, if any) with opentxid & opendt
@@ -450,8 +464,9 @@ class Portfolio(defaultdict):
                 + securityFromPrice * units / splitRatio)
 
         # Take the basis from the source Position
-        lotsFrom = positionFrom.take_basis(openAsOf(transaction.datetime),
-                                           costFraction)
+        lotsFrom, positionFrom = take_basis(positionFrom,
+                                            openAsOf(transaction.datetime),
+                                            costFraction)
 
         takenUnits = sum([lot.units for lot in lotsFrom])
         if abs(takenUnits * splitRatio - units) > 0.0001:
@@ -461,6 +476,8 @@ class Portfolio(defaultdict):
                                msg.format(numerator, denominator, securityFrom,
                                           units / splitRatio, takenUnits,
                                           transaction.security, units))
+
+        self[pocketFrom] = positionFrom
 
         # Transform Lots to the destination Security/units and apply
         # as a Trade (to order closed Lots, if any) with opentxid & opendt
@@ -497,12 +514,14 @@ class Portfolio(defaultdict):
         unitsFrom = transaction.unitsFrom
         cash = transaction.cash
 
-        positionFrom = self[(transaction.fiaccount, transaction.securityFrom)]
+        pocketFrom = (transaction.fiaccount, transaction.securityFrom)
+        positionFrom = self[pocketFrom]
 
         # Remove lots from the source Position
         try:
-            lotsFrom = positionFrom.take(openAsOf(transaction.datetime),
-                                         -unitsFrom)
+            lotsFrom, positionFrom = take_lots(positionFrom,
+                                               openAsOf(transaction.datetime),
+                                               -unitsFrom)
         except Inconsistent as err:
             raise Inconsistent(transaction, err.msg)
 
@@ -510,6 +529,8 @@ class Portfolio(defaultdict):
         if abs(takenUnits) - abs(unitsFrom) > 0.0001:
             msg = "Exercise Lot.units={} (not {})"
             raise Inconsistent(transaction, msg.format(takenUnits, unitsFrom))
+
+        self[pocketFrom] = positionFrom
 
         multiplier = abs(transaction.units / unitsFrom)
 
@@ -564,10 +585,9 @@ def openAsOf(datetime_):
     """
     Filter function that chooses Lots created on or before datetime
     """
-    def isOpen(enum):
-        index, lot = enum
-        lot_open = lot.createtransaction.datetime <= datetime_
-        return lot_open
+    def isOpen(lot):
+        return lot.createtransaction.datetime <= datetime_
+
     return isOpen
 
 
@@ -576,11 +596,11 @@ def longAsOf(datetime_):
     Filter function that chooses long Lots (i.e. positive units) created
     on or before datetime
     """
-    def isOpen(enum):
-        index, lot = enum
+    def isOpen(lot):
         lot_open = lot.createtransaction.datetime <= datetime_
         lot_long = lot.units > 0
         return lot_open and lot_long
+
     return isOpen
 
 
@@ -589,11 +609,11 @@ def closableBy(transaction):
     Filter function that chooses Lots created on or before the given
     transaction.datetime, with sign opposite to the given transaction.units
     """
-    def closeMe(enum):
-        index, lot = enum
+    def closeMe(lot):
         lot_open = lot.createtransaction.datetime <= transaction.datetime
         opposite_sign = lot.units * transaction.units < 0
         return lot_open and opposite_sign
+
     return closeMe
 
 

@@ -12,6 +12,11 @@ from xml.etree import ElementTree as ET
 
 # 3rd party imports
 from sqlalchemy import create_engine
+
+
+import sys
+print(sys.path)
+
 import ofxtools
 
 
@@ -159,8 +164,10 @@ class TradesTestCase(DatabaseTest, unittest.TestCase):
         invtran = ofxtools.models.INVTRAN(fitid='deadbeef', dttrade='20170203',
                                           memo='Fill up')
         invbuy = ofxtools.models.INVBUY(invtran=invtran, secid=secid,
-                                        units=100, unitprice=1.2,
-                                        commission=9.99, total=129.99,
+                                        units=Decimal('100'),
+                                        unitprice=Decimal('1.2'),
+                                        commission=Decimal('9.99'),
+                                        total=Decimal('129.99'),
                                         subacctsec='CASH', subacctfund='CASH')
         self.buystock = ofxtools.models.BUYSTOCK(invbuy=invbuy, buytype='BUY')
 
@@ -174,7 +181,8 @@ class TradesTestCase(DatabaseTest, unittest.TestCase):
         self.assertEqual(tx.type, 'trade')
         self.assertIs(tx.fiaccount, self.account)
         self.assertEqual(tx.uniqueid, 'deadbeef')
-        self.assertEqual(tx.datetime, datetime(2017, 2, 3))
+        self.assertEqual(tx.datetime,
+                         datetime(2017, 2, 3, tzinfo=ofxtools.utils.UTC))
         if memo:
             self.assertEqual(tx.memo, memo)
         else:
@@ -203,7 +211,8 @@ class CashTransactionsTestCase(DatabaseTest, unittest.TestCase):
         tx = CashTransaction(fitid='5279100113', dttrade=datetime(2015, 4, 24),
                              dtsettle=None, memo='Something',
                              uniqueidtype='CUSIP', uniqueid='abc123',
-                             incometype='DIV', currency='USD', total=593517)
+                             incometype='DIV', currency='USD',
+                             total=Decimal('593517'))
         key = OfxStatementReader.groupCashTransactionsForCancel(tx)
         self.assertIsInstance(key, tuple)
         self.assertEqual(len(key), 3)
@@ -229,12 +238,13 @@ class CashTransactionsTestCase(DatabaseTest, unittest.TestCase):
                               dttrade=datetime(2015, 4, 24), dtsettle=None,
                               memo='Something',
                               uniqueidtype='CUSIP', uniqueid='abc123',
-                              incometype='DIV', currency='USD', total=593517)
+                              incometype='DIV', currency='USD',
+                              total=Decimal('593517'))
         tx1 = CashTransaction(fitid='5279100115',
                               dttrade=datetime(2015, 4, 23), dtsettle=None,
                               memo='Something else', uniqueidtype='ISIN',
                               uniqueid='abc123', incometype='INTEREST',
-                              currency='CHF', total=150)
+                              currency='CHF', total=Decimal('150'))
         net = OfxStatementReader(None).netCashTransactions(tx0, tx1)
         self.assertIsInstance(net, CashTransaction)
         # netCashTransactions() chooses the first transactionID
