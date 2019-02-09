@@ -144,7 +144,7 @@ def take_lots(lots, criterion=None, max_units=None):
     Sign convention is SAME SIGN as position, i.e. units arg must be
     positive for long, negative for short
 
-    Args: lots - sequence of Lot instances
+    Args: lots - sequence of Lot instances (PRESORTED BY CALLER)
           criterion - filter function that accepts Lot instance as arg
           max_units - max units to take.  If units=None, take all units that
                       match criterion.
@@ -163,22 +163,23 @@ def take_lots(lots, criterion=None, max_units=None):
     units_remain = max_units
 
     for lot in lots:
-        if units_remain is None:
-            lots_taken.append(lot)
-            units_remain -= lot.units
+        if not criterion(lot):
+            lots_left.append(lot)
         else:
-            if units_remain == 0 or not criterion(lot):
+            if units_remain is None:
+                lots_taken.append(lot)
+            elif units_remain == 0:
                 lots_left.append(lot)
             elif abs(lot.units) <= abs(units_remain):
                 if not lot.units * units_remain > 0:
-                    msg = "units_remain={} and Lot.units={} must have opposite signs (nonzero)"
+                    msg = "units_remain={} and Lot.units={} must have same sign (nonzero)"
                     raise Inconsistent(None, msg.format(units_remain, lot.units))
 
                 lots_taken.append(lot)
                 units_remain -= lot.units
             else:
                 if not lot.units * units_remain > 0:
-                    msg = "units_remain={} and Lot.units={} must have opposite signs (nonzero)"
+                    msg = "units_remain={} and Lot.units={} must have same sign (nonzero)"
                     raise Inconsistent(None, msg.format(units_remain, lot.units))
 
                 taken, left = part_lot(lot, units_remain)
@@ -193,7 +194,7 @@ def take_basis(lots, criterion, fraction):
     """
     Remove a fraction of the cost from each Lot in the Position.
 
-    Args: lots - sequence of Lot instances
+    Args: lots - sequence of Lot instances (PRESORTED BY CALLER)
           criterion - filter function that accepts Lot instance as arg
           fraction - portion of cost to take.
 

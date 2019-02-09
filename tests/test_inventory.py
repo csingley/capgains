@@ -159,10 +159,23 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
         self.assertEqual(taken[1], self.lot2._replace(units=Decimal('50'),
                                                       price=Decimal('11')))
 
+        self.assertEqual(len(left), 2)
         self.assertEqual(left[0],
                          self.lot2._replace(units=Decimal('150'),
                                             price=Decimal('11')))
         self.assertEqual(left[1], self.lot3)
+
+    def testTakeLotsMaxUnitsNone(self):
+        """
+        take_lots() takes all matches if max_units is None
+        """
+        self.assertEqual(len(self.lots), 3)
+        taken, left = take_lots(self.lots)
+
+        self.assertEqual(len(taken), 3)
+        self.assertEqual(taken, self.lots)
+
+        self.assertEqual(len(left), 0)
 
     def testTakeLotsSignConvention(self):
         """
@@ -170,6 +183,35 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
         """
         with self.assertRaises(Inconsistent):
             take_lots(self.lots, max_units=Decimal('-1'))
+
+    def testTakeLotsCriterion(self):
+        """
+        take_lots() respects lot selection criteria
+        """
+        criterion = openAsOf(datetime(2016, 1, 2))
+        taken_lots, left_lots = take_lots(self.lots, criterion=criterion)
+
+        self.assertEqual(len(taken_lots), 2)
+        self.assertEqual(len(left_lots), 1)
+
+        self.assertEqual(taken_lots, [self.lot1, self.lot2])
+        self.assertEqual(left_lots, [self.lot3, ])
+
+    def testTakeLotsMaxUnitsCriterion(self):
+        """
+        take_lots() respects criterion and max_units args together
+        """
+        criterion = openAsOf(datetime(2016, 1, 2))
+        taken_lots, left_lots = take_lots(self.lots, max_units=Decimal('150'),
+                                          criterion=criterion)
+
+        self.assertEqual(len(taken_lots), 2)
+        self.assertEqual(len(left_lots), 2)
+
+        self.assertEqual(taken_lots, [self.lot1,
+                                      self.lot2._replace(units=Decimal('50'))])
+        self.assertEqual(left_lots, [self.lot2._replace(units=Decimal('150')),
+                                     self.lot3])
 
 
 class TakeBasisTestCase(LotsMixin, unittest.TestCase):
