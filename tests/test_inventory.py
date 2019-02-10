@@ -237,12 +237,12 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
 
     def testTakeBasisBadFraction(self):
         """
-        take_basis() only accepts fraction between 0 and 1 exclusive
+        take_basis() only accepts fraction between 0 and 1 inclusive
         """
         with self.assertRaises(ValueError):
-            take_basis(self.lots, criterion=None, fraction=Decimal('0'))
+            take_basis(self.lots, criterion=None, fraction=Decimal('-0.1'))
         with self.assertRaises(ValueError):
-            take_basis(self.lots, criterion=None, fraction=Decimal('1'))
+            take_basis(self.lots, criterion=None, fraction=Decimal('1.01'))
 
     def testTakeBasisCriterion(self):
         """

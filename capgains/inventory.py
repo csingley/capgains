@@ -207,8 +207,8 @@ def take_basis(lots, criterion, fraction):
         def criterion(lot):
             return True
 
-    if not (0 < fraction < 1):
-        msg = "fraction must be between 0 and 1 (exclusive), not '{}'"
+    if not (0 <= fraction <= 1):
+        msg = "fraction must be between 0 and 1 (inclusive), not '{}'"
         raise ValueError(msg.format(fraction))
 
     lots_taken = []; lots_left = []
