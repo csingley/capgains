@@ -111,7 +111,8 @@ def parse_trade(tx, description=None):
         dttrade=datetime.combine(tx['tradeDate'], tx['tradeTime']),
         memo=description, uniqueidtype='CONID', uniqueid=tx['conid'],
         units=tx['quantity'], currency=tx['currency'], total=tx['netCash'],
-        reportdate=tx['reportDate'], notes=tx['notes'])
+        reportdate=tx['reportDate'], orig_tradeid=tx['origTradeID'],
+        notes=tx['notes'])
 
 
 ###########################################################################
@@ -262,7 +263,7 @@ Dividend = namedtuple('Dividend', ['conid', 'exDate', 'payDate', 'quantity',
                                    'grossRate', 'taxesAndFees', 'total'])
 Trade = namedtuple('Trade', [
     'fitid', 'dttrade', 'memo', 'uniqueidtype', 'uniqueid', 'units',
-    'currency', 'total', 'reportdate', 'notes'])
+    'currency', 'total', 'reportdate', 'orig_tradeid', 'notes'])
 CashTransaction = namedtuple('CashTransaction', [
     'fitid', 'dttrade', 'dtsettle', 'memo', 'uniqueidtype', 'uniqueid',
     'incometype', 'currency', 'total'])

@@ -106,12 +106,16 @@ class FlexStatementReader(OfxStatementReader):
 
     ###########################################################################
     # TRADES
+    #
+    # These methods override OfxStatementReader superclass methods.
+    # They are used by OfxStatementReader.doTrades(), which provides
+    # their context.
     ###########################################################################
     @staticmethod
     def filterTrades(transaction):
         """
         Should this trade be processed?  Discard FX trades.
-        
+
         Overrides OfxStatementReader superclass method.
 
         Arg: an instance implementing the interface of flex.parser.Trade
@@ -136,6 +140,28 @@ class FlexStatementReader(OfxStatementReader):
         Returns: boolean
         """
         return 'Ca' in transaction.notes
+
+    @staticmethod
+    def matchTradeWithCancel(canceler, canceled):
+        """
+        Does one of these trades cancel the other?
+
+        Overrides OfxStatementReader superclass method.
+
+        Args: two instances implementing the interface of
+              ofxtools.models.investment.{BUY*, SELL*}
+        Returns: boolean
+        """
+        match = False
+
+        if canceler.orig_tradeid not in (None, '', '0'):
+            match = canceler.orig_tradeid == canceled.fitid
+        else:
+            match = (canceler.units == -1 * canceled.units) \
+                    and (canceler.currency == canceled.currency) \
+                    and (canceler.total == -1 * canceled.total)
+
+        return match
 
     @staticmethod
     def sortCanceledTrades(transaction):
@@ -170,6 +196,10 @@ class FlexStatementReader(OfxStatementReader):
 
     ###########################################################################
     # CASH TRANSACTIONS
+    #
+    # These methods override OfxStatementReader superclass methods.
+    # They are used by OfxStatementReader.doCashTransactions(), which provides
+    # their context.
     ###########################################################################
     @staticmethod
     def filterCashTransactions(transaction):
