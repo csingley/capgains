@@ -283,12 +283,15 @@ class FlexStatementReader(OfxStatementReader):
         Returns: an instance implementing the interface of
                  flex.parser.CashTransaction
         """
-        payDate = transaction.dtsettle
-        match = self.dividends.get((transaction.uniqueid, payDate), None)
+        payDt = transaction.dtsettle
+        # N.B. transaction.dtsettle is a datetime.datetime, but self.dividends
+        # is keyed by (uniqueid, date).  Transform datetime to date for lookup.
+        match = self.dividends.get((transaction.uniqueid, payDt.date()), None)
         if match:
             transaction = transaction._replace(dttrade=match.exDate)
         else:
-            transaction = transaction._replace(dttrade=payDate)
+            transaction = transaction._replace(dttrade=payDt)
+
         return transaction
 
     ###########################################################################
