@@ -449,7 +449,7 @@ class Portfolio(defaultdict):
         splitRatio = numerator / denominator
 
         costFraction = 0
-        if securityPrice and securityFromPrice:
+        if (securityPrice is not None) and (securityFromPrice is not None):
             costFraction = Decimal(securityPrice * units) / (
                 Decimal(securityPrice * units)
                 + securityFromPrice * units / splitRatio)
