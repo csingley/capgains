@@ -238,11 +238,11 @@ class GroupedListTestCase(unittest.TestCase):
     def testCancel(self):
         # Flat
         trades = [
-            Trade(fitid='3723709320', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('0.000002769'), reportdate=datetime.datetime(2013, 8, 1, 0, 0), notes=['']),
-            Trade(fitid='3831648707', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('0.276942'), currency='USD', total=Decimal('-0.000002769'), reportdate=datetime.datetime(2013, 9, 20, 0, 0), notes=['Ca']),
-            Trade(fitid='3831652905', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('56.412710421'), reportdate=datetime.datetime(2013, 9, 20, 0, 0), notes=['']),
-            Trade(fitid='3964505548', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('0.276942'), currency='USD', total=Decimal('-56.412710421'), reportdate=datetime.datetime(2013, 11, 18, 0, 0), notes=['Ca']),
-            Trade(fitid='3964508206', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('1477.3194048'), reportdate=datetime.datetime(2013, 11, 18, 0, 0), notes=['']),
+            Trade(fitid='3723709320', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('0.000002769'), reportdate=datetime.datetime(2013, 8, 1, 0, 0), notes=[''], orig_tradeid=None, ),
+            Trade(fitid='3831648707', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('0.276942'), currency='USD', total=Decimal('-0.000002769'), reportdate=datetime.datetime(2013, 9, 20, 0, 0), notes=['Ca'], orig_tradeid=None, ),
+            Trade(fitid='3831652905', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('56.412710421'), reportdate=datetime.datetime(2013, 9, 20, 0, 0), notes=[''], orig_tradeid=None, ),
+            Trade(fitid='3964505548', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('0.276942'), currency='USD', total=Decimal('-56.412710421'), reportdate=datetime.datetime(2013, 11, 18, 0, 0), notes=['Ca'], orig_tradeid=None, ),
+            Trade(fitid='3964508206', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('1477.3194048'), reportdate=datetime.datetime(2013, 11, 18, 0, 0), notes=[''], orig_tradeid=None, ),
         ]
         net = GroupedList(trades).cancel(
             filterfunc=lambda tx: 'Ca' in tx.notes,

@@ -7,16 +7,10 @@ from unittest.mock import patch
 import os
 from datetime import datetime
 from decimal import Decimal
-from xml.etree import ElementTree as ET
 
 
 # 3rd party imports
 from sqlalchemy import create_engine
-
-
-import sys
-print(sys.path)
-
 import ofxtools
 
 
@@ -28,7 +22,6 @@ from capgains.models.transactions import (
     Fi, FiAccount, Security, SecurityId, Transaction
 )
 from capgains.database import Session, Base
-from capgains import inventory
 
 
 DB_URI = os.getenv('DB', 'sqlite://')
