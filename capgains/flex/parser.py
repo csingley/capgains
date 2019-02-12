@@ -23,8 +23,8 @@ def parse(source):
     response = ibflex.parser.parse(source)
     for stmt in response['FlexStatements']:
         # First parse trades, so they can be associated with options activity
-        trades = parse_trades(stmt['Trades'])
-        exercises = parse_optionEAE(stmt['OptionEAE'], trades)
+        trades = parse_trades(stmt.get('Trades') or [])
+        exercises = parse_optionEAE(stmt.get('OptionEAE') or [], trades)
         transactions = trades + exercises
         # Then process the rest of the transactions
         for transactionType in ['TradeTransfers', 'CashTransactions',
@@ -37,7 +37,7 @@ def parse(source):
         statements.append(FlexStatement(
             account=parse_acctinfo(stmt['AccountInformation']),
             securities=parse_securities(stmt['SecuritiesInfo']),
-            dividends=parse_dividends(stmt['ChangeInDividendAccruals']),
+            dividends=parse_dividends(stmt.get('ChangeInDividendAccruals') or []),
             transactions=transactions))
 
     return statements
