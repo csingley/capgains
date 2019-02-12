@@ -530,14 +530,17 @@ class CashTransactionsTestCase(CashTransactionXmlSnippetTestCase, unittest.TestC
         self.assertEqual(output, tx.fitid)
 
     def testFixCashTransactions(self):
+        # N.B. flex.reader.FlexStatementReader.dividends is keyed by type
+        # datetime.date, but flex.parser.CashTransaction.dtsettle is type
+        # datetime.datetime
         div = parser.Dividend(conid=sentinel.conid, exDate=sentinel.exDate,
                               payDate=sentinel.payDate,
                               quantity=None, grossRate=None,
                               taxesAndFees=None, total=None)
-        self.reader.dividends[(sentinel.conid, sentinel.payDate)] = div
+        self.reader.dividends[(sentinel.conid, date(2012, 5, 3))] = div
 
         tx = parser.CashTransaction(memo=None, fitid=None, dttrade=None,
-                                    dtsettle=sentinel.payDate,
+                                    dtsettle=datetime(2012, 5, 3),
                                     uniqueidtype=None, uniqueid=sentinel.conid,
                                     currency=None, total=None, incometype=None)
         output = self.reader.fixCashTransactions(tx)
