@@ -6,10 +6,11 @@ Importer for Interactive Brokers Flex XML format
 from collections import (namedtuple, OrderedDict)
 from operator import attrgetter
 from decimal import Decimal
-from datetime import datetime
+#  from datetime import datetime
 import functools
 import warnings
 import logging
+from copy import copy
 
 
 # 3rd party imports
@@ -29,7 +30,7 @@ from capgains.flex.regexes import (
     spinoffRE, subscribeRE, cashMergerRE, kindMergerRE, cashAndKindMergerRE,
     tenderRE,
 )
-from capgains.flex.parser import CorporateAction
+from capgains.flex.parser import (CorporateAction, Trade)
 from capgains.containers import GroupedList
 
 
@@ -70,6 +71,7 @@ class FlexStatementReader(OfxStatementReader):
         self.securities = {}
         self.dividends = {}
         self.transactions = []
+        self._basis_stack = {} # HACK - cf. tender(), merge_reorg()
 
     def read(self, doTransactions=True):
         """
@@ -189,7 +191,7 @@ class FlexStatementReader(OfxStatementReader):
         if hasattr(transaction, 'notes'):
             note2sort = [('ML', 'MINGAIN'), ('LI', 'LIFO')]
             sorts = [sort for note, sort in note2sort
-                     if note in transaction.notes]
+                     if transaction.notes and note in transaction.notes]
             assert len(sorts) in (0, 1)
             if sorts:
                 return sorts[0]
@@ -368,8 +370,12 @@ class FlexStatementReader(OfxStatementReader):
 
         for tx in txs:
             dttrade, type_, memo = tx.key
-            handler = CORPACT_HANDLERS[type_][1]
-            handler = getattr(self, handler)
+            handler_tuple = CORPACT_HANDLERS[type_]
+            if handler_tuple is None:
+                msg = ("flex.reader.CORPACT_HANDLERS doesn't know how to "
+                       "handle type='{}' for corporate action {}")
+                raise ValueError(msg.format(type_, tx))
+            handler = getattr(self, handler_tuple[1])
             handler(tx, memo=memo)
 
     @staticmethod
@@ -551,6 +557,7 @@ class FlexStatementReader(OfxStatementReader):
         regex = subscribeRE
         match = regex.match(memo)
         src, dest, spinoffs = self._group_reorg(corpActs, match)
+        src, dest = src.raw, dest.raw
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
         securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
         txs = [self.merge_transaction(
@@ -588,8 +595,10 @@ class FlexStatementReader(OfxStatementReader):
                 cashportions = [corpAct.raw for corpAct in corpActs
                                 if corpAct.raw.total != 0]
                 assert len(cashportions) == 1
+                cashportion = cashportions.pop()
+                assert cashportion.total > 0
 
-                txs = [self.merge_retofcap(cashportions.pop(), memo)]
+                txs = [self.merge_retofcap(cashportion, memo)]
 
                 # Then process in-kind merger
                 txs.extend(self.merge_reorg(corpActs, match, memo))
@@ -599,11 +608,49 @@ class FlexStatementReader(OfxStatementReader):
             or cashKindMerger(memo, corpActs)
 
         if not txs:
-            raise ValueError("Can't parse merger memo: '{}'".format(memo))
+            msg = ("flex.reader.FlexStatementReader.merger(): "
+                   "Can't parse merger memo: '{}'")
+            raise ValueError(msg.format(memo))
 
     def tender(self, corpActs, memo):  # TO
         match = tenderRE.match(memo)
         assert match
+
+        cashportions = [corpAct for corpAct in corpActs
+                        if corpAct.raw.total != 0]
+        if cashportions:
+            # HACK
+            # IBKR processes some rights offerings in two parts -
+            # 1) a sequence of type 'TO', booking out the old security,
+            #    booking in the contra, and booking out subscription cash;
+            # 2) a sequence of type 'TC', booking out the contra, booking in
+            #    the new security, and booking in the subscribed-for security.
+            # The 'TO' series contains the cash paid for the subscription, but
+            # not the units, while the 'TC' series contains the units data but
+            # not the cost.  Neither series, as grouped by
+            # groupParsedCorporateActions(), contains all the data.
+            #
+            # Here we extract the cost & open date, and stash it in a dict to
+            # be picked up for later processing by merge_reorg().  We assume
+            # that the 'TO' series has a dateTime strictly earlier than the
+            # 'TC' series, so they'll be sorted in correct time order by
+            # groupParsedCorporateActions() and merge_reorg() will have its
+            # values ready & waiting from tender().
+            assert len(cashportions) == 1
+            cashportion = cashportions.pop()
+            cashportion = cashportion.raw
+            cash = cashportion.total
+            assert cash < 0
+
+            src, dest, spinoffs = self._group_reorg(corpActs, match)
+            dest = dest.raw
+            basis_key = (dest.uniqueidtype, dest.uniqueid)
+            assert basis_key not in self._basis_stack
+            basis_deferral = CostBasisDeferral(currency=cashportion.currency,
+                                               cash=cash,
+                                               datetime=cashportion.dttrade)
+            self._basis_stack[basis_key] = basis_deferral
+
         return self.merge_reorg(corpActs, match, memo)
 
     ### Transaction merge functions ###
@@ -637,12 +684,51 @@ class FlexStatementReader(OfxStatementReader):
         as Spinoffs from the new destination security.
         """
         src, dest, spinoffs = self._group_reorg(corpActs, match)
+        src, dest = src.raw, dest.raw
         txs = [self.merge_security_transfer(src, dest, memo)]
-        txs.extend([self.merge_spinoff(
-            transaction=spinoff.raw,
-            securityFrom=self.securities[(src.uniqueidtype, src.uniqueid)],
-            numerator=spinoff.raw.units, denominator=-src.units, memo=memo)
-            for spinoff in spinoffs])
+
+        if spinoffs:
+            if len(spinoffs) > 1:
+                msg = ("flex.reader.FlexStatementReader.merge_reorg(): "
+                       "More than one spinoff {}")
+                raise ValueError(msg.format(spinoffs))
+            spinoff = spinoffs.pop()
+            spinoff = spinoff.raw
+
+            # HACK
+            # IBKR processes some rights offerings in two parts -
+            # 1) a sequence of type 'TO', booking out the old security,
+            #    booking in the contra, and booking out subscription cash;
+            # 2) a sequence of type 'TC', booking out the contra, booking in
+            #    the new security, and booking in the subscribed-for security.
+            # The 'TO' series contains the cash paid for the subscription, but
+            # not the units, while the 'TC' series contains the units data but
+            # not the cost.  Neither series, as grouped by
+            # groupParsedCorporateActions(), contains all the data.
+            #
+            # Here we pick up the cost & open date from where it was earlier
+            # stashed in a dict by tender().  We assume that the 'TO' series
+            # has a dateTime strictly earlier than the 'TC' series, so they'll
+            # be sorted in correct time order by groupParsedCorporateActions()
+            # and merge_reorg() will have its values ready & waiting from
+            # tender().
+            basis_adj = self._basis_stack.pop((src.uniqueidtype, src.uniqueid),
+                                              None)
+            if basis_adj:
+                assert spinoff.units > 0
+                tx = Trade(fitid=spinoff.fitid, dttrade=basis_adj.datetime,
+                           memo=memo, uniqueidtype=spinoff.uniqueidtype,
+                           uniqueid=spinoff.uniqueid, units=spinoff.units,
+                           currency=basis_adj.currency, total=basis_adj.cash,
+                           reportdate=spinoff.reportdate, orig_tradeid=None,
+                           notes=None)
+                txs.append(self.merge_trade(tx))
+            else:
+                txs.append(self.merge_spinoff(
+                    transaction=spinoff,
+                    securityFrom=self.securities[(src.uniqueidtype, src.uniqueid)],
+                    numerator=spinoff.units, denominator=-src.units, memo=memo)
+                )
         return txs
 
     def merge_security_transfer(self, src, dest, memo):
@@ -717,6 +803,10 @@ class FlexStatementReader(OfxStatementReader):
                              CorporateAction instance for destination security,
                              sequence of spinoff CorporationAction instances)
         """
+        # We're going to remove items from the list, so don't touch the
+        # original date; operate on a copy
+        corpActs = copy(corpActs)
+
         matchgroups = match.groupdict()
         isinFrom = matchgroups['isinFrom']
         tickerFrom = matchgroups['tickerFrom']
@@ -738,9 +828,6 @@ class FlexStatementReader(OfxStatementReader):
             msg = ("Can't find source transaction for {} within {}").format(
                 {k: v for k, v in match.groupdict().items() if v},
                 [ca.raw for ca in corpActs])
-                # [ca for ca in corpActs])
-            # warnings.warn(msg)
-            # return
             raise ValueError(msg)
         corpActs.remove(src)
 
@@ -764,7 +851,7 @@ class FlexStatementReader(OfxStatementReader):
         corpActs.remove(dest)
 
         # Remaining corpActs not matched as src/dest pairs treated as spinoffs
-        return src.raw, dest.raw, corpActs
+        return src, dest, corpActs
 
     ###########################################################################
     # OPTIONS EXERCISE/ASSIGNMENT/EXPIRATION
@@ -839,6 +926,10 @@ MEMO_SIGNATURES.append(('ACQUIRED', 'TC'))
 ###############################################################################
 ParsedCorpAct = namedtuple('ParsedCorpAct', ['raw', 'type', 'ticker',
                                              'cusip', 'secname', 'memo', ])
+
+# HACK - cf. tender(), merge_reorg()
+CostBasisDeferral = namedtuple('CostBasisDeferral',
+                               ['currency', 'cash', 'datetime'])
 
 
 ###############################################################################

@@ -380,6 +380,7 @@ class OfxStatementReader(object):
                             ofxtools.models.investment.INCOME
               memo - override transaction memo (type str)
         """
+        assert transaction.total > 0
         security = self.securities[(transaction.uniqueidtype,
                                     transaction.uniqueid)]
         # Work with either Flex currency attribute or OFX Currency Aggregate
