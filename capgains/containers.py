@@ -67,7 +67,8 @@ class GroupedList(list):
 
     def groupby(self, func):
         if self.grouped:
-            return self.__class__([item.groupby(func) for item in self], grouped=self.grouped, key=self.key)
+            return self.__class__([item.groupby(func) for item in self],
+                                  grouped=self.grouped, key=self.key)
         else:
             items = [self.__class__(v, grouped=False, key=k)
                      for k, v in itertools.groupby(

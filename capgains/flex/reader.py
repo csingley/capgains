@@ -357,7 +357,24 @@ class FlexStatementReader(OfxStatementReader):
 
         Args: a sequence of flex.parser.CorporateAction instances
         """
-        txs = GroupedList(transactions)\
+        group = self.preprocessCorporateActions(transactions)
+        # group is now a GroupedList in `grouped` state, containing
+        # GroupedLists of ParsedCorporateAction instances
+        assert group.grouped is True
+        for pcas in group:
+            assert pcas.grouped is False
+            dttrade, type_, memo = pcas.key
+            handler_tuple = CORPACT_HANDLERS[type_]
+            if handler_tuple is None:
+                msg = ("flex.reader.CORPACT_HANDLERS doesn't know how to "
+                       "handle type='{}' for corporate actions {}")
+                raise ValueError(msg.format(type_, pcas))
+            handler = getattr(self, handler_tuple[1])
+            handler(pcas, memo=memo)
+
+    def preprocessCorporateActions(self, transactions):
+        # See containers.GroupedList for detailed workings
+        group = GroupedList(transactions)\
                 .groupby(self.groupCorporateActionsForCancel)\
                 .cancel(filterfunc=self.filterCorporateActionCancels,
                         matchfunc=self.matchCorporateActionWithCancel,
@@ -366,21 +383,14 @@ class FlexStatementReader(OfxStatementReader):
                 .flatten()\
                 .map(self.parseCorporateActionMemo)\
                 .groupby(self.groupParsedCorporateActions)\
-                .sorted(self.sortParsedCorporateActions)\
+                .sorted(self.sortParsedCorporateActions)
 
-        for tx in txs:
-            dttrade, type_, memo = tx.key
-            handler_tuple = CORPACT_HANDLERS[type_]
-            if handler_tuple is None:
-                msg = ("flex.reader.CORPACT_HANDLERS doesn't know how to "
-                       "handle type='{}' for corporate action {}")
-                raise ValueError(msg.format(type_, tx))
-            handler = getattr(self, handler_tuple[1])
-            handler(tx, memo=memo)
+        return group
 
     @staticmethod
     def groupCorporateActionsForCancel(corpAct):
-        return (corpAct.uniqueidtype, corpAct.uniqueid), corpAct.dttrade, corpAct.type, corpAct.memo
+        return ((corpAct.uniqueidtype, corpAct.uniqueid),
+                corpAct.dttrade, corpAct.type, corpAct.memo)
 
     @staticmethod
     def filterCorporateActionCancels(transaction):
