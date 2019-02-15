@@ -22,7 +22,6 @@ WORKFLOW
 # stdlib imports
 from argparse import ArgumentParser
 from datetime import datetime
-import itertools
 
 # 3rd party imports
 import sqlalchemy
@@ -101,23 +100,24 @@ def dump_positions(engine, infile, outfile, dtstart, dtend, consolidate):
 def wrapGains(args):
     engine = create_engine()
     dump_gains(engine, args.loadcsv, args.file, args.dtstart, args.dtend,
-               args.consolidate)
+               args.begin, args.consolidate)
 
 
-def dump_gains(engine, infile, outfile, dtstart, dtend, consolidate):
+def dump_gains(engine, infile, outfile, dtstart, dtend, begin, consolidate):
     with sessionmanager(bind=engine) as session:
         portfolio, gains = _process_transactions(session, dtstart, dtend,
-                                                     infile)
+                                                 begin, infile)
         with open(outfile, 'w') as csvfile:
             writer = CsvGainWriter(session, csvfile)
             writer.writeheader()
             writer.writerows(gains, consolidate=consolidate)
 
 
-def _process_transactions(session, dtstart=None, dtend=None, loadfile=None,
-                          consolidate=False):
+def _process_transactions(session, dtstart=None, dtend=None, begin=None,
+                          loadfile=None):
     dtstart = dtstart or datetime.min
     dtend = dtend or datetime.max
+    begin = begin or datetime.min
 
     if loadfile:
         portfolio = load_portfolio(session, loadfile)
@@ -130,8 +130,10 @@ def _process_transactions(session, dtstart=None, dtend=None, loadfile=None,
     ).order_by(Transaction.datetime, Transaction.type, Transaction.uniqueid)
 
     gains = [portfolio.processTransaction(tx) for tx in transactions]
-    # Flatten nested list
-    gains = [gain for gs in gains for gain in gs]
+    # Flatten nested list; filter for gains during reporting period
+    #  gains = [gain for gs in gains for gain in gs]
+    gains = [gain for gs in gains for gain in gs
+             if gain.transaction.datetime >= begin]
 
     return portfolio, gains
 
@@ -194,6 +196,8 @@ def make_argparser():
     gain_parser.add_argument('-e', '--dtend', default=None,
                              help=("End date for Transactions processed "
                                    "for Gain report (excluded)"))
+    gain_parser.add_argument('-b', '--begin', default=None,
+                             help="Start date for Gain report period (included)")
     gain_parser.add_argument('-l', '--loadcsv', default=None,
                              help="CSV dump file of Lots to load")
     gain_parser.add_argument('-c', '--consolidate', action='store_true')
@@ -202,8 +206,7 @@ def make_argparser():
     return argparser, subparsers
 
 
-def main():
-    argparser, subparsers = make_argparser()
+def run(argparser):
     args = argparser.parse_args()
 
     # Parse datetime args
@@ -214,11 +217,19 @@ def main():
         args.dtend = datetime.strptime(args.dtend, '%Y-%m-%d').replace(
             hour=23, minute=59, second=59)
 
+    if getattr(args, 'begin', None):
+        args.begin = datetime.strptime(args.begin, '%Y-%m-%d')
+
     # Execute selected function
     if args.func:
         args.func(args)
     else:
         argparser.print_help()
+
+
+def main():
+    argparser, subparsers = make_argparser()
+    run(argparser)
 
 
 if __name__ == '__main__':
