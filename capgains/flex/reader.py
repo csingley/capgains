@@ -81,6 +81,12 @@ class FlexStatementReader(OfxStatementReader):
         self.read_dividends()
         super(FlexStatementReader, self).read(doTransactions)
 
+    def read_header(self):
+        """
+        Override OfxStatementReader.read_header()
+        """
+        pass
+
     def read_dividends(self):
         """
         Create a dict of capgains.flex.parser.Dividend instances keyed

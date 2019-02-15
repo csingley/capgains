@@ -61,10 +61,14 @@ class OfxStatementReader(object):
         self.transactions = []
 
     def read(self, doTransactions=True):
+        self.read_header()
         self.read_account()
         self.read_securities()
         if doTransactions:
             self.read_transactions()
+
+    def read_header(self):
+        self.currency_default = self.statement.curdef
 
     def read_account(self):
         account = self.statement.account
@@ -218,7 +222,7 @@ class OfxStatementReader(object):
         # Works with OFX Currency Aggregate
         if hasattr(currency, 'cursym'):
             currency = currency.cursym
-        currency = currency or getattr(self.statement, 'curdef', None) or None
+        currency = currency or self.currency_default
 
         sort = self.sortForTrade(tx)
         return self.merge_transaction(
@@ -384,9 +388,10 @@ class OfxStatementReader(object):
         security = self.securities[(transaction.uniqueidtype,
                                     transaction.uniqueid)]
         # Work with either Flex currency attribute or OFX Currency Aggregate
-        currency = transaction.currency or None
+        currency = transaction.currency
         if hasattr(currency, 'cursym'):
             currency = currency.cursym
+        currency = currency or self.currency_default
         dttrade = transaction.dttrade
         dtsettle = getattr(transaction, 'dtsettle', None) or dttrade
         return self.merge_transaction(
