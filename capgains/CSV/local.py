@@ -5,6 +5,7 @@ import csv
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import (datetime, timedelta)
 import functools
+import itertools
 
 
 # local imports
@@ -276,40 +277,71 @@ class CsvGainWriter(csv.DictWriter):
 
     def writerows(self, gains, consolidate=False):
         """ """
-        for gain in gains:
-            account = gain.transaction.fiaccount
-            security = gain.transaction.security
-            lot = gain.lot
-            units = lot.units
-            proceeds = units * gain.price
-            cost = units * lot.price
-            gaindt = gain.transaction.datetime
-            opendt = lot.opentransaction.datetime
-            ltcg = (units > 0) and (gaindt - opendt >= timedelta(days=366))
-            disallowed = None  # FIXME
-            row = {'brokerid': account.fi.brokerid, 'acctid': account.number,
-                   'ticker': security.ticker, 'secname': security.name,
-                   'gaindt': gaindt, 'gaintxid': gain.transaction.uniqueid,
-                   'ltcg': ltcg, 'opendt': opendt,
-                   'opentxid': lot.opentransaction.uniqueid, 'units': units,
-                   'proceeds': proceeds, 'cost': cost,
-                   'currency': gain.transaction.currency, 'realized': proceeds - cost,
-                   'disallowed': disallowed}
-
-            self.writerow(row)
-
-    def rows_for_position(self, position, consolidate=False):
-        rows = [{'units': Decimal(lot.units.quantize(Decimal('0.0001'),
-                                                     rounding=ROUND_HALF_UP)),
-                 'opendt': lot.opendt, 'cost': lot.units * lot.unitcost,
-                 'currency': lot.currency, } for lot in position]
         if consolidate:
-            rows = [functools.reduce(self.add_lots, rows)]
-        return rows
+            def keyfunc(gain):
+                return gain.transaction.security.id
 
-    def add_lots(self, lot0, lot1):
-        assert lot0['currency'] == lot1['currency']  # FIXME
-        lot0['units'] += lot1['units']
-        lot0['cost'] += lot1['cost']
-        lot0['opendt'] = None
-        return lot0
+            gains.sort(key=keyfunc)
+            for k, gs in itertools.groupby(gains, keyfunc):
+                #  print(k)
+                row = self._gains2row(list(gs))
+                self.writerow(row)
+
+        else:
+            for gain in gains:
+                row = self._gain2row(gain)
+                self.writerow(row)
+
+    def _gain2row(self, gain):
+        """
+        Transform a single Gain into a dict suitable to hand to self.writerow()
+        """
+        account = gain.transaction.fiaccount
+        security = gain.transaction.security
+        lot = gain.lot
+        units = lot.units
+        proceeds = units * gain.price
+        cost = units * lot.price
+        gaindt = gain.transaction.datetime
+        opendt = lot.opentransaction.datetime
+        ltcg = (units > 0) and (gaindt - opendt >= timedelta(days=366))
+        disallowed = None  # FIXME
+        row = {'brokerid': account.fi.brokerid, 'acctid': account.number,
+               'ticker': security.ticker, 'secname': security.name,
+               'gaindt': gaindt, 'gaintxid': gain.transaction.uniqueid,
+               'ltcg': ltcg, 'opendt': opendt,
+               'opentxid': lot.opentransaction.uniqueid, 'units': units,
+               'proceeds': proceeds, 'cost': cost,
+               'currency': gain.transaction.currency, 'realized': proceeds - cost,
+               'disallowed': disallowed}
+        return row
+
+    def _gains2row(self, gains):
+        """
+        Sum a list of Gains and transform into a dict suitable to hand to
+        self.writerow()
+        """
+        # input gains have identical security ( itertools.groupby() )
+        security = gains[0].transaction.security
+
+        # input gains must have identical currency
+        currency = gains[0].transaction.currency
+        assert all(gain.transaction.currency == currency for gain in gains)
+
+        # extract (units, proceeds, cost)
+        data = [(g.lot.units, g.lot.units * g.price, g.lot.units * g.lot.price)
+                for g in gains]
+        running_totals = list(itertools.accumulate(data,
+                                                   # This adds the elements at the same index of each (units, proceeds, cost)
+                                                   lambda d0, d1: tuple(x + y for x, y in zip(d0, d1))))
+        (units, proceeds, cost) = running_totals[-1]
+
+        row = {'brokerid': None, 'acctid': None,
+               'gaindt': None, 'gaintxid': None,
+               'ltcg': None, 'opendt': None,
+               'opentxid': None, 'disallowed': None}
+        row.update({'ticker': security.ticker, 'secname': security.name,
+                    'currency': currency,
+                    'units': units, 'proceeds': proceeds, 'cost': cost,
+                    'realized': proceeds - cost})
+        return row

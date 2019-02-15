@@ -22,7 +22,7 @@ WORKFLOW
 # stdlib imports
 from argparse import ArgumentParser
 from datetime import datetime
-
+import itertools
 
 # 3rd party imports
 import sqlalchemy
@@ -106,13 +106,12 @@ def wrapGains(args):
 
 def dump_gains(engine, infile, outfile, dtstart, dtend, consolidate):
     with sessionmanager(bind=engine) as session:
-        portfolio, gainslist = _process_transactions(session, dtstart, dtend,
+        portfolio, gains = _process_transactions(session, dtstart, dtend,
                                                      infile)
         with open(outfile, 'w') as csvfile:
             writer = CsvGainWriter(session, csvfile)
             writer.writeheader()
-            for gains in gainslist:
-                writer.writerows(gains, consolidate=consolidate)
+            writer.writerows(gains, consolidate=consolidate)
 
 
 def _process_transactions(session, dtstart=None, dtend=None, loadfile=None,
@@ -131,6 +130,8 @@ def _process_transactions(session, dtstart=None, dtend=None, loadfile=None,
     ).order_by(Transaction.datetime, Transaction.type, Transaction.uniqueid)
 
     gains = [portfolio.processTransaction(tx) for tx in transactions]
+    # Flatten nested list
+    gains = [gain for gs in gains for gain in gs]
 
     return portfolio, gains
 
