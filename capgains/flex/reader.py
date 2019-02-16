@@ -22,7 +22,7 @@ from ofxtools.utils import (validate_cusip, cusip2isin, validate_isin)
 from capgains.ofx.reader import OfxStatementReader
 from capgains.database import Base, sessionmanager
 from capgains.models.transactions import (
-    FiAccount, Security, SecurityId,
+    FiAccount, Security, SecurityId, CurrencyRate
 )
 from capgains.flex import BROKERID
 from capgains.flex.regexes import (
@@ -76,9 +76,10 @@ class FlexStatementReader(OfxStatementReader):
     def read(self, doTransactions=True):
         """
         Extends OfxStatementReader superclass method - also processes parsed
-        Flex ChangeInDividendAccruals.
+        Flex ChangeInDividendAccruals and ConversionRates.
         """
         self.read_dividends()
+        self.read_currency_rates()
         super(FlexStatementReader, self).read(doTransactions)
 
     def read_header(self):
@@ -97,6 +98,17 @@ class FlexStatementReader(OfxStatementReader):
         self.dividends = {(div.conid, div.payDate): div
                           for div in self.statement.dividends
                           if div.payDate is not None}
+
+    def read_currency_rates(self):
+        """
+        Persist currency conversion rates to DB.
+
+        Used in reporting, to translate inventory.Gain instances to
+        functional currency.
+        """
+        rates = self.statement.conversionrates
+        for rate in rates:
+            cr = CurrencyRate.merge(self.session, **rate._asdict())
 
     def read_securities(self):
         for secinfo in self.statement.securities:

@@ -38,7 +38,9 @@ def parse(source):
             account=parse_acctinfo(stmt['AccountInformation']),
             securities=parse_securities(stmt['SecuritiesInfo']),
             dividends=parse_dividends(stmt.get('ChangeInDividendAccruals') or []),
-            transactions=transactions))
+            transactions=transactions,
+            conversionrates=parse_conversionrates(stmt.get('ConversionRates') or []),
+        ))
 
     return statements
 
@@ -79,6 +81,13 @@ def parse_dividends(divs):
                  total=div['netAmount'])
         for div in divs if 'Re' in div['code']]
     return dividends
+
+
+def parse_conversionrates(rates):
+    conversionrates = [ConversionRate(
+        date=date, fromcurrency=fromcurrency, tocurrency=tocurrency, rate=rate)
+        for (fromcurrency, tocurrency, date), rate  in rates.items()]
+    return conversionrates
 
 
 ###########################################################################
@@ -254,8 +263,6 @@ SUBPARSERS = {'TradeTransfers': parse_trade_transfers,
 # DATA CONTAINERS - implement ofxtools.models.investment data structures
 # (plus some extra fields)
 ###############################################################################
-FlexStatement = namedtuple('FlexStatement', [
-    'account', 'securities', 'dividends', 'transactions'])
 Account = namedtuple('Account', ['acctid', 'brokerid', 'name', 'currency'])
 Security = namedtuple('Security',
                       ['uniqueidtype', 'uniqueid', 'ticker', 'secname'])
@@ -277,3 +284,12 @@ Exercise = namedtuple('Exercise', [
     'fitid', 'dttrade', 'memo', 'uniqueidtype', 'uniqueid', 'units',
     'uniqueidtypeFrom', 'uniqueidFrom', 'unitsFrom', 'currency', 'total',
     'reportdate', 'notes'])
+
+
+###############################################################################
+# DATA CONTAINERS - Flex specific
+###############################################################################
+FlexStatement = namedtuple('FlexStatement', [
+    'account', 'securities', 'dividends', 'transactions', 'conversionrates'])
+ConversionRate = namedtuple('ConversionRate', [
+    'date', 'fromcurrency', 'tocurrency', 'rate'])

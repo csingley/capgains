@@ -16,6 +16,7 @@ class CapgainsConfig(configparser.SafeConfigParser):
                       'database': 'capgains'}
         self['data'] = {'default_dir': ''}
         self['work'] = {'default_dir': ''}
+        self['books'] = {'functional_currency': 'USD'}
 
     @property
     def db_uri(self):

@@ -3,7 +3,7 @@
 # stdlib imports
 import csv
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import (datetime, timedelta)
+from datetime import datetime
 import functools
 import itertools
 
@@ -296,7 +296,7 @@ class CsvGainWriter(csv.DictWriter):
         """
         Transform a single Gain into a dict suitable to hand to self.writerow()
         """
-        report = inventory.report_gain(gain)
+        report = inventory.report_gain(self.session, gain)
 
         # FIXME
         disallowed = None
@@ -320,7 +320,7 @@ class CsvGainWriter(csv.DictWriter):
         Sum a list of Gains and transform into a dict suitable to hand to
         self.writerow()
         """
-        reports = [inventory.report_gain(gain) for gain in gains]
+        reports = [inventory.report_gain(self.session, gain) for gain in gains]
 
         # input gains have identical security ( itertools.groupby() )
         security = reports[0].security

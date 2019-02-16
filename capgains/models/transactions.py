@@ -12,12 +12,14 @@ from sqlalchemy import (
     String,
     Text,
     DateTime,
+    Date,
     Numeric,
     ForeignKey,
     Enum,
     event,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql.schema import UniqueConstraint
 from ofxtools.models.i18n import CURRENCY_CODES
 
@@ -241,6 +243,50 @@ class Transaction(Base, Mergeable):
                        name='transaction_sort'), )
 
     signature = ('fiaccount', 'uniqueid')
+
+
+class CurrencyRate(Base, Mergeable):
+    """
+    """
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False)
+    fromcurrency = Column(Enum(*CURRENCY_CODES, name='fromcurrency'),
+                          nullable=False)
+    tocurrency = Column(Enum(*CURRENCY_CODES, name='tocurrency'),
+                        nullable=False)
+    rate = Column(Numeric, nullable=False)
+
+    __table_args__ = (UniqueConstraint('date', 'fromcurrency', 'tocurrency'), )
+
+    signature = ('date', 'fromcurrency', 'tocurrency')
+
+    @classmethod
+    def get_rate(cls, session, fromcurrency, tocurrency, date):
+        """
+        Returns `rate` (type decimal.Decimal)  as `tocurrency` / `fromcurrency`
+        i.e. `fromCurrency` * `rate` == 'tocurrency`
+        """
+        if fromcurrency is None or tocurrency is None or date is None:
+            msg = ("CurrencyRate.get_rate(): missing argument in "
+                   "(fromcurrency='{}', tocurrency='{}', date={}")
+            raise ValueError(msg.format(fromcurrency, tocurrency, date))
+        try:
+            instance = session.query(cls)\
+                .filter_by(fromcurrency=fromcurrency, tocurrency=tocurrency, date=date)\
+                .one()
+            rate = instance.rate
+        except NoResultFound:
+            try:
+                instance = session.query(cls)\
+                    .filter_by(fromcurrency=tocurrency, tocurrency=fromcurrency, date=date)\
+                    .one()
+            except NoResultFound:
+                msg = ("CurrencyRate.get_rate(): no DB record for "
+                       "(fromcurrency='{}', tocurrency='{}', date={})")
+                raise ValueError(msg.format(fromcurrency, tocurrency, date))
+            rate = 1 / instance.rate
+
+        return rate
 
 
 class ModelConstraintError(ModelError):

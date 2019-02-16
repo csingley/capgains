@@ -80,6 +80,9 @@ class ReadTestCase(unittest.TestCase):
         self.assertEqual(divs[(sentinel.conid0, sentinel.payDate0)], div0)
         self.assertEqual(divs[(sentinel.conid1, sentinel.payDate1)], div1)
 
+    def testReadCurrencyRates(self):
+        pass
+
     @patch.object(Security, 'merge', wraps=lambda session, **sec: sec)
     def testReadSecurities(self, mock_security_merge_method):
         sec0 = parser.Security(uniqueidtype=sentinel.cusip,

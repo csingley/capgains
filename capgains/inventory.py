@@ -31,7 +31,12 @@ The main things to remember about this data model:
 # stdlib imports
 from collections import (namedtuple, defaultdict)
 from decimal import Decimal
-from datetime import timedelta
+from datetime import (date, timedelta)
+
+# local import
+from capgains import CONFIG
+from capgains.models.transactions import CurrencyRate
+
 
 ###############################################################################
 # BASIC DATA CONTAINERS
@@ -580,42 +585,20 @@ GainReport = namedtuple('GainReport',
                          'currency', 'cost', 'proceeds', 'longterm'])
 
 
-def report_gain(gain):
+def report_gain(session, gain):
     """
     Crunch the numbers for a Gain instance.
+
+    Returns a GainReport instance.
     """
+    gain = translate_gain(session, gain)
+
     gaintx = gain.transaction
     fiaccount = gaintx.fiaccount
     security = gaintx.security
 
     lot = gain.lot
     opentx = lot.opentransaction
-
-    currency = lot.currency
-    assert currency
-    realizing_currency = gaintx.currency
-    if realizing_currency and (currency != realizing_currency):
-        # 26 CFR §1.988-2(a)(2)(iv)
-        # """
-        # (A)Amount realized. If stock or securities traded on an established
-        # securities market are sold by a cash basis taxpayer for nonfunctional
-        # currency, the amount realized with respect to the stock or securities
-        # (as determined on the trade date) shall be computed by translating
-        # the units of nonfunctional currency received into functional currency
-        # at the spot rate on the _settlement date_ of the sale.
-        #
-        # [...]
-        #
-        # (B)Basis. If stock or securities traded on an established securities
-        # market are purchased by a cash basis taxpayer for nonfunctional
-        # currency, the basis of the stock or securities shall be determined
-        # by translating the units of nonfunctional currency paid into
-        # functional currency at the spot rate on the _settlement date_ of the
-        # purchase.
-        #
-        # FIXME
-        msg = "{} currency doesn't match realizing {}"
-        raise ValueError(msg.format(lot, gaintx))
 
     units = lot.units
     proceeds = units * gain.price
@@ -625,8 +608,90 @@ def report_gain(gain):
     longterm = (units > 0) and (gaindt - opendt >= timedelta(days=366))
 
     return GainReport(fiaccount=fiaccount, security=security, opentx=opentx,
-                      gaintx=gaintx, units=units, currency=currency, cost=cost,
-                      proceeds=proceeds, longterm=longterm)
+                      gaintx=gaintx, units=units, currency=lot.currency,
+                      cost=cost, proceeds=proceeds, longterm=longterm)
+
+
+def translate_gain(session, gain):
+    """
+    Transform a Gain instance's realizing transaction to functional currency.
+
+    Returns a Gain instance.
+    """
+    # 26 CFR §1.988-2(a)(2)(iv)
+    # (A)Amount realized. If stock or securities traded on an established
+    # securities market are sold by a cash basis taxpayer for nonfunctional
+    # currency, the amount realized with respect to the stock or securities
+    # (as determined on the trade date) shall be computed by translating
+    # the units of nonfunctional currency received into functional currency
+    # at the spot rate on the _settlement date_ of the sale.  [...]
+    #
+    # (B)Basis. If stock or securities traded on an established securities
+    # market are purchased by a cash basis taxpayer for nonfunctional
+    # currency, the basis of the stock or securities shall be determined
+    # by translating the units of nonfunctional currency paid into
+    # functional currency at the spot rate on the _settlement date_ of the
+    # purchase.
+
+    # FIXME
+    #  msg = "{} currency doesn't match realizing {}"
+    #  raise ValueError(msg.format(gain.lot, gain.transaction))
+
+    lot, gaintx, gainprice = gain.lot, gain.transaction, gain.price
+
+    functional_currency = CONFIG['books']['functional_currency']
+
+    assert lot.currency
+    if lot.currency != functional_currency:
+        opentx = lot.opentransaction
+        dtsettle = opentx.dtsettle or opentx.datetime
+        date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
+        exchange_rate = CurrencyRate.get_rate(
+            session, fromcurrency=lot.currency, tocurrency=functional_currency,
+            date=date_settle)
+        opentx_translated = translate_transaction(
+            opentx, functional_currency, exchange_rate)
+        lot = lot._replace(opentransaction=opentx_translated,
+                           price=lot.price * exchange_rate,
+                           currency=functional_currency)
+
+    gaintx_currency = gaintx.currency or lot.currency
+    assert gaintx_currency
+    if gaintx_currency != functional_currency:
+        dtsettle = gaintx.dtsettle or gaintx.datetime
+        date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
+        exchange_rate = CurrencyRate.get_rate(
+            session, fromcurrency=gaintx_currency,
+            tocurrency=functional_currency, date=date_settle)
+
+        gaintx = translate_transaction(gaintx,
+                                       functional_currency, exchange_rate)
+        gainprice = gainprice * exchange_rate
+
+    return Gain(lot, gaintx, gainprice)
+
+
+def translate_transaction(transaction, currency, rate):
+    securityPrice = transaction.securityPrice
+    if securityPrice is not None:
+        securityPrice = transaction.securityPrice * rate,
+
+    securityFromPrice = transaction.securityFromPrice
+    if securityFromPrice is not None:
+        securityFromPrice = transaction.securityFromPrice * rate,
+
+    return Transaction(
+        id=transaction.id, uniqueid=transaction.uniqueid,
+        datetime=transaction.datetime, dtsettle=transaction.dtsettle,
+        type=transaction.type, memo=transaction.memo, currency=currency,
+        cash=transaction.cash * rate, fiaccount=transaction.fiaccount,
+        security=transaction.security, units=transaction.units,
+        securityPrice=securityPrice,
+        fiaccountFrom=transaction.fiaccountFrom,
+        securityFrom=transaction.securityFrom, unitsFrom=transaction.unitsFrom,
+        securityFromPrice=securityFromPrice,
+        numerator=transaction.numerator, denominator=transaction.denominator,
+        sort=transaction.sort)
 
 
 ###############################################################################
