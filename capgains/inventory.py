@@ -31,6 +31,7 @@ The main things to remember about this data model:
 # stdlib imports
 from collections import (namedtuple, defaultdict)
 from decimal import Decimal
+from datetime import timedelta
 
 ###############################################################################
 # BASIC DATA CONTAINERS
@@ -532,6 +533,7 @@ class Portfolio(defaultdict):
         for lotFrom in lotsFrom:
             adjusted_price = -lotFrom.price * lotFrom.units \
                     + cash * lotFrom.units / takenUnits
+            currency = lotFrom.currency
 
             units = lotFrom.units * multiplier
             # FIXME - We need a Trade.id for self.trade() to set
@@ -541,7 +543,7 @@ class Portfolio(defaultdict):
                 fiaccount=transaction.fiaccount, uniqueid=transaction.uniqueid,
                 datetime=transaction.datetime, memo=transaction.memo,
                 security=transaction.security, units=units,
-                cash=adjusted_price, currency=transaction.currency)
+                cash=adjusted_price, currency=currency)
             gs = self.trade(trade, sort=sort)
             gains.extend(gs)
 
@@ -567,6 +569,64 @@ class Portfolio(defaultdict):
         handler = getattr(self, transaction.type)
         gains = handler(transaction, sort=sort)
         return gains
+
+
+###############################################################################
+# REPORTING FUNCTIONS
+###############################################################################
+# Data container for reporting gain
+GainReport = namedtuple('GainReport',
+                        ['fiaccount', 'security', 'opentx', 'gaintx', 'units',
+                         'currency', 'cost', 'proceeds', 'longterm'])
+
+
+def report_gain(gain):
+    """
+    Crunch the numbers for a Gain instance.
+    """
+    gaintx = gain.transaction
+    fiaccount = gaintx.fiaccount
+    security = gaintx.security
+
+    lot = gain.lot
+    opentx = lot.opentransaction
+
+    currency = lot.currency
+    assert currency
+    realizing_currency = gaintx.currency
+    if realizing_currency and (currency != realizing_currency):
+        # 26 CFR §1.988-2(a)(2)(iv)
+        # """
+        # (A)Amount realized. If stock or securities traded on an established
+        # securities market are sold by a cash basis taxpayer for nonfunctional
+        # currency, the amount realized with respect to the stock or securities
+        # (as determined on the trade date) shall be computed by translating
+        # the units of nonfunctional currency received into functional currency
+        # at the spot rate on the _settlement date_ of the sale.
+        #
+        # [...]
+        #
+        # (B)Basis. If stock or securities traded on an established securities
+        # market are purchased by a cash basis taxpayer for nonfunctional
+        # currency, the basis of the stock or securities shall be determined
+        # by translating the units of nonfunctional currency paid into
+        # functional currency at the spot rate on the _settlement date_ of the
+        # purchase.
+        #
+        # FIXME
+        msg = "{} currency doesn't match realizing {}"
+        raise ValueError(msg.format(lot, gaintx))
+
+    units = lot.units
+    proceeds = units * gain.price
+    cost = units * lot.price
+    gaindt = gain.transaction.datetime
+    opendt = lot.opentransaction.datetime
+    longterm = (units > 0) and (gaindt - opendt >= timedelta(days=366))
+
+    return GainReport(fiaccount=fiaccount, security=security, opentx=opentx,
+                      gaintx=gaintx, units=units, currency=currency, cost=cost,
+                      proceeds=proceeds, longterm=longterm)
 
 
 ###############################################################################

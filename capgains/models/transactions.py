@@ -183,7 +183,7 @@ class Transaction(Base, Mergeable):
                        'trade', 'exercise', name='transaction_type'),
                   nullable=False)
     memo = Column(Text)
-    # Currency denomination of Transaction.cash 
+    # Currency denomination of Transaction.cash
     currency = Column(Enum(*CURRENCY_CODES, name='transaction_currency'))
     # Change in money amount caused by Transaction
     cash = Column(Numeric)

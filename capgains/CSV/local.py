@@ -296,23 +296,22 @@ class CsvGainWriter(csv.DictWriter):
         """
         Transform a single Gain into a dict suitable to hand to self.writerow()
         """
-        account = gain.transaction.fiaccount
-        security = gain.transaction.security
-        lot = gain.lot
-        units = lot.units
-        proceeds = units * gain.price
-        cost = units * lot.price
-        gaindt = gain.transaction.datetime
-        opendt = lot.opentransaction.datetime
-        ltcg = (units > 0) and (gaindt - opendt >= timedelta(days=366))
-        disallowed = None  # FIXME
-        row = {'brokerid': account.fi.brokerid, 'acctid': account.number,
-               'ticker': security.ticker, 'secname': security.name,
-               'gaindt': gaindt, 'gaintxid': gain.transaction.uniqueid,
-               'ltcg': ltcg, 'opendt': opendt,
-               'opentxid': lot.opentransaction.uniqueid, 'units': units,
-               'proceeds': proceeds, 'cost': cost,
-               'currency': gain.transaction.currency, 'realized': proceeds - cost,
+        report = inventory.report_gain(gain)
+
+        # FIXME
+        disallowed = None
+
+        row = {'brokerid': report.fiaccount.fi.brokerid,
+               'acctid': report.fiaccount.number,
+               'ticker': report.security.ticker,
+               'secname': report.security.name,
+               'gaindt': report.gaintx.datetime,
+               'gaintxid': report.gaintx.uniqueid,
+               'ltcg': report.longterm, 'opendt': report.opentx.datetime,
+               'opentxid': report.opentx.uniqueid, 'units': report.units,
+               'proceeds': report.proceeds, 'cost': report.cost,
+               'currency': report.currency,
+               'realized': report.proceeds - report.cost,
                'disallowed': disallowed}
         return row
 
@@ -321,27 +320,30 @@ class CsvGainWriter(csv.DictWriter):
         Sum a list of Gains and transform into a dict suitable to hand to
         self.writerow()
         """
+        reports = [inventory.report_gain(gain) for gain in gains]
+
         # input gains have identical security ( itertools.groupby() )
-        security = gains[0].transaction.security
+        security = reports[0].security
 
+        # FIXME - can't do currency conversions
         # input gains must have identical currency
-        currency = gains[0].transaction.currency
-        assert all(gain.transaction.currency == currency for gain in gains)
+        currency = reports[0].currency
+        assert all(report.currency == currency for report in reports)
 
-        # extract (units, proceeds, cost)
-        data = [(g.lot.units, g.lot.units * g.price, g.lot.units * g.lot.price)
-                for g in gains]
-        running_totals = list(itertools.accumulate(data,
-                                                   # This adds the elements at the same index of each (units, proceeds, cost)
-                                                   lambda d0, d1: tuple(x + y for x, y in zip(d0, d1))))
-        (units, proceeds, cost) = running_totals[-1]
+        running_totals = itertools.accumulate(
+            reports, lambda r0, r1: inventory.GainReport(
+                fiaccount=None, security=security, opentx=None, gaintx=None,
+                units=r0.units + r1.units, currency=currency,
+                cost=r0.cost + r1.cost, proceeds=r0.proceeds + r1.proceeds,
+                longterm=None))
+        total = list(running_totals)[-1]
 
-        row = {'brokerid': None, 'acctid': None,
-               'gaindt': None, 'gaintxid': None,
-               'ltcg': None, 'opendt': None,
-               'opentxid': None, 'disallowed': None}
-        row.update({'ticker': security.ticker, 'secname': security.name,
-                    'currency': currency,
-                    'units': units, 'proceeds': proceeds, 'cost': cost,
-                    'realized': proceeds - cost})
+        row = {'brokerid': None, 'acctid': None, 'ticker': security.ticker,
+               'secname': security.name,
+               'gaindt': None, 'gaintxid': None, 'ltcg': None, 'opendt': None,
+               'opentxid': None, 'units': total.units,
+               'proceeds': total.proceeds, 'cost': total.cost,
+               'currency': currency,
+               'realized': total.proceeds - total.cost,
+               'disallowed': None}
         return row
