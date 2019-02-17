@@ -153,6 +153,7 @@ class TradesTestCase(DatabaseTest, unittest.TestCase):
         self.reader.seclist = ofxtools.models.SECLIST(stockinfo)
         self.reader.account = self.account
         self.reader.read_securities()
+        self.reader.currency_default = 'USD'
 
         invtran = ofxtools.models.INVTRAN(fitid='deadbeef', dttrade='20170203',
                                           memo='Fill up')
@@ -182,7 +183,7 @@ class TradesTestCase(DatabaseTest, unittest.TestCase):
             self.assertEqual(tx.memo, self.buystock.invbuy.invtran.memo)
         self.assertIs(tx.security, self.security)
         self.assertEqual(tx.units, 100)
-        self.assertEqual(tx.currency, None)
+        self.assertEqual(tx.currency, 'USD')  # self.reader.currency_default
         self.assertEqual(tx.cash, Decimal('129.99'))
         self.assertIsNone(tx.sort)
 

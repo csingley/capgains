@@ -54,8 +54,10 @@ class ReadTestCase(unittest.TestCase):
 
     @patch.object(OfxStatementReader, 'read')
     @patch.object(FlexStatementReader, 'read_dividends')
-    def testRead(self, mock_flex_read_dividends_method, mock_ofx_read_method):
+    @patch.object(FlexStatementReader, 'read_currency_rates')
+    def testRead(self, mock_flex_read_currency_rates_method, mock_flex_read_dividends_method, mock_ofx_read_method):
         self.reader.read()
+        mock_flex_read_currency_rates_method.assert_called_once()
         mock_flex_read_dividends_method.assert_called_once()
         mock_ofx_read_method.assert_called_with(True)
 
@@ -71,7 +73,8 @@ class ReadTestCase(unittest.TestCase):
         self.reader.statement = parser.FlexStatement(account=None,
                                                      securities=None,
                                                      dividends=[div0, div1],
-                                                     transactions=None)
+                                                     transactions=None,
+                                                     conversionrates=None)
         self.reader.read_dividends()
 
         divs = self.reader.dividends
@@ -96,7 +99,8 @@ class ReadTestCase(unittest.TestCase):
         self.reader.statement = parser.FlexStatement(account=None,
                                                      securities=[sec0, sec1],
                                                      dividends=None,
-                                                     transactions=None)
+                                                     transactions=None,
+                                                     conversionrates=None)
         self.reader.read_securities()
         self.assertEqual(mock_security_merge_method.mock_calls, [
             call(None, uniqueidtype=sec0.uniqueidtype, uniqueid=sec0.uniqueid,
