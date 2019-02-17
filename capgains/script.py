@@ -83,8 +83,8 @@ def wrapLots(args):
 
 def dump_positions(engine, infile, outfile, dtstart, dtend, consolidate):
     with sessionmanager(bind=engine) as session:
-        portfolio, gains = _process_transactions(session, dtstart, dtend,
-                                                 infile, consolidate)
+        portfolio, gains = _process_transactions(
+            session, dtstart=dtstart, dtend=dtend, begin=None, loadfile=infile)
 
         with open(outfile, 'w') as csvfile:
             writer = CsvLotWriter(session, csvfile)
