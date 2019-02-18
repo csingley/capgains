@@ -30,9 +30,6 @@ from common import (
 )
 
 
-DB_URI = CONFIG.db_uri
-
-
 class OfxReaderMixin(RollbackMixin):
     def setUp(self):
         super(OfxReaderMixin, self).setUp()

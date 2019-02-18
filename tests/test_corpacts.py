@@ -495,16 +495,16 @@ class CashKindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                         currency='USD', cash=Decimal('16.5'),
                         fiaccount=self.account, security=self.securities[0]),
             Transaction(datetime=datetime(2012, 4, 16, 20, 25),
+                        type='transfer',
+                        memo='DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000',
+                        fiaccount=self.account, security=self.securities[1], units=Decimal('17200.005'),
+                        fiaccountFrom=self.account, securityFrom=self.securities[0], unitsFrom=Decimal('-150000')),
+            Transaction(datetime=datetime(2012, 4, 16, 20, 25),
                         type='spinoff',
                         memo='DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000',
                         fiaccount=self.account, security=self.securities[2], units=Decimal('150000'),
                         securityFrom=self.securities[0],
                         numerator=Decimal('150000'), denominator=Decimal('150000')),
-            Transaction(datetime=datetime(2012, 4, 16, 20, 25),
-                        type='transfer',
-                        memo='DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000',
-                        fiaccount=self.account, security=self.securities[1], units=Decimal('17200.005'),
-                        fiaccountFrom=self.account, securityFrom=self.securities[0], unitsFrom=Decimal('-150000')),
     ]
 
 

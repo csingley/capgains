@@ -10,17 +10,15 @@ import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
 import ibflex
 import ofxtools
-import io
 
 
 # local imports
-# from capgains import config
+from capgains.config import CONFIG
 from capgains import (database, flex, ofx, models)
 from capgains.inventory import Transaction
 
 
-# DB_URI = config.make_db_uri(database='test')
-DB_URI = 'sqlite:///'
+DB_URI = CONFIG.test_db_uri
 DB_STATE = {'engine': create_engine(DB_URI),
             'connection': None, 'transaction': None, 'session': None}
 
@@ -193,13 +191,16 @@ class XmlSnippetMixin(RollbackMixin):
                         cls.session, **extra_security))
 
     def testEndToEnd(self):
-        """ Test data persisted to DB all the way from raw XML """
         main_fn = getattr(self.reader, self.txs_entry_point)
         main_fn(self.parsed_txs)
 
+        # Don't order_by() Transaction.type, b/c this sort differently
+        # under e.g. sqlite (alpha by string) vs. postgresql (enum order)
         txs = self.session.query(models.transactions.Transaction)\
                 .order_by(models.transactions.Transaction.datetime,
-                          models.transactions.Transaction.type)\
+                          models.transactions.Transaction.memo,
+                          models.transactions.Transaction.cash,
+                          models.transactions.Transaction.units)\
                 .all()
         predicted_txs = self.persisted_txs
         self.assertEqual(len(predicted_txs), len(txs))

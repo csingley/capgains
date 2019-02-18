@@ -14,22 +14,44 @@ class CapgainsConfig(configparser.SafeConfigParser):
                       'username': '', 'password': 'T0PS3CR3T',
                       'host': 'localhost', 'port': '5432',
                       'database': 'capgains'}
+        self['test'] = {'dialect': 'sqlite', }
         self['data'] = {'default_dir': ''}
         self['work'] = {'default_dir': ''}
         self['books'] = {'functional_currency': 'USD'}
 
     @property
     def db_uri(self):
-        db = self['db']
-        template = '{dialect}+{driver}://{username}:{password}@{host}:{port}/{database}'
-        values = {'dialect': db['dialect'],
-                  'driver': db['driver'],
-                  'username': db.get('username', ''),
-                  'password': db.get('password', ''),
-                  'host': db.get('host', ''),
-                  'port': db['port'],
-                  'database': db.get('database', '')}
-        return template.format(**values)
+        return self._make_db_uri(**self['db'])
+
+    @property
+    def test_db_uri(self):
+        return self._make_db_uri(**self['test'])
+
+    def _make_db_uri(self, **kwargs):
+        schema = '{dialect}'
+        if kwargs.get('driver', None):
+            schema += '+{driver}'
+
+        credentials = ''
+        if kwargs.get('username', None):
+            credentials = '{username}'
+            if kwargs.get('password', None):
+                credentials += ':{password}'
+
+        authority = ''
+        if kwargs.get('host', None):
+            authority = '@{host}'
+            if kwargs.get('port', None):
+                authority += ':{port}'
+
+        db = ''
+        if kwargs.get('database', None):
+            db = '/{database}'
+        
+        template = "{schema}://{credentials}{authority}{db}".format(
+            schema=schema, credentials=credentials, authority=authority,
+            db=db)
+        return template.format(**kwargs)
 
 
 CONFIG = CapgainsConfig()

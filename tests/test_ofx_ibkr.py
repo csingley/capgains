@@ -24,9 +24,6 @@ from common import (
 )
 
 
-DB_URI = CONFIG.db_uri
-
-
 class TradeTestCase(RollbackMixin, unittest.TestCase):
     def filterTradesTestCase(self):
         pass

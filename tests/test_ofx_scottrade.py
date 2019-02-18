@@ -3,7 +3,13 @@
 """
 # stdlib imports
 import unittest
+from datetime import datetime
+from decimal import Decimal
 #  from unittest.mock import patch
+
+
+# 3rd party imports
+import ofxtools
 
 
 # local imports
@@ -22,9 +28,6 @@ from common import (
 )
 
 
-DB_URI = CONFIG.db_uri
-
-
 class TradeTestCase(OfxSnippetMixin, unittest.TestCase):
     readerclass = OfxStatementReader
     ofx = """
@@ -40,7 +43,31 @@ class TradeTestCase(OfxSnippetMixin, unittest.TestCase):
         pass
 
     def testTradesCancel(self):
-        pass
+        self.reader.doTrades(self.parsed_txs)
+        trans = self.reader.transactions
+        self.assertEqual(len(trans), 11)
+        for tran in trans:
+            self.assertEqual(tran.fiaccount, self.account)
+            self.assertEqual(tran.type, 'trade')
+            self.assertEqual(tran.security, self.securities[0])
+            self.assertEqual(tran.currency, 'USD')
+
+        self.assertEqual(sum([t.units for t in trans]), Decimal('149999'))
+        self.assertEqual(sum([t.cash for t in trans]), Decimal('-91499.39'))
+
+        UTC = ofxtools.utils._UTC()
+        for index, (day, units, cash) in enumerate([
+            (22, 450, Decimal('-274.5')), (22, 2050, Decimal('-1250.5')),
+            (22, 4000, Decimal('-2440')), (22, 6000, Decimal('-3660')),
+            (22, 9000, Decimal('-5490')), (22, 10000, Decimal('-6100')),
+            (22, 13500, Decimal('-8235')), (22, 15000, Decimal('-9150')),
+            (22, 31000, Decimal('-18910')), (24, 13501, Decimal('-8235.61')),
+            (27, 45498, Decimal('-27753.78')), ]):
+            tran = trans[index]
+            self.assertEqual(tran.datetime,
+                             datetime(2012, 2, day, 17, tzinfo=UTC))
+            self.assertEqual(tran.units, units)
+            self.assertEqual(tran.cash, cash)
 
 
 if __name__ == '__main__':
