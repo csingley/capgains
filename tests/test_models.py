@@ -3,51 +3,25 @@
 """
 # stdlib imports
 import unittest
-import os
-
-
-# 3rd party imports
-from sqlalchemy import create_engine
 
 
 # local imports
-from capgains.database import Session, Base
+from capgains.config import CONFIG
 from capgains.models.transactions import (
     Fi, FiAccount, Security, SecurityId,
     Transaction,
 )
+from common import (
+    setUpModule,
+    tearDownModule,
+    RollbackMixin,
+)
 
 
-DB_URI = os.getenv('DB', 'sqlite://')
+DB_URI = CONFIG.db_uri
 
 
-def setUpModule():
-    """
-    Called by unittest.TestRunner before any other tests in this module.
-    """
-    global engine
-    engine = create_engine(DB_URI)
-
-
-def tearDownModule():
-    engine.dispose()
-
-
-class DatabaseTest(object):
-    """ Mixin providing DB setup/teardown methods """
-    def setUp(self):
-        self.connection = engine.connect()
-        self.transaction = self.connection.begin()
-        self.session = Session(bind=self.connection)
-        Base.metadata.create_all(bind=self.connection)
-
-    def tearDown(self):
-        self.session.close()
-        self.transaction.rollback()
-        self.connection.close()
-
-
-class SecurityTestCase(DatabaseTest, unittest.TestCase):
+class SecurityTestCase(RollbackMixin, unittest.TestCase):
     def testMerge(self):
         sec0 = Security.merge(
             self.session, ticker='CNVR.SPO',

@@ -15,46 +15,31 @@ import ofxtools
 
 
 # local imports
+from capgains.config import CONFIG
 from capgains.ofx.reader import (
     OfxStatementReader, CashTransaction,
 )
 from capgains.models.transactions import (
     Fi, FiAccount, Security, SecurityId, Transaction
 )
-from capgains.database import Session, Base
+from common import (
+    setUpModule,
+    tearDownModule,
+    RollbackMixin,
+    OfxSnippetMixin,
+)
 
 
-DB_URI = os.getenv('DB', 'sqlite://')
+DB_URI = CONFIG.db_uri
 
 
-def setUpModule():
-    """
-    Called by unittest.TestRunner before any other tests in this module.
-    """
-    global engine
-    engine = create_engine(DB_URI)
-
-
-def tearDownModule():
-    engine.dispose()
-
-
-class DatabaseTest(object):
-    """ Mixin providing DB setup/teardown methods """
+class OfxReaderMixin(RollbackMixin):
     def setUp(self):
-        self.connection = engine.connect()
-        self.transaction = self.connection.begin()
-        self.session = Session(bind=self.connection)
-        Base.metadata.create_all(bind=self.connection)
+        super(OfxReaderMixin, self).setUp()
         self.reader = OfxStatementReader(self.session)
 
-    def tearDown(self):
-        self.session.close()
-        self.transaction.rollback()
-        self.connection.close()
 
-
-class ReadTestCase(DatabaseTest, unittest.TestCase):
+class ReadTestCase(OfxReaderMixin, unittest.TestCase):
     def setUp(self):
         super(ReadTestCase, self).setUp()
         acct = ofxtools.models.INVACCTFROM(acctid='12345', brokerid='foo.bar')
@@ -133,7 +118,7 @@ class ReadTestCase(DatabaseTest, unittest.TestCase):
         pass
 
 
-class TradesTestCase(DatabaseTest, unittest.TestCase):
+class TradesTestCase(OfxReaderMixin, unittest.TestCase):
     def setUp(self):
         super(TradesTestCase, self).setUp()
 
@@ -197,7 +182,7 @@ class TradesTestCase(DatabaseTest, unittest.TestCase):
         self._mergeTradeTest(memo='Load the boat')
 
 
-class CashTransactionsTestCase(DatabaseTest, unittest.TestCase):
+class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
     def testGroupCashTransactionsForCancel(self):
         """
         keyCashTransaction() extracts (incometype, (uniqueidtype, uniqueid), memo)
@@ -290,7 +275,7 @@ class CashTransactionsTestCase(DatabaseTest, unittest.TestCase):
         self._mergeRetOfCapTest(memo='Bingo')
 
 
-class TransactionTestCase(DatabaseTest, unittest.TestCase):
+class TransactionTestCase(OfxReaderMixin, unittest.TestCase):
     @patch.object(Transaction, 'merge', return_value='mock_transaction')
     def testMergeTransaction(self, mock_merge_method):
         output = self.reader.merge_transaction(uniqueid='test')

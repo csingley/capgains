@@ -19,6 +19,7 @@ from capgains.flex.reader import (
     FlexStatementReader, ParsedCorpAct,
 )
 
+from capgains.config import CONFIG
 from capgains.flex import parser
 from capgains.flex.parser import (CorporateAction, )
 from capgains.models.transactions import (Security, Transaction)
@@ -31,7 +32,8 @@ from common import (
     XmlSnippetMixin,
 )
 
-DB_URI = os.getenv('DB', 'sqlite://')
+
+DB_URI = CONFIG.db_uri
 
 
 class FlexStatementReaderMixin(RollbackMixin):

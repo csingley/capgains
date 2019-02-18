@@ -4,56 +4,30 @@
 # stdlib imports
 import unittest
 #  from unittest.mock import patch
-import os
 from datetime import datetime
 from decimal import Decimal
 
 
-# 3rd party imports
-from sqlalchemy import create_engine
-import ofxtools
-
-
 # local imports
+from capgains.config import CONFIG
 from capgains.ofx.ibkr import (
     OfxStatementReader,
 )
 from capgains.models.transactions import (
     Fi, FiAccount, Security, Transaction
 )
-from capgains.database import Session, Base
+from common import (
+    setUpModule,
+    tearDownModule,
+    RollbackMixin,
+    OfxSnippetMixin,
+)
 
 
-DB_URI = os.getenv('DB', 'sqlite://')
+DB_URI = CONFIG.db_uri
 
 
-def setUpModule():
-    """
-    Called by unittest.TestRunner before any other tests in this module.
-    """
-    global engine
-    engine = create_engine(DB_URI)
-
-
-def tearDownModule():
-    engine.dispose()
-
-
-class DatabaseTest(object):
-    """ Mixin providing DB setup/teardown methods """
-    def setUp(self):
-        self.connection = engine.connect()
-        self.transaction = self.connection.begin()
-        self.session = Session(bind=self.connection)
-        Base.metadata.create_all(bind=self.connection)
-        self.reader = OfxStatementReader(self.session)
-
-    def tearDown(self):
-        self.session.close()
-        self.transaction.rollback()
-        self.connection.close()
-
-class TradeTestCase(DatabaseTest, unittest.TestCase):
+class TradeTestCase(RollbackMixin, unittest.TestCase):
     def filterTradesTestCase(self):
         pass
 
@@ -64,30 +38,21 @@ class TradeTestCase(DatabaseTest, unittest.TestCase):
         pass
 
 
-class CashTransactionsTestCase(DatabaseTest, unittest.TestCase):
-    def testDoCashTransactions(self):
-        ofx = """
+class CashTransactionsTestCase(OfxSnippetMixin, unittest.TestCase):
+    readerclass = OfxStatementReader
+    ofx = """
 <INVTRANLIST> <DTSTART>20160331202000.000[-4:EDT]</DTSTART> <DTEND>20160429202000.000[-4:EDT]</DTEND> <INCOME> <INVTRAN> <FITID>20160413.U999999.e.USD.6352363694</FITID> <DTTRADE>20160413202000.000[-4:EDT]</DTTRADE> <MEMO>RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)</MEMO> </INVTRAN> <SECID> <UNIQUEID>ANN741081064</UNIQUEID> <UNIQUEIDTYPE>ISIN</UNIQUEIDTYPE> </SECID> <INCOMETYPE>DIV</INCOMETYPE> <TOTAL>138215</TOTAL> <SUBACCTSEC>CASH</SUBACCTSEC> <SUBACCTFUND>CASH</SUBACCTFUND> <CURRENCY> <CURRATE>1.0</CURRATE> <CURSYM>USD</CURSYM> </CURRENCY> </INCOME> <INVEXPENSE> <INVTRAN> <FITID>20160413.U999999.e.USD.6356130554</FITID> <DTTRADE>20160413202000.000[-4:EDT]</DTTRADE> <MEMO>RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE - REVERSAL (Return of Capital)</MEMO> </INVTRAN> <SECID> <UNIQUEID>ANN741081064</UNIQUEID> <UNIQUEIDTYPE>ISIN</UNIQUEIDTYPE> </SECID> <TOTAL>-138215</TOTAL> <SUBACCTSEC>CASH</SUBACCTSEC> <SUBACCTFUND>CASH</SUBACCTFUND> <CURRENCY> <CURRATE>1.0</CURRATE> <CURSYM>USD</CURSYM> </CURRENCY> </INVEXPENSE> <INCOME> <INVTRAN> <FITID>20160413.U999999.e.USD.6356130558</FITID> <DTTRADE>20160413202000.000[-4:EDT]</DTTRADE> <MEMO>RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)</MEMO> </INVTRAN> <SECID> <UNIQUEID>ANN741081064</UNIQUEID> <UNIQUEIDTYPE>ISIN</UNIQUEIDTYPE> </SECID> <INCOMETYPE>DIV</INCOMETYPE> <TOTAL>139000</TOTAL> <SUBACCTSEC>CASH</SUBACCTSEC> <SUBACCTFUND>CASH</SUBACCTFUND> <CURRENCY> <CURRATE>1.0</CURRATE> <CURSYM>USD</CURSYM> </CURRENCY> </INCOME> </INVTRANLIST>
-        """
+    """
 
-        #  element = ET.fromstring(xml)
-        treebuilder = ofxtools.Parser.TreeBuilder()
-        treebuilder.feed(ofx)
-        invtranlist = ofxtools.models.base.Aggregate.from_etree(treebuilder.close())
-
-        rhdgf = Security.merge(self.session, uniqueidtype='ISIN', uniqueid='ANN741081064')
-        self.reader.securities[('ISIN', 'ANN741081064')] = rhdgf
-
-        fi = Fi(brokerid='dch.com', name='Dewey Cheatham & Howe')
-        self.reader.account = FiAccount(fi=fi, number='5678', name='Test')
-        self.session.add(self.reader.account)
-
-        self.reader.doCashTransactions(invtranlist)
+    def testDoCashTransactions(self):
+        self.reader.doCashTransactions(self.parsed_txs)
         trans = self.reader.transactions
 
         # <INVEXPENSE> cancels first <INCOME>
         self.assertEqual(len(trans), 1)
         tran = trans.pop()
+        self.assertEqual(len(self.securities), 1)
+        rhdgf = self.securities[0]
         self.assertIsInstance(tran, Transaction)
         self.assertEqual(tran.uniqueid, '20160413.U999999.e.USD.6356130558')
         # FIXME - timezone adjustment

@@ -9,11 +9,13 @@ import xml.etree.ElementTree as ET
 #  import sqlalchemy
 from sqlalchemy import create_engine
 import ibflex
+import ofxtools
+import io
 
 
 # local imports
 # from capgains import config
-from capgains import (database, flex, models)
+from capgains import (database, flex, ofx, models)
 from capgains.inventory import Transaction
 
 
@@ -99,8 +101,44 @@ class RollbackMixin(object):
         print('in {} - {}()'.format(currentTest, callingFunction))
 
 
+class OfxSnippetMixin(RollbackMixin):
+    readerclass = ofx.reader.OfxStatementReader
+    ofx = NotImplemented
+
+    @classmethod
+    def setUpClass(cls):
+        super(OfxSnippetMixin, cls).setUpClass()
+
+        treebuilder = ofxtools.Parser.TreeBuilder()
+        treebuilder.feed(cls.ofx)
+        cls.parsed_txs = ofxtools.models.base.Aggregate.from_etree(treebuilder.close())
+
+        cls.reader = cls.readerclass(cls.session)
+
+        # Manually set up fake account; save copy as class attribute.
+        cls.fi = models.transactions.Fi.merge(cls.session, brokerid='4705',
+                                              name='Dewey Cheatham & Howe')
+        cls.account = models.transactions.FiAccount.merge(
+            cls.session, fi=cls.fi, number='5678', name='Test')
+
+        cls.reader.account = cls.account
+
+        cls.securities = []  # Save copies as class attribute
+        for tx in cls.parsed_txs:
+            uniqueidtype = tx.uniqueidtype
+            uniqueid = tx.uniqueid
+            sec = models.transactions.Security.merge(
+                cls.session, uniqueidtype=uniqueidtype, uniqueid=uniqueid)
+            cls.reader.securities[(uniqueidtype, uniqueid)] = sec
+            if sec not in cls.securities:
+                cls.securities.append(sec)
+
+        cls.reader.currency_default = 'USD'
+
+
 class XmlSnippetMixin(RollbackMixin):
-    txs_entry_point = NotImplementedError  # Name of main function (type str)
+    txs_entry_point = NotImplemented  # Name of main function (type str)
+    xml = NotImplemented
 
     @property
     def persisted_txs(self):
@@ -182,4 +220,3 @@ class XmlSnippetMixin(RollbackMixin):
                 msg = "{} differs from {} in field '{}':\n{} != {}"
                 self.fail(msg.format(predicted, actual, field, pred_field,
                                      act_field))
-
