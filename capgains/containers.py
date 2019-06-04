@@ -96,12 +96,12 @@ class GroupedList(list):
             items1, items2 = itertools.tee(items)
             originals, cancels = (itertools.filterfalse(filterfunc, items1),
                                   filter(filterfunc, items2))
-            originals = sorted(list(originals), key=sortfunc)
+            originals = sorted(originals, key=sortfunc)
 
             for cancel in cancels:
                 canceled = first_true(
                     originals, pred=functools.partial(matchfunc, cancel))
-                if not canceled:
+                if canceled is False:
                     raise ValueError(
                         "Can't find Transaction canceled by {}".format(cancel))
                 # N.B. must remove canceled transaction from further iterations
