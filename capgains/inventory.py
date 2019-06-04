@@ -139,7 +139,7 @@ def part_lot(lot, units):
     Returns: 2-tuple of Lots
     """
     if not isinstance(units, Decimal):
-        raise ValueError(msg=f"units must be type decimal.Decimal, not '{units}'")
+        raise ValueError(f"units must be type decimal.Decimal, not '{units}'")
     if not abs(units) < abs(lot.units):
         msg = f"units={units} must have smaller magnitude than lot.units={lot.units}"
         raise ValueError(msg)

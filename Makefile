@@ -1,6 +1,6 @@
 test:
 	coverage erase
-	python `which nosetests` -dsv --with-coverage --cover-package capgains tests/*.py
+	python `which nosetests` -dsv --nologcapture --with-coverage --cover-package capgains tests/*.py
 
 clean:
 	find -regex '.*\.pyc' -exec rm {} \;
