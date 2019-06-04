@@ -1,32 +1,40 @@
 # coding: utf-8
 """
-Processes Transactions to track cost basis via Lots, and matches Transactions
-to report amount and character of realized Gains.
+Data structures and functions for tracking units/cost history of financial assets.
+Besides the fundamental requirement of keeping accurate tallies, the main purpose
+of this module is to match opening and closing transactions in order to calculate
+the amount and character of realized gains.
 
-The main things to remember about this data model:
-    1.  Lots get split as needed by every Transaction affecting them; if you
-        use the high-level interface of this module (trade(), split(), etc.)
-        you should never need to deal with a partial Lot, only a whole Lot.
+The basic way to use this module is to create a Portfolio instance, then pass
+Transaction instances to its processTransaction() method.
 
-    2.  Everything significant about a Lot can be changed by Transactions
-        (except opentransaction).  You can get a Lot's current FiAccount and
-        Security by reference to its createtransaction.  A Lot must keep
-        state for its current units and price (since these can be changed
-        after its createtransaction by e.g. returns of capital and splits)
-        and currency (since some createtransactions, e.g. transfers, don't
-        provide currency information).
+Each Lot tracks the current state of a particular bunch of securities - (unit, cost).
 
-    3.  Lots may be loaded from CSV files, in which case the corresponding
-        opentransactions and createtransactions may not be available in the DB.
+Additionally, each Lot keeps a reference to its opening Transaction, i.e. the
+Transaction which started its holding period for tax purposes (to determine whether
+the character of realized Gains are long-term or short-term).
 
-    4.  Gains may be realized from return of capital Transactions, which
-        generally don't provide per-share distribution information.  Therefore
-        Gains must keep state for the realizing price.
+Lots are collected in sequences called "positions", which are the values of a
+Portfolio mapping keyed by a (FI account, security) called a "pocket".
 
-    5.  Lots are immutable, and nothing in this module changes anything about
-        Transactions, so you can rely on the accuracy of Gain.lot and
-        Gain.transaction.  Subsequent changes to the same Lots won't affect
-        the state of previously calculated Gains.
+Each Lot keeps a reference to its "creating" Transaction, i.e. the Transaction which
+added the Lot to its current pocket.  In the case of an opening trade, the
+opening Transaction and the creating Transaction will be the same.  In the case of
+of a transfer, spin-off, reorg, etc., these will be different; the date of the tax
+holding period can be sourced from the opening Transaction, while the current
+pocket can be sourced from the creating Transaction.
+
+Gains link opening Transactions to realizing Transactions - which are usually closing
+Transactions, but may also come from return of capital distributions that exceed
+cost basis.  Return of capital Transactions generally don't provide per-share
+distribution information, so Gains must keep state for the realizing price.
+
+Lots and Transactions are immutable, so you can rely on the accuracy of references
+to them (e.g. Gain.lot & Gain.transaction).  Everything about a Lot (except
+opentransaction) can be changed by Transactions; the changes are reflected in a
+newly-created Lot, leaving the old Lot undisturbed.
+
+Nothing in this module changes a Transaction or a Gain, once created.
 """
 # stdlib imports
 from collections import (namedtuple, defaultdict)
@@ -45,11 +53,11 @@ Lot = namedtuple('Lot', ['opentransaction', 'createtransaction', 'units',
                          'price', 'currency'])
 Lot.__doc__ += ': Cost basis/holding data container'
 Lot.opentransaction.__doc__ = 'Transaction instance that began holding period'
-Lot.createtransaction.__doc__ = ('Transaction instance that created the Lot ',
+Lot.createtransaction.__doc__ = ('Transaction instance that created the Lot '
                                  'for the current Position')
 Lot.units.__doc__ = '(type decimal.Decimal; nonzero)'
-Lot.price.__doc__ = '(type decimal.Decimal; positive or zero)'
-Lot.currency.__doc__ = 'Currency denomination of Lot.price'
+Lot.price.__doc__ = 'Per-unit cost (type decimal.Decimal; positive or zero)'
+Lot.currency.__doc__ = 'Currency denomination of cost price'
 
 
 Gain = namedtuple('Gain', ['lot', 'transaction', 'price'])
@@ -115,8 +123,7 @@ class Inconsistent(InventoryError):
     def __init__(self, transaction, msg):
         self.transaction = transaction
         self.msg = msg
-        new_msg = "{} inconsistent: {}"
-        super(Inconsistent, self).__init__(new_msg.format(transaction, msg))
+        super(Inconsistent, self).__init__(f"{transaction} inconsistent: {msg}")
 
 
 ###############################################################################
@@ -132,14 +139,13 @@ def part_lot(lot, units):
     Returns: 2-tuple of Lots
     """
     if not isinstance(units, Decimal):
-        msg = "units must be type decimal.Decimal, not '{}'"
-        raise ValueError(msg.format(units))
+        raise ValueError(msg=f"units must be type decimal.Decimal, not '{units}'")
     if not abs(units) < abs(lot.units):
-        msg = "units={} must have smaller magnitude than lot.units={}"
-        raise ValueError(msg.format(units, lot.units))
+        msg = f"units={units} must have smaller magnitude than lot.units={lot.units}"
+        raise ValueError(msg)
     if not units * lot.units > 0:
-        msg = "units={} and lot.units={} must have same sign (non-zero)"
-        raise ValueError(msg.format(units, lot.units))
+        msg = f"units={units} and lot.units={lot.units} must have same sign (non-zero)"
+        raise ValueError(msg)
     return (lot._replace(units=units), lot._replace(units=lot.units - units))
 
 
@@ -156,8 +162,8 @@ def take_lots(lots, criterion=None, max_units=None):
                       match criterion.
 
     Returns: 2-tuple of -
-                * list of Lots matching criterion/units
-                * list of other Lots
+            * list of Lots matching criterion/units
+            * list of other Lots
     """
     assert max_units is None or isinstance(max_units, Decimal)
 
@@ -165,7 +171,8 @@ def take_lots(lots, criterion=None, max_units=None):
         def criterion(lot):
             return True
 
-    lots_taken = []; lots_left = []
+    lots_taken = []
+    lots_left = []
     units_remain = max_units
 
     for lot in lots:
@@ -178,15 +185,17 @@ def take_lots(lots, criterion=None, max_units=None):
                 lots_left.append(lot)
             elif abs(lot.units) <= abs(units_remain):
                 if not lot.units * units_remain > 0:
-                    msg = "units_remain={} and Lot.units={} must have same sign (nonzero)"
-                    raise Inconsistent(None, msg.format(units_remain, lot.units))
+                    msg = (f"units_remain={units_remain} and Lot.units={lot.units} "
+                           "must have same sign (nonzero)")
+                    raise Inconsistent(None, msg)
 
                 lots_taken.append(lot)
                 units_remain -= lot.units
             else:
                 if not lot.units * units_remain > 0:
-                    msg = "units_remain={} and Lot.units={} must have same sign (nonzero)"
-                    raise Inconsistent(None, msg.format(units_remain, lot.units))
+                    msg = (f"units_remain={units_remain} and Lot.units={lot.units} "
+                           "must have same sign (nonzero)")
+                    raise Inconsistent(None, msg)
 
                 taken, left = part_lot(lot, units_remain)
                 lots_taken.append(taken)
@@ -205,19 +214,20 @@ def take_basis(lots, criterion, fraction):
           fraction - portion of cost to take.
 
     Returns: 2-tuple of -
-                0) list of Lots (copies of Lots meeting criterion, with each
-                   price updated to reflect the basis removed)
-                1) list of Lots (original position, less basis removed)
+            0) list of Lots (copies of Lots meeting criterion, with each
+               price updated to reflect the basis removed)
+            1) list of Lots (original position, less basis removed)
     """
     if criterion is None:
         def criterion(lot):
             return True
 
     if not (0 <= fraction <= 1):
-        msg = "fraction must be between 0 and 1 (inclusive), not '{}'"
-        raise ValueError(msg.format(fraction))
+        msg = f"fraction must be between 0 and 1 (inclusive), not '{fraction}'"
+        raise ValueError(msg)
 
-    lots_taken = []; lots_left = []
+    lots_taken = []
+    lots_left = []
 
     for lot in lots:
         if criterion(lot):
@@ -231,10 +241,13 @@ def take_basis(lots, criterion, fraction):
 
 
 ###############################################################################
-# PORTFOLIO - dict container for positions
+# PORTFOLIO
 ###############################################################################
 class Portfolio(defaultdict):
-    """ """
+    """
+    Mapping container for positions (i.e. sequences of Lots),
+    keyed by (FI account, security) a/k/a "pocket".
+    """
     default_factory = list
 
     def __init__(self, *args, **kwargs):
@@ -259,8 +272,7 @@ class Portfolio(defaultdict):
         self._validate_args(transaction,
                             units=Decimal, cash=(type(None), Decimal))
         if transaction.units == 0:
-            msg = "units can't be zero: {}".format(transaction)
-            raise ValueError(msg)
+            raise ValueError(f"units can't be zero: {transaction}")
 
         pocket = (transaction.fiaccount, transaction.security)
         position = self[pocket]
@@ -293,7 +305,7 @@ class Portfolio(defaultdict):
     def returnofcapital(self, transaction, sort=None):
         """
         Apply cash to reduce Lot cost basis; realize Gain once basis has been
-        reducd to zero.
+        reduced to zero.
         """
         self._validate_args(transaction, cash=Decimal)
 
@@ -305,9 +317,8 @@ class Portfolio(defaultdict):
         affected = list(filter(longAsOf(transaction.datetime), position))
         units = sum([lot.units for lot in affected])
         if units == 0:
-            msg = "no long position for {} in {} as of {}".format(
-                transaction.fiaccount, transaction.security,
-                transaction.datetime)
+            msg = (f"No long position for {transaction.fiaccount} in "
+                   f"{transaciton.security} as of {transaction.datetime}")
             raise Inconsistent(transaction, msg)
         priceDelta = transaction.cash / units
 
@@ -343,7 +354,8 @@ class Portfolio(defaultdict):
 
         criterion = openAsOf(transaction.datetime)
         position_new = []
-        unitsTo = Decimal('0'); unitsFrom = Decimal('0')
+        unitsTo = Decimal('0')
+        unitsFrom = Decimal('0')
 
         for lot in position:
             if criterion(lot):
@@ -357,10 +369,9 @@ class Portfolio(defaultdict):
 
         calcUnits = unitsTo - unitsFrom
         if abs(calcUnits - transaction.units) > Decimal('0.001'):
-            msg = ("For Lot.unitsFrom={}, split ratio {}:{} should yield "
-                   "units={} not units={}").format(
-                       unitsFrom, transaction.numerator,
-                       transaction.denominator, calcUnits, transaction.units)
+            msg = (f"For Lot.unitsFrom={unitsFrom}, split ratio "
+                   f"{transaction.numerator}:{transaction.denominator} should yield "
+                   f"units={calcUnits} not units={transaction.units}")
             raise Inconsistent(transaction, msg)
 
         self[pocket] = position_new
@@ -374,14 +385,14 @@ class Portfolio(defaultdict):
         """
         self._validate_args(transaction, units=Decimal, unitsFrom=Decimal)
         if transaction.units * transaction.unitsFrom >= 0:
-            msg = "units and unitsFrom aren't oppositely signed in {}"
-            raise ValueError(msg.format(transaction))
+            msg = f"units and unitsFrom aren't oppositely signed in {transaction}"
+            raise ValueError(msg)
 
         ratio = -transaction.units / transaction.unitsFrom
         pocketFrom = (transaction.fiaccountFrom, transaction.securityFrom)
         positionFrom = self[pocketFrom]
         if not positionFrom:
-            msg = "No position in {}".format(pocketFrom)
+            msg = f"No position in {pocketFrom}"
             raise Inconsistent(transaction, msg)
         sort = sort or FIFO
         positionFrom.sort(**sort)
@@ -397,10 +408,9 @@ class Portfolio(defaultdict):
         lunitsFrom = sum([l.units for l in lotsFrom])
         tunitsFrom = transaction.unitsFrom
         if abs(lunitsFrom + tunitsFrom) > 0.001:
-            msg = ("Position in {} has units={}; can't satisfy "
-                   "unitsFrom={}")
-            raise Inconsistent(transaction,
-                               msg.format(pocketFrom, lunitsFrom, tunitsFrom))
+            msg = (f"Position in {pocketFrom} has units={lunitsFrom}; "
+                   f"can't satisfy unitsFrom={tunitsFrom}")
+            raise Inconsistent(transaction, msg)
 
         self[pocketFrom] = positionFrom
 
@@ -467,12 +477,10 @@ class Portfolio(defaultdict):
 
         takenUnits = sum([lot.units for lot in lotsFrom])
         if abs(takenUnits * splitRatio - units) > 0.0001:
-            msg = ("Spinoff {} for {} requires {} units={} (not units={}) "
-                   "to yield {} units={}")
-            raise Inconsistent(transaction,
-                               msg.format(numerator, denominator, securityFrom,
-                                          units / splitRatio, takenUnits,
-                                          transaction.security, units))
+            msg = (f"Spinoff {numerator} for {denominator} requires {securityFrom} "
+                   f"units={units / splitRation} (not units={takenUnits}) "
+                   f"to yield {transactions.security} units={units}")
+            raise Inconsistent(transaction, msg)
 
         self[pocketFrom] = positionFrom
 
@@ -524,8 +532,8 @@ class Portfolio(defaultdict):
 
         takenUnits = sum([lot.units for lot in lotsFrom])
         if abs(takenUnits) - abs(unitsFrom) > 0.0001:
-            msg = "Exercise Lot.units={} (not {})"
-            raise Inconsistent(transaction, msg.format(takenUnits, unitsFrom))
+            msg = f"Exercise Lot.units={takenUnits} (not {unitsFrom})"
+            raise Inconsistent(transaction, msg)
 
         self[pocketFrom] = positionFrom
 
@@ -564,9 +572,9 @@ class Portfolio(defaultdict):
                     val = tuple(v.__name__ for v in val)
                 else:
                     val = val.__name__
-                attrname = "{}.{}".format(transaction.__class__.__name__, arg)
-                msg = "{} must be type {}, not {}: {}".format(
-                    attrname, val, type(attr).__name__, transaction)
+                attrname = f"{transaction.__class.__.__name__}.{arg}"
+                msg = (f"{attrname} must be type {val}, "
+                       f"not {type(attr).__name__}: {transaction}")
                 raise ValueError(msg)
 
     def processTransaction(self, transaction, sort=None):
@@ -614,7 +622,7 @@ def report_gain(session, gain):
 
 def translate_gain(session, gain):
     """
-    Transform a Gain instance's realizing transaction to functional currency.
+    Translate Gain instance's realizing transaction to functional currency.
 
     Returns a Gain instance.
     """
@@ -632,11 +640,6 @@ def translate_gain(session, gain):
     # by translating the units of nonfunctional currency paid into
     # functional currency at the spot rate on the _settlement date_ of the
     # purchase.
-
-    # FIXME
-    #  msg = "{} currency doesn't match realizing {}"
-    #  raise ValueError(msg.format(gain.lot, gain.transaction))
-
     lot, gaintx, gainprice = gain.lot, gain.transaction, gain.price
 
     functional_currency = CONFIG['books']['functional_currency']

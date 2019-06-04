@@ -2,7 +2,7 @@
 """
 WORKFLOW
 --------
-0) If not the initial period, locate CSV dump of previous period lots.
+0) If not the initial period, load CSV dump of previous period lots.
 1) Import current period transaction data files.
 2) Dump gains, passing in args for:
     * previous period lots CSV file
@@ -31,7 +31,7 @@ from sqlalchemy import and_
 # Local imports
 from capgains import flex, ofx, CSV, CONFIG
 from capgains.database import Base, sessionmanager
-from capgains.models.transactions import (FiAccount, Security, Transaction)
+from capgains.models.transactions import (Security, Transaction)
 from capgains.inventory import Portfolio
 from capgains.CSV.local import (CsvLotReader, CsvLotWriter, CsvGainWriter)
 

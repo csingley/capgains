@@ -1,4 +1,9 @@
 """
+CSV readers/writers for internal use by capgains,
+not to import data from external sources.
+
+This module provides the ability to dump/load Transactions, Lots, and Gains
+to & from CSV files.
 """
 # stdlib imports
 import csv
