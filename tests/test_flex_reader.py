@@ -22,7 +22,7 @@ from capgains.flex.reader import (
 from capgains.config import CONFIG
 from capgains.flex import parser
 from capgains.flex.parser import (CorporateAction, )
-from capgains.models.transactions import (Security, Transaction)
+from capgains.models.transactions import (Security, Transaction, TransactionType)
 from capgains.ofx.reader import OfxStatementReader
 
 from common import (
@@ -340,7 +340,7 @@ class CashTransactionWithFilterCancelTestCase(CashTransactionXmlSnippetMixin, un
         # CashTransaction to be persisted.
         return [
             Transaction(datetime=datetime(2016, 4, 13), dtsettle=datetime(2016, 4, 13),
-                        type='returnofcapital',
+                        type=TransactionType.RETURNCAP,
                         memo='RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)',
                         currency='USD', cash=Decimal('139000'),
                         fiaccount=self.account, security=self.securities[0]),
@@ -554,7 +554,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
 
         self.assertEqual(
             mock_merge_transaction_method.mock_calls,
-            [call(type='transfer', fiaccount=self.reader.account,
+            [call(type=TransactionType.TRANSFER, fiaccount=self.reader.account,
                   uniqueid=sentinel.fitid1, datetime=sentinel.dttrade1,
                   memo=sentinel.memo, security=sentinel.security1,
                   units=sentinel.units1, fiaccountFrom=self.reader.account,
@@ -585,7 +585,7 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
             denominator=sentinel.denominator, memo=None)
         self.assertEqual(
             mock_merge_transaction_method.mock_calls,
-            [call(type='split', fiaccount=self.reader.account,
+            [call(type=TransactionType.SPLIT, fiaccount=self.reader.account,
                   uniqueid=sentinel.fitid, datetime=sentinel.dttrade,
                   memo=sentinel.memo, security=sentinel.security,
                   numerator=sentinel.numerator,
@@ -607,7 +607,7 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
             denominator=sentinel.denominator, memo=sentinel.override_memo)
         self.assertEqual(
             mock_merge_transaction_method.mock_calls,
-            [call(type='split', fiaccount=self.reader.account,
+            [call(type=TransactionType.SPLIT, fiaccount=self.reader.account,
                   uniqueid=sentinel.fitid, datetime=sentinel.dttrade,
                   memo=sentinel.override_memo, security=sentinel.security,
                   numerator=sentinel.numerator,
@@ -631,7 +631,7 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
             memo=None)
         self.assertEqual(
             mock_merge_transaction_method.mock_calls,
-            [call(type='spinoff', fiaccount=self.reader.account,
+            [call(type=TransactionType.SPINOFF, fiaccount=self.reader.account,
                   uniqueid=sentinel.fitid, datetime=sentinel.dttrade,
                   memo=sentinel.memo, security=sentinel.security,
                   numerator=sentinel.numerator,

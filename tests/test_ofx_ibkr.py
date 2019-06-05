@@ -14,7 +14,7 @@ from capgains.ofx.ibkr import (
     OfxStatementReader,
 )
 from capgains.models.transactions import (
-    Fi, FiAccount, Security, Transaction
+    Fi, FiAccount, Security, Transaction, TransactionType
 )
 from common import (
     setUpModule,
@@ -54,7 +54,7 @@ class CashTransactionsTestCase(OfxSnippetMixin, unittest.TestCase):
         self.assertEqual(tran.uniqueid, '20160413.U999999.e.USD.6356130558')
         # FIXME - timezone adjustment
         #  self.assertEqual(tran.datetime, datetime(2016, 4, 13, 20, 20))
-        self.assertEqual(tran.type, 'returnofcapital')
+        self.assertEqual(tran.type, TransactionType.RETURNCAP)
         self.assertEqual(tran.memo, 'RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)')
         self.assertEqual(tran.currency, 'USD')
         self.assertEqual(tran.cash, Decimal('139000'))

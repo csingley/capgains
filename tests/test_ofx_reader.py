@@ -20,7 +20,7 @@ from capgains.ofx.reader import (
     OfxStatementReader, CashTransaction,
 )
 from capgains.models.transactions import (
-    Fi, FiAccount, Security, SecurityId, Transaction
+    Fi, FiAccount, Security, SecurityId, Transaction,  TransactionType
 )
 from common import (
     setUpModule,
@@ -154,7 +154,7 @@ class TradesTestCase(OfxReaderMixin, unittest.TestCase):
         self.reader.merge_trade(self.buystock, memo=memo)
         self.assertEqual(len(self.reader.transactions), 1)
         tx = self.reader.transactions.pop()
-        self.assertEqual(tx.type, 'trade')
+        self.assertEqual(tx.type, TransactionType.TRADE)
         self.assertIs(tx.fiaccount, self.account)
         self.assertEqual(tx.uniqueid, 'deadbeef')
         self.assertEqual(tx.datetime,

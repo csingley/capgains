@@ -2,6 +2,7 @@
 """ """
 # stdlib imports
 import functools
+import enum
 import logging
 
 
@@ -31,6 +32,25 @@ from capgains.database import Base
 class ModelError(Exception):
     """ Base class for exceptions raised by this module.  """
     pass
+
+
+class TransactionType(enum.Enum):
+    # Postgres sorts Enums by listed order of type definition
+    # To ensure reorgs get processed correctly, trade & transfer
+    # must come after return of capital & spinoff.
+    RETURNCAP = 1
+    SPLIT = 2
+    SPINOFF = 3
+    TRANSFER = 4
+    TRADE = 5
+    EXERCISE = 6
+
+
+class TransactionSort(enum.Enum):
+    FIFO = 1
+    LIFO = 2
+    MAXGAIN = 3
+    MINGAIN = 4
 
 
 class Mergeable(object):
@@ -179,11 +199,7 @@ class Transaction(Base, Mergeable):
     datetime = Column(DateTime, nullable=False)
     # The payment for cash distributions (datetime field records the ex-date)
     dtsettle = Column(DateTime)
-    # Postgres sorts Enums by listed order of type definition
-    # To ensure reorgs get processed correctly, trade & transfer come last
-    type = Column(Enum('returnofcapital', 'split', 'spinoff', 'transfer',
-                       'trade', 'exercise', name='transaction_type'),
-                  nullable=False)
+    type = Column(Enum(TransactionType, name='transaction_type'), nullable=False)
     memo = Column(Text)
     # Currency denomination of Transaction.cash
     currency = Column(Enum(*CURRENCY_CODES, name='transaction_currency'))
@@ -193,10 +209,9 @@ class Transaction(Base, Mergeable):
     fiaccount_id = Column(Integer,
                           ForeignKey('fiaccount.id', onupdate='CASCADE'),
                           nullable=False)
-    # Multiple join paths from Transaction to FiAccount(
-    # fiaccount; fiaccountFromFrom)  so can't use relationship(back_populates)
-    # on both sides of the the join; must use relationship(backref) on the
-    # ForeignKey side.
+    # Multiple join paths from Transaction to FiAccount (fiaccount; fiaccountFrom)
+    # so can't use relationship(back_populates) on both sides of the the join;
+    # must use relationship(backref) on the ForeignKey side.
     fiaccount = relationship('FiAccount', foreign_keys=[fiaccount_id],
                              backref='transactions')
     # Security or other asset
@@ -239,8 +254,7 @@ class Transaction(Base, Mergeable):
     # For splits, spinoff: normalized units of source Security
     denominator = Column(Numeric)
     # Sort algorithm for gain recognition
-    sort = Column(Enum('FIFO', 'LIFO', 'MAXGAIN', 'MINGAIN',
-                       name='transaction_sort'), )
+    sort = Column(Enum(TransactionSort, name='transaction_sort'), )
 
     signature = ('fiaccount', 'uniqueid')
 
@@ -299,12 +313,12 @@ class ModelConstraintError(ModelError):
 @event.listens_for(Transaction, 'before_insert')
 @event.listens_for(Transaction, 'before_update')
 def enforce_type_constraints(mapper, connection, instance):
-    enforcers = {'trade': enforce_trade_constraints,
-                 'returnofcapital': enforce_returnofcapital_constraints,
-                 'transfer': enforce_transfer_constraints,
-                 'split': enforce_split_constraints,
-                 'spinoff': enforce_spinoff_constraints,
-                 'exercise': enforce_exercise_constraints, }
+    enforcers = {TransactionType.TRADE: enforce_trade_constraints,
+                 TransactionType.RETURNCAP: enforce_returnofcapital_constraints,
+                 TransactionType.TRANSFER: enforce_transfer_constraints,
+                 TransactionType.SPLIT: enforce_split_constraints,
+                 TransactionType.SPINOFF: enforce_spinoff_constraints,
+                 TransactionType.EXERCISE: enforce_exercise_constraints, }
     enforcers[instance.type](instance)
 
 

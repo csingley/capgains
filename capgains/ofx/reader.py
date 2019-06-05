@@ -18,7 +18,7 @@ from ofxtools.utils import cusip2isin
 
 # Local imports
 from capgains.models.transactions import (
-    FiAccount, Security, Transaction,
+    FiAccount, Security, Transaction, TransactionType
 )
 from capgains.containers import GroupedList
 from capgains.database import (Base, sessionmanager)
@@ -226,7 +226,7 @@ class OfxStatementReader(object):
 
         sort = self.sortForTrade(tx)
         return self.merge_transaction(
-            type='trade', fiaccount=self.account,
+            type=TransactionType.TRADE, fiaccount=self.account,
             uniqueid=tx.fitid, datetime=tx.dttrade, memo=memo or tx.memo,
             security=security, units=tx.units, currency=currency,
             cash=tx.total, sort=sort)
@@ -395,7 +395,7 @@ class OfxStatementReader(object):
         dttrade = transaction.dttrade
         dtsettle = getattr(transaction, 'dtsettle', None) or dttrade
         return self.merge_transaction(
-            type='returnofcapital', fiaccount=self.account,
+            type=TransactionType.RETURNCAP, fiaccount=self.account,
             uniqueid=transaction.fitid, datetime=dttrade,
             dtsettle=dtsettle, memo=memo or transaction.memo,
             security=security, currency=currency, cash=transaction.total)

@@ -22,7 +22,7 @@ from ofxtools.utils import (validate_cusip, cusip2isin, validate_isin)
 from capgains.ofx.reader import OfxStatementReader
 from capgains.database import Base, sessionmanager
 from capgains.models.transactions import (
-    FiAccount, Security, SecurityId, CurrencyRate
+    FiAccount, Security, SecurityId, CurrencyRate, TransactionType
 )
 from capgains.flex import BROKERID
 from capgains.flex.regexes import (
@@ -358,7 +358,7 @@ class FlexStatementReader(OfxStatementReader):
         security = self.securities[
             (transaction.uniqueidtype, transaction.uniqueid)]
         transaction = self.merge_transaction(
-            type='transfer', fiaccount=acct, uniqueid=transaction.fitid,
+            type=TransactionType.TRANSFER, fiaccount=acct, uniqueid=transaction.fitid,
             datetime=transaction.dttrade, memo=transaction.memo,
             security=security, units=units, fiaccountFrom=acctFrom,
             securityFrom=security, unitsFrom=unitsFrom)
@@ -589,7 +589,7 @@ class FlexStatementReader(OfxStatementReader):
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
         securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
         txs = [self.merge_transaction(
-            uniqueid=src.fitid, datetime=src.dttrade, type='exercise',
+            uniqueid=src.fitid, datetime=src.dttrade, type=TransactionType.EXERCISE,
             memo=memo, currency=src.currency, cash=src.total,
             fiaccount=self.account, security=security, units=dest.units,
             securityFrom=securityFrom, unitsFrom=src.units)]
@@ -686,7 +686,7 @@ class FlexStatementReader(OfxStatementReader):
         security = self.securities[(transaction.uniqueidtype,
                                     transaction.uniqueid)]
         return [self.merge_transaction(
-            type='split', fiaccount=self.account, uniqueid=transaction.fitid,
+            type=TransactionType.SPLIT, fiaccount=self.account, uniqueid=transaction.fitid,
             datetime=transaction.dttrade, memo=memo or transaction.memo,
             security=security, numerator=numerator,
             denominator=denominator, units=transaction.units)]
@@ -696,7 +696,7 @@ class FlexStatementReader(OfxStatementReader):
         security = self.securities[(transaction.uniqueidtype,
                                     transaction.uniqueid)]
         return [self.merge_transaction(
-            type='spinoff', fiaccount=self.account, uniqueid=transaction.fitid,
+            type=TransactionType.SPINOFF, fiaccount=self.account, uniqueid=transaction.fitid,
             datetime=transaction.dttrade, memo=memo or transaction.memo,
             security=security, numerator=numerator, denominator=denominator,
             units=transaction.units, securityFrom=securityFrom)]
@@ -768,7 +768,7 @@ class FlexStatementReader(OfxStatementReader):
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
         securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
         return [self.merge_transaction(
-            type='transfer', fiaccount=self.account, uniqueid=dest.fitid,
+            type=TransactionType.TRANSFER, fiaccount=self.account, uniqueid=dest.fitid,
             datetime=dest.dttrade, memo=memo, security=security,
             units=dest.units, fiaccountFrom=self.account,
             securityFrom=securityFrom, unitsFrom=src.units, )]
@@ -890,7 +890,7 @@ class FlexStatementReader(OfxStatementReader):
             securityFrom = self.securities[(tx.uniqueidtypeFrom,
                                             tx.uniqueidFrom)]
             self.merge_transaction(
-                uniqueid=tx.fitid, datetime=tx.dttrade, type='exercise',
+                uniqueid=tx.fitid, datetime=tx.dttrade, type=TransactionType.EXERCISE,
                 memo=tx.memo, currency=tx.currency, cash=tx.total,
                 fiaccount=self.account, security=security, units=tx.units,
                 securityFrom=securityFrom, unitsFrom=tx.unitsFrom,

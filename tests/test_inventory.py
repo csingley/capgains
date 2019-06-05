@@ -10,12 +10,21 @@ from datetime import datetime
 
 # local imports
 from capgains.inventory import (
-    FIFO, LIFO, MINGAIN, MAXGAIN,
-    Lot, Gain,
-    Portfolio, Transaction, Inconsistent,
-    part_lot, take_lots, take_basis,
+    FIFO,
+    LIFO,
+    MINGAIN,
+    MAXGAIN,
+    Lot,
+    Gain,
+    Portfolio,
+    Transaction,
+    Inconsistent,
+    part_lot,
+    take_lots,
+    take_basis,
     openAsOf,
 )
+from capgains.models.transactions import TransactionType
 
 
 class SortTestCase(unittest.TestCase):
@@ -24,15 +33,51 @@ class SortTestCase(unittest.TestCase):
         FIFO sorts first by Lot.opentransaction.datetime,
         then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(uniqueid='b', datetime=datetime(2005, 10, 3))
-        lot1 = Lot(opentransaction=tx1, createtransaction=tx1, units=None,
-                   price=None, currency=None)
-        tx2 = Transaction(uniqueid='c', datetime=datetime(2005, 10, 4))
-        lot2 = Lot(opentransaction=tx2, createtransaction=tx2, units=None,
-                   price=None, currency=None)
-        tx3 = Transaction(uniqueid='a', datetime=datetime(2005, 10, 3))
-        lot3 = Lot(opentransaction=tx3, createtransaction=tx3, units=None,
-                   price=None, currency=None)
+        tx1 = Transaction(
+            id=1,
+            uniqueid="b",
+            datetime=datetime(2005, 10, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=tx1,
+            units=None,
+            price=None,
+            currency=None,
+        )
+        tx2 = Transaction(
+            id=2,
+            uniqueid="c",
+            datetime=datetime(2005, 10, 4),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=tx2,
+            units=None,
+            price=None,
+            currency=None,
+        )
+        tx3 = Transaction(
+            id=3,
+            uniqueid="a",
+            datetime=datetime(2005, 10, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot3 = Lot(
+            opentransaction=tx3,
+            createtransaction=tx3,
+            units=None,
+            price=None,
+            currency=None,
+        )
         position = [lot2, lot1, lot3]
         position.sort(**FIFO)
         self.assertEqual(position, [lot3, lot1, lot2])
@@ -42,15 +87,51 @@ class SortTestCase(unittest.TestCase):
         LIFO sorts first by Lot.opentransaction.datetime,
         then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(uniqueid='b', datetime=datetime(2005, 10, 3))
-        lot1 = Lot(opentransaction=tx1, createtransaction=tx1, units=None,
-                   price=None, currency=None)
-        tx2 = Transaction(uniqueid='c', datetime=datetime(2005, 10, 4))
-        lot2 = Lot(opentransaction=tx2, createtransaction=tx2, units=None,
-                   price=None, currency=None)
-        tx3 = Transaction(uniqueid='a', datetime=datetime(2005, 10, 3))
-        lot3 = Lot(opentransaction=tx3, createtransaction=tx3, units=None,
-                   price=None, currency=None)
+        tx1 = Transaction(
+            id=1,
+            uniqueid="b",
+            datetime=datetime(2005, 10, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=tx1,
+            units=None,
+            price=None,
+            currency=None,
+        )
+        tx2 = Transaction(
+            id=2,
+            uniqueid="c",
+            datetime=datetime(2005, 10, 4),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=tx2,
+            units=None,
+            price=None,
+            currency=None,
+        )
+        tx3 = Transaction(
+            id=3,
+            uniqueid="a",
+            datetime=datetime(2005, 10, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot3 = Lot(
+            opentransaction=tx3,
+            createtransaction=tx3,
+            units=None,
+            price=None,
+            currency=None,
+        )
         position = [lot3, lot1, lot2]
         position.sort(**LIFO)
         self.assertEqual(position, [lot2, lot1, lot3])
@@ -59,15 +140,51 @@ class SortTestCase(unittest.TestCase):
         """
         MINGAIN sorts first by Lot.price, then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(uniqueid='b')
-        lot1 = Lot(opentransaction=tx1, createtransaction=None,
-                   units=None, price=Decimal('10'), currency='USD')
-        tx2 = Transaction(uniqueid='c')
-        lot2 = Lot(opentransaction=tx2, createtransaction=None,
-                   units=None, price=Decimal('9.5'), currency='USD')
-        tx3 = Transaction(uniqueid='a')
-        lot3 = Lot(opentransaction=tx3, createtransaction=None,
-                   units=None, price=Decimal('10'), currency='USD')
+        tx1 = Transaction(
+            id=1,
+            uniqueid="b",
+            datetime=datetime(2005, 10, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=None,
+            units=None,
+            price=Decimal("10"),
+            currency="USD",
+        )
+        tx2 = Transaction(
+            id=1,
+            uniqueid="c",
+            datetime=datetime(2005, 10, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=None,
+            units=None,
+            price=Decimal("9.5"),
+            currency="USD",
+        )
+        tx3 = Transaction(
+            id=1,
+            uniqueid="a",
+            datetime=datetime(2005, 10, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot3 = Lot(
+            opentransaction=tx3,
+            createtransaction=None,
+            units=None,
+            price=Decimal("10"),
+            currency="USD",
+        )
         position = [lot1, lot2, lot3]
         position.sort(**MINGAIN)
         self.assertEqual(position, [lot3, lot1, lot2])
@@ -76,15 +193,51 @@ class SortTestCase(unittest.TestCase):
         """
         MAXGAIN sorts first by Lot.price, then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(uniqueid='b')
-        lot1 = Lot(opentransaction=tx1, createtransaction=None,
-                   units=None, price=Decimal('10'), currency='USD')
-        tx2 = Transaction(uniqueid='c')
-        lot2 = Lot(opentransaction=tx2, createtransaction=None,
-                   units=None, price=Decimal('9.5'), currency='USD')
-        tx3 = Transaction(uniqueid='a')
-        lot3 = Lot(opentransaction=tx3, createtransaction=None,
-                   units=None, price=Decimal('10'), currency='USD')
+        tx1 = Transaction(
+            id=1,
+            uniqueid="b",
+            datetime=datetime(2001, 1, 1),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=None,
+            units=None,
+            price=Decimal("10"),
+            currency="USD",
+        )
+        tx2 = Transaction(
+            id=1,
+            uniqueid="c",
+            datetime=datetime(2001, 1, 1),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=None,
+            units=None,
+            price=Decimal("9.5"),
+            currency="USD",
+        )
+        tx3 = Transaction(
+            id=1,
+            uniqueid="a",
+            datetime=datetime(2001, 1, 2),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        lot3 = Lot(
+            opentransaction=tx3,
+            createtransaction=None,
+            units=None,
+            price=Decimal("10"),
+            currency="USD",
+        )
         position = [lot1, lot2, lot3]
         position.sort(**MAXGAIN)
         self.assertEqual(position, [lot2, lot3, lot1])
@@ -92,58 +245,93 @@ class SortTestCase(unittest.TestCase):
 
 class LotsMixin(object):
     def setUp(self):
-        tx1 = Transaction(id=1, datetime=datetime(2016, 1, 1),
-                          units=Decimal('100'), cash=Decimal('1000'),
-                          currency='USD')
-        self.lot1 = Lot(opentransaction=tx1, createtransaction=tx1,
-                        units=tx1.units, price=abs(tx1.cash / tx1.units),
-                        currency=tx1.currency)
+        tx1 = Transaction(
+            id=1,
+            datetime=datetime(2016, 1, 1),
+            uniqueid="",
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security=None,
+            units=Decimal("100"),
+            cash=Decimal("1000"),
+            currency="USD",
+        )
+        self.lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=tx1,
+            units=tx1.units,
+            price=abs(tx1.cash / tx1.units),
+            currency=tx1.currency,
+        )
 
-        tx2 = Transaction(id=2, datetime=datetime(2016, 1, 2),
-                          units=Decimal('200'), cash=Decimal('2200'),
-                          currency='USD')
-        self.lot2 = Lot(opentransaction=tx2, createtransaction=tx2,
-                        units=tx2.units, price=abs(tx2.cash / tx2.units),
-                        currency=tx2.currency)
+        tx2 = Transaction(
+            id=2,
+            datetime=datetime(2016, 1, 2),
+            uniqueid="",
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security=None,
+            units=Decimal("200"),
+            cash=Decimal("2200"),
+            currency="USD",
+        )
+        self.lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=tx2,
+            units=tx2.units,
+            price=abs(tx2.cash / tx2.units),
+            currency=tx2.currency,
+        )
 
-        tx3 = Transaction(id=3, datetime=datetime(2016, 1, 3),
-                          units=Decimal('300'), cash=Decimal('3600'),
-                          currency='USD')
-        self.lot3 = Lot(opentransaction=tx3, createtransaction=tx3,
-                        units=tx3.units, price=abs(tx3.cash / tx3.units),
-                        currency=tx3.currency)
+        tx3 = Transaction(
+            id=3,
+            datetime=datetime(2016, 1, 3),
+            uniqueid="",
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security=None,
+            units=Decimal("300"),
+            cash=Decimal("3600"),
+            currency="USD",
+        )
+        self.lot3 = Lot(
+            opentransaction=tx3,
+            createtransaction=tx3,
+            units=tx3.units,
+            price=abs(tx3.cash / tx3.units),
+            currency=tx3.currency,
+        )
 
         self.lots = [self.lot1, self.lot2, self.lot3]
 
 
 class PartLotTestCase(LotsMixin, unittest.TestCase):
     def testPartLot(self):
-        lot1, lot2 = part_lot(self.lot1, Decimal('20'))
+        lot1, lot2 = part_lot(self.lot1, Decimal("20"))
 
-        self.assertEqual(lot1, self.lot1._replace(units=Decimal('20')))
-        self.assertEqual(lot2, self.lot1._replace(units=Decimal('80')))
+        self.assertEqual(lot1, self.lot1._replace(units=Decimal("20")))
+        self.assertEqual(lot2, self.lot1._replace(units=Decimal("80")))
 
     def testPartLotNonDecimalUnits(self):
         with self.assertRaises(ValueError):
             part_lot(self.lot1, 20)
 
     def testPartLotUnitsTooBig(self):
-        part_lot(self.lot1, Decimal('99.99'))
+        part_lot(self.lot1, Decimal("99.99"))
 
         with self.assertRaises(ValueError):
-            part_lot(self.lot1, Decimal('100'))
+            part_lot(self.lot1, Decimal("100"))
 
     def testPartLotZeroUnits(self):
         with self.assertRaises(ValueError):
-            part_lot(self.lot1, Decimal('0'))
+            part_lot(self.lot1, Decimal("0"))
 
     def testPartLotUnitsWrongSign(self):
         with self.assertRaises(ValueError):
-            part_lot(self.lot1, Decimal('-20'))
+            part_lot(self.lot1, Decimal("-20"))
 
         with self.assertRaises(ValueError):
-            part_lot(self.lot1._replace(units=Decimal('-100')),
-                     Decimal('20'))
+            part_lot(self.lot1._replace(units=Decimal("-100")), Decimal("20"))
 
 
 class TakeLotsTestCase(LotsMixin, unittest.TestCase):
@@ -152,17 +340,18 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
         take_lots() removes Lots from the beginning, part_lot()ting as needed.
         """
         self.assertEqual(len(self.lots), 3)
-        taken, left = take_lots(self.lots, max_units=Decimal('150'))
+        taken, left = take_lots(self.lots, max_units=Decimal("150"))
 
         self.assertEqual(len(taken), 2)
         self.assertEqual(taken[0], self.lot1)
-        self.assertEqual(taken[1], self.lot2._replace(units=Decimal('50'),
-                                                      price=Decimal('11')))
+        self.assertEqual(
+            taken[1], self.lot2._replace(units=Decimal("50"), price=Decimal("11"))
+        )
 
         self.assertEqual(len(left), 2)
-        self.assertEqual(left[0],
-                         self.lot2._replace(units=Decimal('150'),
-                                            price=Decimal('11')))
+        self.assertEqual(
+            left[0], self.lot2._replace(units=Decimal("150"), price=Decimal("11"))
+        )
         self.assertEqual(left[1], self.lot3)
 
     def testTakeLotsMaxUnitsNone(self):
@@ -182,7 +371,7 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
         take_lots() units arg must be same sign as Lot.units.
         """
         with self.assertRaises(Inconsistent):
-            take_lots(self.lots, max_units=Decimal('-1'))
+            take_lots(self.lots, max_units=Decimal("-1"))
 
     def testTakeLotsCriterion(self):
         """
@@ -195,23 +384,26 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
         self.assertEqual(len(left_lots), 1)
 
         self.assertEqual(taken_lots, [self.lot1, self.lot2])
-        self.assertEqual(left_lots, [self.lot3, ])
+        self.assertEqual(left_lots, [self.lot3])
 
     def testTakeLotsMaxUnitsCriterion(self):
         """
         take_lots() respects criterion and max_units args together
         """
         criterion = openAsOf(datetime(2016, 1, 2))
-        taken_lots, left_lots = take_lots(self.lots, max_units=Decimal('150'),
-                                          criterion=criterion)
+        taken_lots, left_lots = take_lots(
+            self.lots, max_units=Decimal("150"), criterion=criterion
+        )
 
         self.assertEqual(len(taken_lots), 2)
         self.assertEqual(len(left_lots), 2)
 
-        self.assertEqual(taken_lots, [self.lot1,
-                                      self.lot2._replace(units=Decimal('50'))])
-        self.assertEqual(left_lots, [self.lot2._replace(units=Decimal('150')),
-                                     self.lot3])
+        self.assertEqual(
+            taken_lots, [self.lot1, self.lot2._replace(units=Decimal("50"))]
+        )
+        self.assertEqual(
+            left_lots, [self.lot2._replace(units=Decimal("150")), self.lot3]
+        )
 
 
 class TakeBasisTestCase(LotsMixin, unittest.TestCase):
@@ -220,9 +412,8 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
         Position.take_basis() takes cost from all Lots w/o changing units/date
         """
         orig_cost = sum([(l.units * l.price) for l in self.lots])
-        fraction = Decimal('0.25')
-        taken_lots, left_lots = take_basis(self.lots, criterion=None,
-                                           fraction=fraction)
+        fraction = Decimal("0.25")
+        taken_lots, left_lots = take_basis(self.lots, criterion=None, fraction=fraction)
 
         left_cost = sum([(l.units * l.price) for l in left_lots])
         taken_cost = sum([(l.units * l.price) for l in taken_lots])
@@ -240,9 +431,9 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
         take_basis() only accepts fraction between 0 and 1 inclusive
         """
         with self.assertRaises(ValueError):
-            take_basis(self.lots, criterion=None, fraction=Decimal('-0.1'))
+            take_basis(self.lots, criterion=None, fraction=Decimal("-0.1"))
         with self.assertRaises(ValueError):
-            take_basis(self.lots, criterion=None, fraction=Decimal('1.01'))
+            take_basis(self.lots, criterion=None, fraction=Decimal("1.01"))
 
     def testTakeBasisCriterion(self):
         """
@@ -251,9 +442,10 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
         criterion = openAsOf(datetime(2016, 1, 2))
 
         orig_cost = sum([(l.units * l.price) for l in self.lots])
-        fraction = Decimal('0.25')
-        taken_lots, left_lots = take_basis(self.lots, criterion=criterion,
-                                           fraction=fraction)
+        fraction = Decimal("0.25")
+        taken_lots, left_lots = take_basis(
+            self.lots, criterion=criterion, fraction=fraction
+        )
 
         self.assertEqual(len(taken_lots), 2)
         self.assertEqual(len(left_lots), 3)
@@ -265,222 +457,375 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
         affected_cost = sum([l.units * l.price for l in (self.lot1, self.lot2)])
         self.assertEqual(taken_cost / affected_cost, fraction)
 
-        self.assertEqual(taken_lots,
-                         [self.lot1._replace(price=fraction * self.lot1.price),
-                          self.lot2._replace(price=fraction * self.lot2.price)])
+        self.assertEqual(
+            taken_lots,
+            [
+                self.lot1._replace(price=fraction * self.lot1.price),
+                self.lot2._replace(price=fraction * self.lot2.price),
+            ],
+        )
 
-        self.assertEqual(left_lots,
-                         [self.lot1._replace(price=(1 - fraction) * self.lot1.price),
-                          self.lot2._replace(price=(1 - fraction) * self.lot2.price),
-                          self.lot3])
+        self.assertEqual(
+            left_lots,
+            [
+                self.lot1._replace(price=(1 - fraction) * self.lot1.price),
+                self.lot2._replace(price=(1 - fraction) * self.lot2.price),
+                self.lot3,
+            ],
+        )
 
 
 class TradeTestCase(unittest.TestCase):
     def setUp(self):
         self.trades = [
-            Transaction(id=0,
-                  uniqueid='20160104.U99.e.USD.1468544894',
-                  datetime=datetime(2016, 1, 4, 14, 57, 40),
-                  units=Decimal('-200.00'),
-                  # price=Decimal('15.808'),
-                  cash=Decimal("3161.5975047"),
-                 ),
-            Transaction(id=1,
-                  uniqueid='20160104.U99.e.USD.1468552856',
-                  datetime=datetime(2016, 1, 4, 14, 59, 51),
-                  units=Decimal('-300.00'),
-                  # price=Decimal('15.7979'),
-                  cash=Decimal("4739.36631225"),
-                 ),
-            Transaction(id=2,
-                  uniqueid='20160104.U99.e.USD.1468552920',
-                  datetime=datetime(2016, 1, 4, 14, 59, 53),
-                  units=Decimal('-300.00'),
-                  # price=Decimal('15.7973'),
-                  cash=Decimal("4739.18631225"),
-                 ),
-            Transaction(id=3,
-                  uniqueid='20160104.U99.e.USD.1468942125',
-                  datetime=datetime(2016, 1, 4, 17, 33, 15),
-                  units=Decimal('-200.00'),
-                  # price=Decimal('15.7973'),
-                  cash=Decimal("3159.4575415"),
-                 ),
-            Transaction(id=4,
-                  uniqueid='20160105.U99.e.USD.1469598029',
-                  datetime=datetime(2016, 1, 5, 14, 49, 36),
-                  units=Decimal('-100.00'), 
-                  # price=Decimal('16.9129'),
-                  cash=Decimal("1691.28670995"),
-                 ),
-            Transaction(id=5,
-                  uniqueid='20160105.U99.e.USD.1469598030',
-                  datetime=datetime(2016, 1, 5, 14, 49, 36),
-                  units=Decimal('-100.00'),
-                  # price=Decimal('16.908'),
-                  cash=Decimal("1690.79672835"),
-                 ),
-            Transaction(id=6,
-                  uniqueid='20160105.U99.e.USD.1469598191',
-                  datetime=datetime(2016, 1, 5, 14, 49, 36),
-                  units=Decimal('-100.00'),
-                  # price=Decimal('16.9429'),
-                  cash=Decimal("1694.28665475"),
-                 ),
-            Transaction(id=7,
-                  uniqueid='20160105.U99.e.USD.1469598198',
-                  datetime=datetime(2016, 1, 5, 14, 49, 36),
-                  units=Decimal('-100.00'),
-                  # price=Decimal('16.908'),
-                  cash=Decimal("1690.79672835"),
-                 ),
-            Transaction(id=8,
-                  uniqueid='20160105.U99.e.USD.1469598231',
-                  datetime=datetime(2016, 1, 5, 14, 49, 39),
-                  units=Decimal('-100.00'),
-                  # price=Decimal('16.908'),
-                  cash=Decimal("1690.79672835"),
-                 ),
-            Transaction(id=9,
-                  uniqueid='20160105.U99.e.USD.1469598296',
-                  datetime=datetime(2016, 1, 5, 14, 49, 39),
-                  units=Decimal('-300.00'),
-                  # price=Decimal('16.90796666666666666666666667'),
-                  cash=Decimal("5072.39018505"),
-                 ),
-            Transaction(id=10,
-                  uniqueid='20160105.U99.e.USD.1469598410',
-                  datetime=datetime(2016, 1, 5, 14, 49, 42),
-                  units=Decimal('-100.00'),
-                  # price=Decimal('16.908'),
-                  cash=Decimal("1690.79672835"),
-                 ),
-            Transaction(id=11,
-                  uniqueid='20160105.U99.e.USD.1469598426',
-                  datetime=datetime(2016, 1, 5, 14, 49, 43),
-                  units=Decimal('-100.00'),
-                  # price=Decimal('16.908'),
-                  cash=Decimal("1690.79672835"),
-                 ),
-            Transaction(id=12,
-                  uniqueid='20160105.U99.e.USD.1469770926',
-                  datetime=datetime(2016, 1, 5, 15, 58, 28),
-                  units=Decimal('-125.00'),
-                  # price=Decimal('17.50792'),
-                  cash=Decimal("2188.494530438"),
-                 ),
-            Transaction(id=13,
-                  uniqueid='20160105.U99.e.USD.1469801076',
-                  datetime=datetime(2016, 1, 5, 16, 14, 53),
-                  units=Decimal('-61.00'),
-                  # price=Decimal('17.49721311475409836065573770'),
-                  cash=Decimal("1067.332642078"),
-                 ),
-            Transaction(id=14,
-                  uniqueid='20160105.U99.e.USD.1469807788',
-                  datetime=datetime(2016, 1, 5, 16, 18, 29),
-                  units=Decimal('-814.00'),
-                  # price=Decimal('17.49726044226044226044226044'),
-                  cash=Decimal("14242.766731985"),
-                 ),
-            Transaction(id=15,
-                  uniqueid='20160113.U99.e.USD.1476575799',
-                  datetime=datetime(2016, 1, 13, 14, 41, 14),
-                  units=Decimal('-1.00'),
-                  # price=Decimal('14.66'),
-                  cash=Decimal("14.661247566"),
-                 ),
-            Transaction(id=16,
-                  uniqueid='20160113.U99.e.USD.1476579053',
-                  datetime=datetime(2016, 1, 13, 14, 42, 15),
-                  units=Decimal('-493.00'),
-                  # price=Decimal('14.67791075050709939148073022'),
-                  cash=Decimal("7236.208799542"),
-                 ),
-            Transaction(id=17,
-                  uniqueid='20160113.U99.e.USD.1476579068',
-                  datetime=datetime(2016, 1, 13, 14, 42, 15),
-                  units=Decimal('-100.00'),
-                  # price=Decimal('14.7329'),
-                  cash=Decimal("1473.29072115"),
-                 ),
-            Transaction(id=18,
-                  uniqueid='20160113.U99.e.USD.1476579070',
-                  datetime=datetime(2016, 1, 13, 14, 42, 15),
-                  units=Decimal('-200.00'),
-                  # price=Decimal('14.6779'),
-                  cash=Decimal("2935.5816631"),
-                 ),
-            Transaction(id=19,
-                  uniqueid='20160113.U99.e.USD.1476581751',
-                  datetime=datetime(2016, 1, 13, 14, 42, 58),
-                  units=Decimal('-200.00'),
-                  # price=Decimal('14.8529'),
-                  cash=Decimal("2970.5810007"),
-                 ),
-            Transaction(id=20,
-                  uniqueid='20160113.U99.e.USD.1476581755',
-                  datetime=datetime(2016, 1, 13, 14, 42, 58),
-                  units=Decimal('-6.00'),
-                  # price=Decimal('14.8080059235'),
-                  cash=Decimal("88.848035541"),
-                 ),
-            Transaction(id=21,
-                  uniqueid='20160113.U99.e.USD.1476581819',
-                  datetime=datetime(2016, 1, 13, 14, 42, 58),
-                  units=Decimal('-1000.00'),
-                  # price=Decimal('14.8080059235'),
-                  cash=Decimal("14808.0059235"),
-                 ),
-            Transaction(id=22,
-                  uniqueid='20160126.U99.e.USD.1487338567',
-                  datetime=datetime(2016, 1, 26, 17, 52, 17),
-                  units=Decimal('258.00'),
-                  # price=Decimal('10.74170542635658914728682171'),
-                  cash=Decimal("-2771.359263705"),
-                 ),
-            Transaction(id=23,
-                  uniqueid='20160126.U99.e.USD.1487338568',
-                  datetime=datetime(2016, 1, 26, 17, 52, 17),
-                  units=Decimal('200.00'),
-                  # price=Decimal('10.7417'),
-                  cash=Decimal("-2148.3405145"),
-                 ),
-            Transaction(id=24,
-                  uniqueid='20160126.U99.e.USD.1487338788',
-                  datetime=datetime(2016, 1, 26, 17, 52, 25),
-                  units=Decimal('200.00'),
-                  # price=Decimal('10.7417'),
-                  cash=Decimal("-2148.3405145"),
-                 ),
-            Transaction(id=25,
-                  uniqueid='20160126.U99.e.USD.1487346935',
-                  datetime=datetime(2016, 1, 26, 17, 58, 18),
-                  units=Decimal('100.00'),
-                  # price=Decimal('10.7417'),
-                  cash=Decimal("-1074.17025725"),
-                 ),
-            Transaction(id=26,
-                  uniqueid='20160126.U99.e.USD.1487346940',
-                  datetime=datetime(2016, 1, 26, 17, 58, 18),
-                  units=Decimal('242.00'),
-                  # price=Decimal('10.74169421487603305785123967'),
-                  cash=Decimal("-2599.492022545"),
-                 ),
-            Transaction(id=27,
-                  uniqueid='20160126.U99.e.USD.1487504352',
-                  datetime=datetime(2016, 1, 26, 19, 45, 40),
-                  units=Decimal('70.00'),
-                  # price=Decimal('10.74314285714285714285714286'),
-                  cash=Decimal("-752.02425725"),
-                 ),
-            Transaction(id=28,
-                  uniqueid='20160126.U99.e.USD.1487510413',
-                  datetime=datetime(2016, 1, 26, 19, 50, 19),
-                  units=Decimal('100.00'),
-                  # price=Decimal('10.7413'),
-                  cash=Decimal("-1074.125180075"),
-                 ),
+            Transaction(
+                id=0,
+                uniqueid="20160104.U99.e.USD.1468544894",
+                datetime=datetime(2016, 1, 4, 14, 57, 40),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-200.00"),
+                # price=Decimal('15.808'),
+                cash=Decimal("3161.5975047"),
+                currency="USD",
+            ),
+            Transaction(
+                id=1,
+                uniqueid="20160104.U99.e.USD.1468552856",
+                datetime=datetime(2016, 1, 4, 14, 59, 51),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-300.00"),
+                # price=Decimal('15.7979'),
+                cash=Decimal("4739.36631225"),
+                currency="USD",
+            ),
+            Transaction(
+                id=2,
+                uniqueid="20160104.U99.e.USD.1468552920",
+                datetime=datetime(2016, 1, 4, 14, 59, 53),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-300.00"),
+                # price=Decimal('15.7973'),
+                cash=Decimal("4739.18631225"),
+                currency="USD",
+            ),
+            Transaction(
+                id=3,
+                uniqueid="20160104.U99.e.USD.1468942125",
+                datetime=datetime(2016, 1, 4, 17, 33, 15),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-200.00"),
+                # price=Decimal('15.7973'),
+                cash=Decimal("3159.4575415"),
+                currency="USD",
+            ),
+            Transaction(
+                id=4,
+                uniqueid="20160105.U99.e.USD.1469598029",
+                datetime=datetime(2016, 1, 5, 14, 49, 36),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('16.9129'),
+                cash=Decimal("1691.28670995"),
+                currency="USD",
+            ),
+            Transaction(
+                id=5,
+                uniqueid="20160105.U99.e.USD.1469598030",
+                datetime=datetime(2016, 1, 5, 14, 49, 36),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('16.908'),
+                cash=Decimal("1690.79672835"),
+                currency="USD",
+            ),
+            Transaction(
+                id=6,
+                uniqueid="20160105.U99.e.USD.1469598191",
+                datetime=datetime(2016, 1, 5, 14, 49, 36),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('16.9429'),
+                cash=Decimal("1694.28665475"),
+                currency="USD",
+            ),
+            Transaction(
+                id=7,
+                uniqueid="20160105.U99.e.USD.1469598198",
+                datetime=datetime(2016, 1, 5, 14, 49, 36),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('16.908'),
+                cash=Decimal("1690.79672835"),
+                currency="USD",
+            ),
+            Transaction(
+                id=8,
+                uniqueid="20160105.U99.e.USD.1469598231",
+                datetime=datetime(2016, 1, 5, 14, 49, 39),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('16.908'),
+                cash=Decimal("1690.79672835"),
+                currency="USD",
+            ),
+            Transaction(
+                id=9,
+                uniqueid="20160105.U99.e.USD.1469598296",
+                datetime=datetime(2016, 1, 5, 14, 49, 39),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-300.00"),
+                # price=Decimal('16.90796666666666666666666667'),
+                cash=Decimal("5072.39018505"),
+                currency="USD",
+            ),
+            Transaction(
+                id=10,
+                uniqueid="20160105.U99.e.USD.1469598410",
+                datetime=datetime(2016, 1, 5, 14, 49, 42),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('16.908'),
+                cash=Decimal("1690.79672835"),
+                currency="USD",
+            ),
+            Transaction(
+                id=11,
+                uniqueid="20160105.U99.e.USD.1469598426",
+                datetime=datetime(2016, 1, 5, 14, 49, 43),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('16.908'),
+                cash=Decimal("1690.79672835"),
+                currency="USD",
+            ),
+            Transaction(
+                id=12,
+                uniqueid="20160105.U99.e.USD.1469770926",
+                datetime=datetime(2016, 1, 5, 15, 58, 28),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-125.00"),
+                # price=Decimal('17.50792'),
+                cash=Decimal("2188.494530438"),
+                currency="USD",
+            ),
+            Transaction(
+                id=13,
+                uniqueid="20160105.U99.e.USD.1469801076",
+                datetime=datetime(2016, 1, 5, 16, 14, 53),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-61.00"),
+                # price=Decimal('17.49721311475409836065573770'),
+                cash=Decimal("1067.332642078"),
+                currency="USD",
+            ),
+            Transaction(
+                id=14,
+                uniqueid="20160105.U99.e.USD.1469807788",
+                datetime=datetime(2016, 1, 5, 16, 18, 29),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-814.00"),
+                # price=Decimal('17.49726044226044226044226044'),
+                cash=Decimal("14242.766731985"),
+                currency="USD",
+            ),
+            Transaction(
+                id=15,
+                uniqueid="20160113.U99.e.USD.1476575799",
+                datetime=datetime(2016, 1, 13, 14, 41, 14),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-1.00"),
+                # price=Decimal('14.66'),
+                cash=Decimal("14.661247566"),
+                currency="USD",
+            ),
+            Transaction(
+                id=16,
+                uniqueid="20160113.U99.e.USD.1476579053",
+                datetime=datetime(2016, 1, 13, 14, 42, 15),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-493.00"),
+                # price=Decimal('14.67791075050709939148073022'),
+                cash=Decimal("7236.208799542"),
+                currency="USD",
+            ),
+            Transaction(
+                id=17,
+                uniqueid="20160113.U99.e.USD.1476579068",
+                datetime=datetime(2016, 1, 13, 14, 42, 15),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-100.00"),
+                # price=Decimal('14.7329'),
+                cash=Decimal("1473.29072115"),
+                currency="USD",
+            ),
+            Transaction(
+                id=18,
+                uniqueid="20160113.U99.e.USD.1476579070",
+                datetime=datetime(2016, 1, 13, 14, 42, 15),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-200.00"),
+                # price=Decimal('14.6779'),
+                cash=Decimal("2935.5816631"),
+                currency="USD",
+            ),
+            Transaction(
+                id=19,
+                uniqueid="20160113.U99.e.USD.1476581751",
+                datetime=datetime(2016, 1, 13, 14, 42, 58),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-200.00"),
+                # price=Decimal('14.8529'),
+                cash=Decimal("2970.5810007"),
+                currency="USD",
+            ),
+            Transaction(
+                id=20,
+                uniqueid="20160113.U99.e.USD.1476581755",
+                datetime=datetime(2016, 1, 13, 14, 42, 58),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-6.00"),
+                # price=Decimal('14.8080059235'),
+                cash=Decimal("88.848035541"),
+                currency="USD",
+            ),
+            Transaction(
+                id=21,
+                uniqueid="20160113.U99.e.USD.1476581819",
+                datetime=datetime(2016, 1, 13, 14, 42, 58),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("-1000.00"),
+                # price=Decimal('14.8080059235'),
+                cash=Decimal("14808.0059235"),
+                currency="USD",
+            ),
+            Transaction(
+                id=22,
+                uniqueid="20160126.U99.e.USD.1487338567",
+                datetime=datetime(2016, 1, 26, 17, 52, 17),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("258.00"),
+                # price=Decimal('10.74170542635658914728682171'),
+                cash=Decimal("-2771.359263705"),
+                currency="USD",
+            ),
+            Transaction(
+                id=23,
+                uniqueid="20160126.U99.e.USD.1487338568",
+                datetime=datetime(2016, 1, 26, 17, 52, 17),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("200.00"),
+                # price=Decimal('10.7417'),
+                cash=Decimal("-2148.3405145"),
+                currency="USD",
+            ),
+            Transaction(
+                id=24,
+                uniqueid="20160126.U99.e.USD.1487338788",
+                datetime=datetime(2016, 1, 26, 17, 52, 25),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("200.00"),
+                # price=Decimal('10.7417'),
+                cash=Decimal("-2148.3405145"),
+                currency="USD",
+            ),
+            Transaction(
+                id=25,
+                uniqueid="20160126.U99.e.USD.1487346935",
+                datetime=datetime(2016, 1, 26, 17, 58, 18),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("100.00"),
+                # price=Decimal('10.7417'),
+                cash=Decimal("-1074.17025725"),
+                currency="USD",
+            ),
+            Transaction(
+                id=26,
+                uniqueid="20160126.U99.e.USD.1487346940",
+                datetime=datetime(2016, 1, 26, 17, 58, 18),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("242.00"),
+                # price=Decimal('10.74169421487603305785123967'),
+                cash=Decimal("-2599.492022545"),
+                currency="USD",
+            ),
+            Transaction(
+                id=27,
+                uniqueid="20160126.U99.e.USD.1487504352",
+                datetime=datetime(2016, 1, 26, 19, 45, 40),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("70.00"),
+                # price=Decimal('10.74314285714285714285714286'),
+                cash=Decimal("-752.02425725"),
+                currency="USD",
+            ),
+            Transaction(
+                id=28,
+                uniqueid="20160126.U99.e.USD.1487510413",
+                datetime=datetime(2016, 1, 26, 19, 50, 19),
+                type=None,
+                fiaccount=None,
+                security=None,
+                units=Decimal("100.00"),
+                # price=Decimal('10.7413'),
+                cash=Decimal("-1074.125180075"),
+                currency="USD",
+            ),
         ]
 
     def testFifoTrade(self):
@@ -490,19 +835,19 @@ class TradeTestCase(unittest.TestCase):
         # The first 5 trades are completely closed by the last 7 trades.
         # The 6th trade has 70 of 100 units closed by the last trade.
         matchedTrades = [
-            (0, 22, Decimal('-200')),
-            (1, 22, Decimal('-58')),
-            (1, 23, Decimal('-200')),
-            (1, 24, Decimal('-42')),
-            (2, 24, Decimal('-158')),
-            (2, 25, Decimal('-100')),
-            (2, 26, Decimal('-42')),
-            (3, 26, Decimal('-200')),
-            (4, 27, Decimal('-70')),
-            (4, 28, Decimal('-30')),
-            (5, 28, Decimal('-70')),
+            (0, 22, Decimal("-200")),
+            (1, 22, Decimal("-58")),
+            (1, 23, Decimal("-200")),
+            (1, 24, Decimal("-42")),
+            (2, 24, Decimal("-158")),
+            (2, 25, Decimal("-100")),
+            (2, 26, Decimal("-42")),
+            (3, 26, Decimal("-200")),
+            (4, 27, Decimal("-70")),
+            (4, 28, Decimal("-30")),
+            (5, 28, Decimal("-70")),
         ]
-        partial = (5, Decimal('-30'))
+        partial = (5, Decimal("-30"))
         self._testTradeSort(FIFO, matchedTrades, partial)
 
     def testLifoTrade(self):
@@ -512,16 +857,16 @@ class TradeTestCase(unittest.TestCase):
         # Trades 20 & 21 are completely closed by trades 22-26.
         # Trade 19 has 164 of 200 units closed by trades 27-28.
         matchedTrades = [
-            (19, 27, Decimal('-64')),
-            (19, 28, Decimal('-100')),
-            (20, 27, Decimal('-6')),
-            (21, 22, Decimal('-258')),
-            (21, 23, Decimal('-200')),
-            (21, 24, Decimal('-200')),
-            (21, 25, Decimal('-100')),
-            (21, 26, Decimal('-242')),
+            (19, 27, Decimal("-64")),
+            (19, 28, Decimal("-100")),
+            (20, 27, Decimal("-6")),
+            (21, 22, Decimal("-258")),
+            (21, 23, Decimal("-200")),
+            (21, 24, Decimal("-200")),
+            (21, 25, Decimal("-100")),
+            (21, 26, Decimal("-242")),
         ]
-        partial = (19, Decimal('-36'))
+        partial = (19, Decimal("-36"))
         self._testTradeSort(LIFO, matchedTrades, partial)
 
     def testMinGainTrade(self):
@@ -531,20 +876,20 @@ class TradeTestCase(unittest.TestCase):
         # Trades 12-14 and 6 are completely closed by trades 22-27.
         # Trade 4 has 70 of 100 units closed by trade 28.
         matchedTrades = [
-            (4, 28, Decimal('-70')),
-            (6, 27, Decimal('-70')),
-            (6, 28, Decimal('-30')),
-            (12, 22, Decimal('-125')),
-            (13, 22, Decimal('-61')),
-            (14, 22, Decimal('-72')),
-            (14, 23, Decimal('-200')),
-            (14, 24, Decimal('-200')),
-            (14, 25, Decimal('-100')),
-            (14, 26, Decimal('-242')),
+            (4, 28, Decimal("-70")),
+            (6, 27, Decimal("-70")),
+            (6, 28, Decimal("-30")),
+            (12, 22, Decimal("-125")),
+            (13, 22, Decimal("-61")),
+            (14, 22, Decimal("-72")),
+            (14, 23, Decimal("-200")),
+            (14, 24, Decimal("-200")),
+            (14, 25, Decimal("-100")),
+            (14, 26, Decimal("-242")),
         ]
 
         # Trade 4 above was partially closed - 30/100 units remain open
-        partial = (4, Decimal('-30'))
+        partial = (4, Decimal("-30"))
 
         self._testTradeSort(MINGAIN, matchedTrades, partial)
 
@@ -555,22 +900,22 @@ class TradeTestCase(unittest.TestCase):
         # Trades 15-18 and 20 are completely closed by trades 22-26.
         # Trade 21 has 370 of 1000 units closed by trades 26-28.
         matchedTrades = [
-            (15, 22, Decimal('-1')),
-            (18, 22, Decimal('-200')),
-            (16, 22, Decimal('-57')),
-            (16, 23, Decimal('-200')),
-            (16, 24, Decimal('-200')),
-            (16, 25, Decimal('-36')),
-            (17, 25, Decimal('-64')),
-            (17, 26, Decimal('-36')),
-            (20, 26, Decimal('-6')),
-            (21, 26, Decimal('-200')),
-            (21, 27, Decimal('-70')),
-            (21, 28, Decimal('-100')),
+            (15, 22, Decimal("-1")),
+            (18, 22, Decimal("-200")),
+            (16, 22, Decimal("-57")),
+            (16, 23, Decimal("-200")),
+            (16, 24, Decimal("-200")),
+            (16, 25, Decimal("-36")),
+            (17, 25, Decimal("-64")),
+            (17, 26, Decimal("-36")),
+            (20, 26, Decimal("-6")),
+            (21, 26, Decimal("-200")),
+            (21, 27, Decimal("-70")),
+            (21, 28, Decimal("-100")),
         ]
 
         # Trade 21 above was partially closed - 630/1000 units remain open
-        partial = (21, Decimal('-630'))
+        partial = (21, Decimal("-630"))
 
         self._testTradeSort(MAXGAIN, matchedTrades, partial)
 
@@ -585,13 +930,18 @@ class TradeTestCase(unittest.TestCase):
         def matchTrades(indexopen, indexclose, units):
             opentx = self.trades[indexopen]
             closetx = self.trades[indexclose]
-            lot = Lot(opentransaction=opentx, createtransaction=opentx,
-                      units=units, price=abs(opentx.cash/opentx.units),
-                      currency=opentx.currency)
-            return Gain(lot=lot, transaction=closetx,
-                        price=closetx.cash / closetx.units)
-        testGains = [matchTrades(*matchedTrade)
-                     for matchedTrade in matchedTrades]
+            lot = Lot(
+                opentransaction=opentx,
+                createtransaction=opentx,
+                units=units,
+                price=abs(opentx.cash / opentx.units),
+                currency=opentx.currency,
+            )
+            return Gain(
+                lot=lot, transaction=closetx, price=closetx.cash / closetx.units
+            )
+
+        testGains = [matchTrades(*matchedTrade) for matchedTrade in matchedTrades]
 
         # Book the trades and collect the Gains
         portfolio = Portfolio()
@@ -600,7 +950,9 @@ class TradeTestCase(unittest.TestCase):
             g = portfolio.trade(t, sort=sort)
             gains.extend(g)
 
-        testGains.sort(key=lambda x: str(x.lot.opentransaction.id) + str(x.transaction.id))
+        testGains.sort(
+            key=lambda x: str(x.lot.opentransaction.id) + str(x.transaction.id)
+        )
         gains.sort(key=lambda x: str(x.lot.opentransaction.id) + str(x.transaction.id))
 
         # Generated Gains should match prediction
@@ -619,9 +971,15 @@ class TradeTestCase(unittest.TestCase):
         testLots = []
         for i in range(0, 22):
             t = self.trades[i]
-            testLots.append(Lot(
-                opentransaction=t, createtransaction=t, units=t.units,
-                price=abs(t.cash / t.units), currency=t.currency))
+            testLots.append(
+                Lot(
+                    opentransaction=t,
+                    createtransaction=t,
+                    units=t.units,
+                    price=abs(t.cash / t.units),
+                    currency=t.currency,
+                )
+            )
         indices = list({matchedTrade[0] for matchedTrade in matchedTrades})
         indices.sort(reverse=True)
         for i in indices:
@@ -629,11 +987,15 @@ class TradeTestCase(unittest.TestCase):
 
         partialindex, partialunits = partialClose
         partial = self.trades[partialindex]
-        testLots.append(Lot(
-            opentransaction=partial, createtransaction=partial,
-            units=partialunits, price=abs(partial.cash / partial.units),
-            currency=partial.currency,
-        ))
+        testLots.append(
+            Lot(
+                opentransaction=partial,
+                createtransaction=partial,
+                units=partialunits,
+                price=abs(partial.cash / partial.units),
+                currency=partial.currency,
+            )
+        )
         testLots.sort(**FIFO)
         position = portfolio[(None, None)]
         position.sort(**FIFO)
@@ -646,94 +1008,148 @@ class TradeTestCase(unittest.TestCase):
 
 class ReturnOfCapitalTestCase(unittest.TestCase):
     def setUp(self):
-        tx1 = Transaction(id=1, datetime=datetime(2016, 1, 1),
-                          units=Decimal('100'), cash=Decimal('1000'),
-                          currency='USD')
-        self.lot1 = Lot(opentransaction=tx1, createtransaction=tx1,
-                        units=tx1.units, price=abs(tx1.cash / tx1.units),
-                        currency=tx1.currency)
+        tx1 = Transaction(
+            id=1,
+            uniqueid="",
+            datetime=datetime(2016, 1, 1),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+            units=Decimal("100"),
+            cash=Decimal("1000"),
+            currency="USD",
+        )
+        self.lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=tx1,
+            units=tx1.units,
+            price=abs(tx1.cash / tx1.units),
+            currency=tx1.currency,
+        )
 
-        tx2 = Transaction(id=2, datetime=datetime(2016, 1, 2),
-                          units=Decimal('200'), cash=Decimal('2200'),
-                          currency='USD')
-        self.lot2 = Lot(opentransaction=tx2, createtransaction=tx2,
-                        units=tx2.units, price=abs(tx2.cash / tx2.units),
-                        currency=tx2.currency)
+        tx2 = Transaction(
+            id=2,
+            uniqueid="",
+            datetime=datetime(2016, 1, 2),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+            units=Decimal("200"),
+            cash=Decimal("2200"),
+            currency="USD",
+        )
+        self.lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=tx2,
+            units=tx2.units,
+            price=abs(tx2.cash / tx2.units),
+            currency=tx2.currency,
+        )
 
-        tx3 = Transaction(id=3, datetime=datetime(2016, 1, 1),
-                          units=Decimal('300'), cash=Decimal('3600'),
-                          currency='USD')
-        tx3c = Transaction(datetime=datetime(2016, 1, 3))
-        self.lot3 = Lot(opentransaction=tx3, createtransaction=tx3c,
-                        units=tx3.units, price=abs(tx3.cash / tx3.units),
-                        currency=tx3.currency)
+        tx3 = Transaction(
+            id=3,
+            uniqueid="",
+            datetime=datetime(2016, 1, 1),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+            units=Decimal("300"),
+            cash=Decimal("3600"),
+            currency="USD",
+        )
+        tx3c = Transaction(
+            id=5,
+            uniqueid="",
+            datetime=datetime(2016, 1, 3),
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security="",
+        )
+        self.lot3 = Lot(
+            opentransaction=tx3,
+            createtransaction=tx3c,
+            units=tx3.units,
+            price=abs(tx3.cash / tx3.units),
+            currency=tx3.currency,
+        )
 
-        self.portfolio = Portfolio(
-            {(None, None): [self.lot1, self.lot2, self.lot3]})
+        self.portfolio = Portfolio({(None, None): [self.lot1, self.lot2, self.lot3]})
 
     def testRetOfCapBasic(self):
         """ Test ReturnOfCapital less than basis reduces cost without gain """
         transaction = Transaction(
-            id=1, uniqueid='a', datetime=datetime(2016, 1, 4),
-            cash=Decimal('600'),)
+            id=1,
+            uniqueid="a",
+            datetime=datetime(2016, 1, 4),
+            type=TransactionType.RETURNCAP,
+            fiaccount=None,
+            security=None,
+            cash=Decimal("600"),
+        )
         gains = self.portfolio.returnofcapital(transaction)
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
-        self.assertEqual(position[0],
-                         self.lot1._replace(price=Decimal('9')))
-        self.assertEqual(position[1],
-                         self.lot2._replace(price=Decimal('10')))
-        self.assertEqual(position[2],
-                         self.lot3._replace(price=Decimal('11')))
+        self.assertEqual(position[0], self.lot1._replace(price=Decimal("9")))
+        self.assertEqual(position[1], self.lot2._replace(price=Decimal("10")))
+        self.assertEqual(position[2], self.lot3._replace(price=Decimal("11")))
 
     def testRetOfCapDatetime(self):
         """ Test ReturnOfCapital respects Lot.createdt """
         transaction = Transaction(
-            id=1, uniqueid='a', datetime=datetime(2016, 1, 2, 1),
-            cash=Decimal('600'),)
+            id=1,
+            uniqueid="a",
+            datetime=datetime(2016, 1, 2, 1),
+            type=TransactionType.RETURNCAP,
+            fiaccount=None,
+            security=None,
+            cash=Decimal("600"),
+        )
         gains = self.portfolio.returnofcapital(transaction)
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
-        self.assertEqual(position[0],
-                         self.lot1._replace(price=Decimal('8')))
-        self.assertEqual(position[1],
-                         self.lot2._replace(price=Decimal('9')))
+        self.assertEqual(position[0], self.lot1._replace(price=Decimal("8")))
+        self.assertEqual(position[1], self.lot2._replace(price=Decimal("9")))
         # Lot 3 has opendt before the ReturnOfCapital.datetime, but createdt
         # afterwards - it should follow the createdt and NOT reduce basis
-        self.assertEqual(position[2],
-                         self.lot3._replace(price=Decimal('12')))
+        self.assertEqual(position[2], self.lot3._replace(price=Decimal("12")))
 
     def testRetOfCapZero(self):
         """ Test ReturnOfCapital reduce basis to zero """
         transaction = Transaction(
-            id=1, uniqueid='a', datetime=datetime(2016, 1, 4),
-            cash=Decimal('6000'),)
+            id=1,
+            uniqueid="a",
+            datetime=datetime(2016, 1, 4),
+            type=TransactionType.RETURNCAP,
+            fiaccount=None,
+            security=None,
+            cash=Decimal("6000"),
+        )
         gains = self.portfolio.returnofcapital(transaction)
         # Lot 1 cost should be reduced to zero but no Gain generated
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
-        self.assertEqual(position[0],
-                         self.lot1._replace(price=Decimal('0')))
-        self.assertEqual(position[1],
-                         self.lot2._replace(price=Decimal('1')))
-        self.assertEqual(position[2],
-                         self.lot3._replace(price=Decimal('2')))
+        self.assertEqual(position[0], self.lot1._replace(price=Decimal("0")))
+        self.assertEqual(position[1], self.lot2._replace(price=Decimal("1")))
+        self.assertEqual(position[2], self.lot3._replace(price=Decimal("2")))
 
     def testRetOfCapLessThanZero(self):
         """ Test ReturnOfCapital in excess of cost basis """
         transaction = Transaction(
-            id=1, uniqueid='a', datetime=datetime(2016, 1, 4),
-            cash=Decimal('7200'),)
+            id=1,
+            uniqueid="a",
+            datetime=datetime(2016, 1, 4),
+            type=TransactionType.RETURNCAP,
+            fiaccount=None,
+            security=None,
+            cash=Decimal("7200"),
+        )
         gains = self.portfolio.returnofcapital(transaction)
         # Lot 1 & 2 cost should be reduced to zero with Gain generated
         position = self.portfolio[(None, None)]
-        self.assertEqual(position[0],
-                         self.lot1._replace(price=Decimal('0')))
-        self.assertEqual(position[1],
-                         self.lot2._replace(price=Decimal('0')))
+        self.assertEqual(position[0], self.lot1._replace(price=Decimal("0")))
+        self.assertEqual(position[1], self.lot2._replace(price=Decimal("0")))
         # Lot 3 cost should be reduced to zero with no Gain generated
-        self.assertEqual(position[2],
-                         self.lot3._replace(price=Decimal('0')))
+        self.assertEqual(position[2], self.lot3._replace(price=Decimal("0")))
 
         # Gains should store Lot instances with full price (not reduced
         # for the ReturnOfCapital)
@@ -741,114 +1157,201 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         gain0 = gains[0]
         self.assertEqual(gain0.lot, self.lot1)
         self.assertEqual(gain0.transaction, transaction)
-        self.assertEqual(gain0.price, Decimal('12'))  # $7,200 over 600sh
+        self.assertEqual(gain0.price, Decimal("12"))  # $7,200 over 600sh
         gain1 = gains[1]
         self.assertEqual(gain1.lot, self.lot2)
         self.assertEqual(gain1.transaction, transaction)
-        self.assertEqual(gain1.price, Decimal('12'))  # $7,200 over 600sh
-        self.assertEqual(gain1.lot.price, Decimal('11'))
+        self.assertEqual(gain1.price, Decimal("12"))  # $7,200 over 600sh
+        self.assertEqual(gain1.lot.price, Decimal("11"))
 
     def testRetOfCapMultiplePositions(self):
         """
         Test Portfolio route ReturnOfCapital to correct (account, security)
         """
-        tx4 = Transaction(id=4, datetime=datetime(2016, 1, 1), units=100,
-                          cash=Decimal('1000'), currency='USD')
-        lot4 = Lot(opentransaction=tx4, createtransaction=tx4,
-                   units=tx4.units, price=abs(tx4.cash / tx4.units),
-                   currency=tx4.currency)
+        tx4 = Transaction(
+            id=4,
+            uniqueid="",
+            datetime=datetime(2016, 1, 1),
+            type=TransactionType.RETURNCAP,
+            fiaccount="",
+            security="",
+            units=Decimal("100"),
+            cash=Decimal("1000"),
+            currency="USD",
+        )
+        lot4 = Lot(
+            opentransaction=tx4,
+            createtransaction=tx4,
+            units=tx4.units,
+            price=abs(tx4.cash / tx4.units),
+            currency=tx4.currency,
+        )
 
-        tx5 = Transaction(id=5, datetime=datetime(2016, 1, 2), units=200,
-                          cash=Decimal('2200'), currency='USD')
-        lot5 = Lot(opentransaction=tx5, createtransaction=tx5,
-                   units=tx5.units, price=abs(tx5.cash / tx5.units),
-                   currency=tx5.currency)
+        tx5 = Transaction(
+            id=5,
+            uniqueid="",
+            datetime=datetime(2016, 1, 2),
+            type=TransactionType.RETURNCAP,
+            fiaccount="",
+            security="",
+            units=Decimal("200"),
+            cash=Decimal("2200"),
+            currency="USD",
+        )
+        lot5 = Lot(
+            opentransaction=tx5,
+            createtransaction=tx5,
+            units=tx5.units,
+            price=abs(tx5.cash / tx5.units),
+            currency=tx5.currency,
+        )
 
-        tx6 = Transaction(id=4, datetime=datetime(2016, 1, 2), units=300,
-                          cash=Decimal('3600'), currency='USD')
-        lot6 = Lot(opentransaction=tx6, createtransaction=tx6,
-                   units=tx6.units, price=abs(tx6.cash / tx6.units),
-                   currency=tx6.currency)
+        tx6 = Transaction(
+            id=4,
+            uniqueid="",
+            datetime=datetime(2016, 1, 2),
+            type=TransactionType.RETURNCAP,
+            fiaccount="",
+            security="",
+            units=Decimal("300"),
+            cash=Decimal("3600"),
+            currency="USD",
+        )
+        lot6 = Lot(
+            opentransaction=tx6,
+            createtransaction=tx6,
+            units=tx6.units,
+            price=abs(tx6.cash / tx6.units),
+            currency=tx6.currency,
+        )
 
-        self.portfolio[(None, 'sec4')].append(lot4)
-        self.portfolio[('acct5', 'sec5')].append(lot5)
-        self.portfolio[('acct6', None)].append(lot6)
+        self.portfolio[(None, "sec4")].append(lot4)
+        self.portfolio[("acct5", "sec5")].append(lot5)
+        self.portfolio[("acct6", None)].append(lot6)
 
         # This routes to (None, None) - [self.lot1, self.lot2, self.lot3]; 600sh
-        retofcap1 = Transaction(id=10, fiaccount=None, security=None,
-                                datetime=datetime(2016, 6, 1),
-                                cash=Decimal('1200'))
+        retofcap1 = Transaction(
+            id=10,
+            uniqueid="",
+            type=TransactionType.RETURNCAP,
+            fiaccount=None,
+            security=None,
+            datetime=datetime(2016, 6, 1),
+            cash=Decimal("1200"),
+        )
         # This routes to ('acct6', None) - lot6; 300sh
-        retofcap2 = Transaction(id=11, fiaccount='acct6', security=None,
-                                datetime=datetime(2016, 6, 1),
-                                cash=Decimal('600'))
+        retofcap2 = Transaction(
+            id=11,
+            uniqueid="",
+            type=TransactionType.RETURNCAP,
+            fiaccount="acct6",
+            security=None,
+            datetime=datetime(2016, 6, 1),
+            cash=Decimal("600"),
+        )
         # This routes to (None, 'sec4') - lot4; 100sh
-        retofcap3 = Transaction(id=12, fiaccount=None, security='sec4',
-                                datetime=datetime(2016, 6, 1),
-                                cash=Decimal('300'))
+        retofcap3 = Transaction(
+            id=12,
+            uniqueid="",
+            type=TransactionType.RETURNCAP,
+            fiaccount=None,
+            security="sec4",
+            datetime=datetime(2016, 6, 1),
+            cash=Decimal("300"),
+        )
         # This routes to ('acct5', 'sec5') - lot5; 200sh
-        retofcap4 = Transaction(id=13, fiaccount='acct5', security='sec5',
-                                datetime=datetime(2016, 6, 1),
-                                cash=Decimal('800'))
+        retofcap4 = Transaction(
+            id=13,
+            uniqueid="",
+            type=TransactionType.RETURNCAP,
+            fiaccount="acct5",
+            security="sec5",
+            datetime=datetime(2016, 6, 1),
+            cash=Decimal("800"),
+        )
         for retofcap in (retofcap1, retofcap2, retofcap3, retofcap4):
             self.portfolio.returnofcapital(retofcap)
 
         position = self.portfolio[(None, None)]
         self.assertEqual(len(position), 3)
-        self.assertEqual(position[0],
-                         self.lot1._replace(price=Decimal('8')))
-        self.assertEqual(position[1],
-                         self.lot2._replace(price=Decimal('9')))
-        self.assertEqual(position[2],
-                         self.lot3._replace(price=Decimal('10')))
+        self.assertEqual(position[0], self.lot1._replace(price=Decimal("8")))
+        self.assertEqual(position[1], self.lot2._replace(price=Decimal("9")))
+        self.assertEqual(position[2], self.lot3._replace(price=Decimal("10")))
 
-        position = self.portfolio[(None, 'sec4')]
+        position = self.portfolio[(None, "sec4")]
         self.assertEqual(len(position), 1)
-        self.assertEqual(position[0],
-                         lot4._replace(price=Decimal('7')))
+        self.assertEqual(position[0], lot4._replace(price=Decimal("7")))
 
-        position = self.portfolio[('acct5', 'sec5')]
+        position = self.portfolio[("acct5", "sec5")]
         self.assertEqual(len(position), 1)
-        self.assertEqual(position[0],
-                         lot5._replace(price=Decimal('7')))
+        self.assertEqual(position[0], lot5._replace(price=Decimal("7")))
 
-        position = self.portfolio[('acct6', None)]
+        position = self.portfolio[("acct6", None)]
         self.assertEqual(len(position), 1)
-        self.assertEqual(position[0],
-                         lot6._replace(price=Decimal('10')))
+        self.assertEqual(position[0], lot6._replace(price=Decimal("10")))
 
 
 class SplitTestCase(unittest.TestCase):
     def setUp(self):
-        tx0 = Transaction(id=1, datetime=datetime(2016, 1, 1),
-                          units=Decimal('100'), cash=Decimal('-1000'),
-                          currency='USD')
-        self.lot0 = Lot(opentransaction=tx0, createtransaction=tx0,
-                        units=tx0.units, price=abs(tx0.cash / tx0.units),
-                        currency=tx0.currency)
+        tx0 = Transaction(
+            id=1,
+            datetime=datetime(2016, 1, 1),
+            uniqueid="",
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security=None,
+            units=Decimal("100"),
+            cash=Decimal("-1000"),
+            currency="USD",
+        )
+        self.lot0 = Lot(
+            opentransaction=tx0,
+            createtransaction=tx0,
+            units=tx0.units,
+            price=abs(tx0.cash / tx0.units),
+            currency=tx0.currency,
+        )
 
-        tx1 = Transaction(id=3, datetime=datetime(2016, 1, 3),
-                          units=Decimal('300'), cash=Decimal('-3600'),
-                          currency='USD')
-        self.lot1 = Lot(opentransaction=tx1, createtransaction=tx1,
-                        units=tx1.units, price=abs(tx1.cash / tx1.units),
-                        currency=tx1.currency)
+        tx1 = Transaction(
+            id=3,
+            datetime=datetime(2016, 1, 3),
+            uniqueid="",
+            type=TransactionType.TRADE,
+            fiaccount="",
+            security=None,
+            units=Decimal("300"),
+            cash=Decimal("-3600"),
+            currency="USD",
+        )
+        self.lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=tx1,
+            units=tx1.units,
+            price=abs(tx1.cash / tx1.units),
+            currency=tx1.currency,
+        )
 
-        self.portfolio = Portfolio(
-            {(None, None): [self.lot0, self.lot1]})
+        self.portfolio = Portfolio({(None, None): [self.lot0, self.lot1]})
 
     def testSplitDatetime(self):
         """ Splits respect Lot.createdt not Lot.opendt """
-        split = Transaction(id=4, uniqueid='', datetime=datetime(2016, 1, 2),
-                            numerator=Decimal('1'), denominator=Decimal('10'),
-                            units=Decimal('-90'))
+        split = Transaction(
+            id=4,
+            datetime=datetime(2016, 1, 2),
+            uniqueid=None,
+            type=TransactionType.SPLIT,
+            fiaccount=None,
+            security=None,
+            numerator=Decimal("1"),
+            denominator=Decimal("10"),
+            units=Decimal("-90"),
+        )
 
         gains = self.portfolio.split(split)
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
         self.assertEqual(len(position), 2)
-        self.assertEqual(position[0],
-                         self.lot0._replace(units=10, price=100))
+        self.assertEqual(position[0], self.lot0._replace(units=10, price=100))
         self.assertEqual(position[1], self.lot1)
 
     def testSplitWrongUnits(self):
@@ -856,38 +1359,77 @@ class SplitTestCase(unittest.TestCase):
         Transaction.units must match total Lot.units before
         Transaction.datetime
         """
-        split = Transaction(id=1, uniqueid='', datetime=datetime(2016, 1, 2),
-                            numerator=Decimal('1'), denominator=Decimal('10'),
-                            units=Decimal('90'))
+        split = Transaction(
+            id=1,
+            datetime=datetime(2016, 1, 2),
+            uniqueid="",
+            type=TransactionType.SPLIT,
+            fiaccount="",
+            security=None,
+            numerator=Decimal("1"),
+            denominator=Decimal("10"),
+            units=Decimal("90"),
+        )
         with self.assertRaises(Inconsistent):
             self.portfolio.split(split)
 
 
 class TransferTestCase(unittest.TestCase):
     def setUp(self):
-        tx1 = Transaction(id=1, datetime=datetime(2016, 1, 1), security=1,
-                          units=Decimal('100'), cash=Decimal('-1000'),
-                          currency='USD')
-        self.lot1 = Lot(opentransaction=tx1, createtransaction=tx1,
-                        units=tx1.units, price=abs(tx1.cash / tx1.units),
-                        currency=tx1.currency)
-        tx2 = Transaction(id=2, datetime=datetime(2016, 1, 1), security=2,
-                          units=Decimal('-300'), cash=Decimal('3600'),
-                          currency='USD')
-        self.lot2 = Lot(opentransaction=tx2, createtransaction=tx2,
-                        units=tx2.units, price=abs(tx1.cash / tx1.units),
-                        currency='USD')
+        tx1 = Transaction(
+            id=1,
+            uniqueid="",
+            type=TransactionType.TRANSFER,
+            fiaccount=None,
+            datetime=datetime(2016, 1, 1),
+            security=1,
+            units=Decimal("100"),
+            cash=Decimal("-1000"),
+            currency="USD",
+        )
+        self.lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=tx1,
+            units=tx1.units,
+            price=abs(tx1.cash / tx1.units),
+            currency=tx1.currency,
+        )
+        tx2 = Transaction(
+            id=2,
+            uniqueid="",
+            type=TransactionType.TRANSFER,
+            fiaccount=None,
+            datetime=datetime(2016, 1, 1),
+            security=2,
+            units=Decimal("-300"),
+            cash=Decimal("3600"),
+            currency="USD",
+        )
+        self.lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=tx2,
+            units=tx2.units,
+            price=abs(tx1.cash / tx1.units),
+            currency="USD",
+        )
 
-        self.portfolio = Portfolio({(None, 1): [self.lot1, ],
-                                    (None, 2): [self.lot2, ], })
+        self.portfolio = Portfolio({(None, 1): [self.lot1], (None, 2): [self.lot2]})
 
     def testTransfer(self):
         """
         Transfer divides cost and preserves holding period
         """
-        transfer = Transaction(id=4, datetime=datetime(2016, 1, 4), security=3,
-                               units=Decimal('100'), securityFrom=1,
-                               unitsFrom=Decimal('-50'))
+        transfer = Transaction(
+            id=4,
+            uniqueid="",
+            type=TransactionType.TRANSFER,
+            fiaccount=None,
+            datetime=datetime(2016, 1, 4),
+            security=3,
+            units=Decimal("100"),
+            securityFrom=1,
+            unitsFrom=Decimal("-50"),
+        )
         gains = self.portfolio.transfer(transfer)
         self.assertEqual(len(gains), 0)
 
@@ -903,16 +1445,26 @@ class TransferTestCase(unittest.TestCase):
         self.assertEqual(lot.opentransaction, self.lot1.opentransaction)
         self.assertEqual(lot.createtransaction, transfer)
         self.assertEqual(lot.units, transfer.units)
-        self.assertEqual(lot.price, self.lot1.price * -transfer.unitsFrom / transfer.units)
+        self.assertEqual(
+            lot.price, self.lot1.price * -transfer.unitsFrom / transfer.units
+        )
         self.assertEqual(lot.currency, self.lot1.currency)
 
     def testTransferClose(self):
         """
         Transfer correctly closes oppositely-signed Lots of transfer Security
         """
-        transfer = Transaction(id=4, datetime=datetime(2016, 1, 4), security=2,
-                               units=Decimal('100'), securityFrom=1,
-                               unitsFrom=Decimal('-50'))
+        transfer = Transaction(
+            id=4,
+            uniqueid="",
+            datetime=datetime(2016, 1, 4),
+            type=TransactionType.TRANSFER,
+            fiaccount=None,
+            security=2,
+            units=Decimal("100"),
+            securityFrom=1,
+            unitsFrom=Decimal("-50"),
+        )
         gains = self.portfolio.transfer(transfer)
 
         pos1 = self.portfolio[(None, 1)]
@@ -933,56 +1485,112 @@ class TransferTestCase(unittest.TestCase):
         Transactions that can't be satisfied raise errors.
         """
         # unitsFrom and units must have opposite signs
-        transfer = Transaction(id=4, datetime=datetime(2016, 1, 4), security=2,
-                               units=Decimal('100'), securityFrom=1,
-                               unitsFrom=Decimal('50'))
+        transfer = Transaction(
+            id=4,
+            uniqueid="",
+            datetime=datetime(2016, 1, 4),
+            type=TransactionType.TRANSFER,
+            fiaccount=None,
+            security=2,
+            units=Decimal("100"),
+            securityFrom=1,
+            unitsFrom=Decimal("50"),
+        )
         with self.assertRaises(ValueError):
             self.portfolio.transfer(transfer)
 
         # Must have an existing position in (accountFrom, securityFrom)
-        transfer = Transaction(id=4, datetime=datetime(2016, 1, 4), security=2,
-                               units=Decimal('100'), securityFrom=3,
-                               unitsFrom=Decimal('-50'))
+        transfer = Transaction(
+            id=4,
+            uniqueid="",
+            datetime=datetime(2016, 1, 4),
+            type=TransactionType.TRANSFER,
+            fiaccount=None,
+            security=2,
+            units=Decimal("100"),
+            securityFrom=3,
+            unitsFrom=Decimal("-50"),
+        )
         with self.assertRaises(Inconsistent):
             self.portfolio.transfer(transfer)
 
         # Existing position must have enough units to satisfy unitsFrom
-        transfer = Transaction(id=4, datetime=datetime(2016, 1, 4), security=2,
-                               units=Decimal('100'), securityFrom=1,
-                               unitsFrom=Decimal('-150'))
+        transfer = Transaction(
+            id=4,
+            uniqueid="",
+            datetime=datetime(2016, 1, 4),
+            type=TransactionType.TRANSFER,
+            fiaccount=None,
+            security=2,
+            units=Decimal("100"),
+            securityFrom=1,
+            unitsFrom=Decimal("-150"),
+        )
         with self.assertRaises(Inconsistent):
             self.portfolio.transfer(transfer)
 
 
 class SpinoffTestCase(unittest.TestCase):
     def setUp(self):
-        tx1 = Transaction(id=1, datetime=datetime(2016, 1, 1), security=1,
-                          units=Decimal('100'), cash=Decimal('-1000'),
-                          currency='USD')
-        self.lot1 = Lot(opentransaction=tx1, createtransaction=tx1,
-                        units=tx1.units, price=abs(tx1.cash / tx1.units),
-                        currency=tx1.currency)
+        tx1 = Transaction(
+            id=1,
+            uniqueid="",
+            datetime=datetime(2016, 1, 1),
+            type=TransactionType.SPINOFF,
+            fiaccount=None,
+            security=1,
+            units=Decimal("100"),
+            cash=Decimal("-1000"),
+            currency="USD",
+        )
+        self.lot1 = Lot(
+            opentransaction=tx1,
+            createtransaction=tx1,
+            units=tx1.units,
+            price=abs(tx1.cash / tx1.units),
+            currency=tx1.currency,
+        )
 
-        tx2 = Transaction(id=2, datetime=datetime(2016, 1, 1), security=2,
-                          units=Decimal('-300'), cash=Decimal('3600'),
-                          currency='USD')
-        self.lot2 = Lot(opentransaction=tx2, createtransaction=tx2,
-                        units=tx2.units, price=abs(tx2.cash / tx2.units),
-                        currency=tx2.currency)
+        tx2 = Transaction(
+            id=2,
+            uniqueid="",
+            datetime=datetime(2016, 1, 1),
+            type=TransactionType.SPINOFF,
+            fiaccount=None,
+            security=2,
+            units=Decimal("-300"),
+            cash=Decimal("3600"),
+            currency="USD",
+        )
+        self.lot2 = Lot(
+            opentransaction=tx2,
+            createtransaction=tx2,
+            units=tx2.units,
+            price=abs(tx2.cash / tx2.units),
+            currency=tx2.currency,
+        )
 
-        self.portfolio = Portfolio({(None, 1): [self.lot1, ],
-                                    (None, 2): [self.lot2, ], })
+        self.portfolio = Portfolio({(None, 1): [self.lot1], (None, 2): [self.lot2]})
 
     def testSpinoff(self):
         """
         Spinoff divides cost and preserves holding period
         """
         # 1 for 5 on 100sh: spin 20sh@5; retain 100sh@1
-        spinoff = Transaction(id=4, datetime=datetime(2016, 1, 4), security=3,
-                              numerator=Decimal('1'), denominator=Decimal('5'),
-                              units=Decimal('20'), securityFrom=1,
-                              securityPrice=Decimal('5'),
-                              securityFromPrice=Decimal('1'))
+        spinoff = Transaction(
+            id=4,
+            uniqueid=None,
+            type=TransactionType.SPINOFF,
+            datetime=datetime(2016, 1, 4),
+            fiaccount=None,
+            security=3,
+            numerator=Decimal("1"),
+            denominator=Decimal("5"),
+            units=Decimal("20"),
+            securityFrom=1,
+            securityPrice=Decimal("5"),
+            securityFromPrice=Decimal("1"),
+        )
         gains = self.portfolio.spinoff(spinoff)
         self.assertEqual(len(gains), 0)
 
@@ -999,24 +1607,35 @@ class SpinoffTestCase(unittest.TestCase):
         self.assertIs(lot3.opentransaction, self.lot1.opentransaction)
         self.assertIs(lot3.createtransaction, spinoff)
         self.assertEqual(lot3.units, spinoff.units)
-        self.assertEqual(lot3.price, Decimal('25'))
+        self.assertEqual(lot3.price, Decimal("25"))
         self.assertEqual(lot3.currency, self.lot1.currency)
 
         # Aggregate cost is conserved over the spinoff
-        self.assertEqual(sum([l.units * l.price for l in position1])
-                         + sum([l.units * l.price for l in position3]),
-                         self.lot1.units * self.lot1.price)
+        self.assertEqual(
+            sum([l.units * l.price for l in position1])
+            + sum([l.units * l.price for l in position3]),
+            self.lot1.units * self.lot1.price,
+        )
 
     def testSpinoffClose(self):
         """
         Spinoff correctly closes oppositely-signed Lots of spin Security
         """
         # 1 for 5 on 100sh: spin 20sh@5; retain 100sh@1
-        spinoff = Transaction(id=4, datetime=datetime(2016, 1, 4), security=2,
-                              numerator=Decimal('1'), denominator=Decimal('5'),
-                              units=Decimal('20'), securityFrom=1,
-                              securityPrice=Decimal('5'),
-                              securityFromPrice=Decimal('1'))
+        spinoff = Transaction(
+            id=4,
+            datetime=datetime(2016, 1, 4),
+            uniqueid=None,
+            type=TransactionType.SPINOFF,
+            fiaccount=None,
+            security=2,
+            numerator=Decimal("1"),
+            denominator=Decimal("5"),
+            units=Decimal("20"),
+            securityFrom=1,
+            securityPrice=Decimal("5"),
+            securityFromPrice=Decimal("1"),
+        )
         gains = self.portfolio.spinoff(spinoff)
         self.assertEqual(len(gains), 1)
         gain = gains.pop()
@@ -1038,5 +1657,5 @@ class SpinoffTestCase(unittest.TestCase):
         self.assertEqual(lot2, self.lot2._replace(units=-280))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -21,7 +21,7 @@ BROKERID = '4705'
 class OfxStatementReader(FlexStatementReader):
     # Get back OfxStatementReader superclass methods that we need which were
     # overriden in FlexStatementReader class definition
-    __init__ = reader.OfxStatementReader.__init__
+    __init__ = reader.OfxStatementReader.__init__  # type: ignore
     read = reader.OfxStatementReader.read
     read_securities = reader.OfxStatementReader.read_securities
     transaction_handlers = reader.OfxStatementReader.transaction_handlers

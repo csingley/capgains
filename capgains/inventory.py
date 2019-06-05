@@ -39,78 +39,26 @@ Nothing in this module changes a Transaction or a Gain, once created.
 # stdlib imports
 from collections import (namedtuple, defaultdict)
 from decimal import Decimal
+import datetime as _datetime
 from datetime import (date, timedelta)
+from typing import (
+    NamedTuple,
+    Tuple,
+    List,
+    Sequence,
+    Mapping,
+    Callable,
+    Any,
+    Optional,
+    Union,
+)
 
-# local import
+
+# local imports
 from capgains import CONFIG
-from capgains.models.transactions import CurrencyRate
+from capgains.models import transactions
 
 
-###############################################################################
-# BASIC DATA CONTAINERS
-###############################################################################
-Lot = namedtuple('Lot', ['opentransaction', 'createtransaction', 'units',
-                         'price', 'currency'])
-Lot.__doc__ += ': Cost basis/holding data container'
-Lot.opentransaction.__doc__ = 'Transaction instance that began holding period'
-Lot.createtransaction.__doc__ = ('Transaction instance that created the Lot '
-                                 'for the current Position')
-Lot.units.__doc__ = '(type decimal.Decimal; nonzero)'
-Lot.price.__doc__ = 'Per-unit cost (type decimal.Decimal; positive or zero)'
-Lot.currency.__doc__ = 'Currency denomination of cost price'
-
-
-Gain = namedtuple('Gain', ['lot', 'transaction', 'price'])
-Gain.lot.__doc__ = 'Lot instance for which gain is realized'
-Gain.transaction.__doc__ = 'The Transaction instance realizing gain'
-Gain.price.__doc__ = '(type decimal.Decimal; positive or zero)'
-
-
-###############################################################################
-# TRANSACTION MODEL
-# Persistent SQL implementation of this model in capgains.models.transactions
-###############################################################################
-Transaction = namedtuple('Transaction', [
-    'id', 'uniqueid', 'datetime', 'dtsettle', 'type', 'memo', 'currency',
-    'cash', 'fiaccount', 'security', 'units', 'securityPrice', 'fiaccountFrom',
-    'securityFrom', 'unitsFrom', 'securityFromPrice', 'numerator',
-    'denominator', 'sort'])
-Transaction.id.__doc__ = 'Local transaction unique identifer (database PK)'
-Transaction.uniqueid.__doc__ = 'FI transaction unique identifier (type str)'
-Transaction.datetime.__doc__ = 'Effective date/time (type datetime.datetime)'
-Transaction.dtsettle.__doc__ = ('For cash distributions: payment date (dttrade'
-                                ' is accrual date i.e. ex-date')
-Transaction.type.__doc__ = ''
-Transaction.memo.__doc__ = 'Transaction notes (type str)'
-Transaction.currency.__doc__ = ('Currency denomination of Transaction.cash '
-                                '(type str; ISO 4217)')
-Transaction.cash.__doc__ = ('Change in money amount caused by Transaction '
-                            '(type decimal.Decimal)')
-Transaction.fiaccount.__doc__ = 'Financial institution acount'
-Transaction.security.__doc__ = 'Security or other asset'
-Transaction.units.__doc__ = ('Change in Security quantity caused by '
-                             'Transaction (type decimal.Decimal)')
-Transaction.fiaccountFrom.__doc__ = 'For transfers: source FI acount'
-Transaction.securityFrom.__doc__ = ('For transfers, spinoffs, exercise: '
-                                    'source Security')
-Transaction.unitsFrom.__doc__ = ('For splits, transfers, exercise: change in '
-                                 'quantity of source Security caused by '
-                                 'Transaction (type decimal.Decimal)')
-Transaction.securityPrice.__doc__ = ('For spinoffs: FMV of destination '
-                                     'Security post-spin')
-Transaction.securityFromPrice.__doc__ = ('For spinoffs: FMV of source '
-                                         'security post-spin')
-Transaction.numerator.__doc__ = ('For splits, spinoffs: normalized units of '
-                                 'destination Security')
-Transaction.denominator.__doc__ = ('For splits, spinoff: normalized units of '
-                                   'source Security')
-Transaction.sort.__doc__ = 'Sort algorithm for gain recognition'
-Transaction.__new__.__defaults__ = (None, ) * 19
-
-
-###############################################################################
-# ERRORS
-##############################################################################
 class InventoryError(Exception):
     """ Base class for Exceptions defined in this module """
     pass
@@ -127,9 +75,105 @@ class Inconsistent(InventoryError):
 
 
 ###############################################################################
+# DATA MODEL
+###############################################################################
+class Transaction(NamedTuple):
+    """
+    A change to a securities position.
+
+    Persistent SQL implementation of this model in capgains.models.transactions
+    """
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    type: transactions.TransactionType
+    fiaccount: Any
+    security: Any
+    dtsettle: Optional[_datetime.datetime] = None
+    memo: Optional[str] = None
+    currency: Optional[str] = None
+    cash: Optional[Decimal] = None
+    units: Optional[Decimal] = None
+    securityPrice: Optional[Decimal] = None
+    fiaccountFrom: Optional[Any] = None
+    securityFrom: Optional[Any] = None
+    unitsFrom: Optional[Decimal] = None
+    securityFromPrice: Optional[Decimal] = None
+    numerator: Optional[Decimal] = None
+    denominator: Optional[Decimal] = None
+    sort: Optional[Callable] = None
+
+
+Transaction.id.__doc__ = "Local transaction unique identifer (database PK)"
+Transaction.uniqueid.__doc__ = "FI transaction unique identifier"
+Transaction.datetime.__doc__ = "Effective date/time"
+Transaction.dtsettle.__doc__ = ("For cash distributions: payment date (dttrade"
+                                " is accrual date i.e. ex-date")
+Transaction.type.__doc__ = ""
+Transaction.memo.__doc__ = "Transaction notes (type str)"
+Transaction.currency.__doc__ = ("Currency denomination of Transaction.cash "
+                                "(type str; ISO 4217)")
+Transaction.cash.__doc__ = "Change in money amount caused by Transaction"
+Transaction.fiaccount.__doc__ = "Financial institution (e.g. brokerage) account"
+Transaction.security.__doc__ = "Security or other asset"
+Transaction.units.__doc__ = "Change in Security quantity caused by Transaction"
+Transaction.fiaccountFrom.__doc__ = "For transfers: source FI account"
+Transaction.securityFrom.__doc__ = ("For transfers, spinoffs, exercise: "
+                                    "source Security")
+Transaction.unitsFrom.__doc__ = ("For splits, transfers, exercise: change in "
+                                 "quantity of source Security caused by "
+                                 "Transaction")
+Transaction.securityPrice.__doc__ = ("For spinoffs: FMV of destination "
+                                     "Security post-spin")
+Transaction.securityFromPrice.__doc__ = ("For spinoffs: FMV of source "
+                                         "security post-spin")
+Transaction.numerator.__doc__ = ("For splits, spinoffs: normalized units of "
+                                 "destination Security")
+Transaction.denominator.__doc__ = ("For splits, spinoff: normalized units of "
+                                   "source Security")
+Transaction.sort.__doc__ = "Sort algorithm for gain recognition"
+
+
+TransactionType = Union[Transaction, transactions.Transaction]
+
+
+class Lot(NamedTuple):
+    """ Cost basis/holding data container for a securities position """
+    opentransaction: TransactionType
+    createtransaction: TransactionType
+    #  opentransaction: Any
+    #  createtransaction: Any
+    units: Decimal
+    price: Decimal
+    currency: str
+
+
+Lot.opentransaction.__doc__ = "Transaction that began holding period"
+Lot.createtransaction.__doc__ = ("Transaction that created the Lot "
+                                 "for the current position")
+Lot.units.__doc__ = "(Nonzero)"
+Lot.price.__doc__ = "Per-unit cost (positive or zero)"
+Lot.currency.__doc__ = "Currency denomination of cost price"
+
+
+class Gain(NamedTuple):
+    """
+    Binds realizing Transaction to a Lot (and indirectly its opening Transaction)
+    """
+    lot: Lot
+    transaction: Any
+    price: Decimal
+
+
+Gain.lot.__doc__ = "Lot instance for which gain is realized"
+Gain.transaction.__doc__ = "Transaction instance realizing gain"
+Gain.price.__doc__ = "Per-unit proceeds (positive or zero)"
+
+
+###############################################################################
 # FUNCTIONS OPERATING ON LOTS
 ###############################################################################
-def part_lot(lot, units):
+def part_lot(lot: Lot, units: Decimal) -> Tuple[Lot, Lot]:
     """
     Partition Lot at specified # of units, adding new Lot of leftover units.
 
@@ -149,7 +193,11 @@ def part_lot(lot, units):
     return (lot._replace(units=units), lot._replace(units=lot.units - units))
 
 
-def take_lots(lots, criterion=None, max_units=None):
+def take_lots(
+    lots: Sequence[Lot],
+    criterion: Optional[Callable[[Lot], bool]] = None,
+    max_units: Optional[Decimal] = None,
+) -> Tuple[List[Lot], List[Lot]]:
     """
     Remove a selection of Lots from the Position in sequential order.
 
@@ -165,11 +213,13 @@ def take_lots(lots, criterion=None, max_units=None):
             * list of Lots matching criterion/units
             * list of other Lots
     """
-    assert max_units is None or isinstance(max_units, Decimal)
+    assert isinstance(max_units, (type(None), Decimal))
 
     if criterion is None:
-        def criterion(lot):
+        def _criterion(lot):
             return True
+
+        criterion = _criterion
 
     lots_taken = []
     lots_left = []
@@ -205,7 +255,11 @@ def take_lots(lots, criterion=None, max_units=None):
     return lots_taken, lots_left
 
 
-def take_basis(lots, criterion, fraction):
+def take_basis(
+    lots: Sequence[Lot],
+    criterion: Callable[[Lot], bool],
+    fraction: Decimal,
+) -> Tuple[List[Lot], List[Lot]]:
     """
     Remove a fraction of the cost from each Lot in the Position.
 
@@ -254,8 +308,13 @@ class Portfolio(defaultdict):
         args = (self.default_factory, ) + args
         defaultdict.__init__(self, *args, **kwargs)
 
-    def trade(self, transaction, opentransaction=None, createtransaction=None,
-              sort=None):
+    def trade(
+        self,
+        transaction: TransactionType,
+        opentransaction: Optional[TransactionType] = None,
+        createtransaction: Optional[TransactionType] = None,
+        sort: Optional[Mapping] = None,
+    ) -> List[Gain]:
         """
         Normal buy or sell, closing open Lots and realizing Gains.
 
@@ -264,13 +323,15 @@ class Portfolio(defaultdict):
                                 lot.opentransaction to preserve holding period
               createtransaction - a Transaction instance; if present, overrides
                                   lot.createtransaction and gain.transaction
-              sort - a 2-tuple of (key func, reverse) such as FIFO/MINGAIN etc.
+              sort - a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
                      defined above, used to order Lots when closing them.
 
         Returns: a list of Gain instances
         """
-        self._validate_args(transaction,
-                            units=Decimal, cash=(type(None), Decimal))
+        assert isinstance(transaction.units, Decimal)
+        assert isinstance(transaction.cash, Decimal)
+        assert isinstance(transaction.currency, str)
+
         if transaction.units == 0:
             raise ValueError(f"units can't be zero: {transaction}")
 
@@ -302,24 +363,26 @@ class Portfolio(defaultdict):
                       price=price) for lot in lots_closed]
         return gains
 
-    def returnofcapital(self, transaction, sort=None):
+    def returnofcapital(self, transaction: TransactionType, _=None) -> List[Gain]:
         """
         Apply cash to reduce Lot cost basis; realize Gain once basis has been
         reduced to zero.
         """
-        self._validate_args(transaction, cash=Decimal)
+        assert isinstance(transaction.cash, Decimal)
 
         pocket = (transaction.fiaccount, transaction.security)
         position = self[pocket]
 
         # First get a total of shares affected by return of capital,
-        # in order to determine RoC per share
-        affected = list(filter(longAsOf(transaction.datetime), position))
+        # in order to determine return of capital per share
+        affected: List[Lot] = list(filter(longAsOf(transaction.datetime), position))
         units = sum([lot.units for lot in affected])
+        assert isinstance(units, Decimal)
         if units == 0:
             msg = (f"No long position for {transaction.fiaccount} in "
-                   f"{transaciton.security} as of {transaction.datetime}")
+                   f"{transaction.security} as of {transaction.datetime}")
             raise Inconsistent(transaction, msg)
+
         priceDelta = transaction.cash / units
 
         position_new = []
@@ -331,7 +394,7 @@ class Portfolio(defaultdict):
                 if netprice < 0:
                     gains.append(Gain(lot=lot, transaction=transaction,
                                       price=priceDelta))
-                    netprice = 0
+                    netprice = Decimal("0")
                 position_new.append(lot._replace(price=netprice))
             else:
                 position_new.append(lot)
@@ -340,12 +403,13 @@ class Portfolio(defaultdict):
 
         return gains
 
-    def split(self, transaction, sort=None):
+    def split(self, transaction: TransactionType, _=None) -> List[Gain]:
         """
         Increase/decrease Lot units without affecting basis or realizing Gain.
         """
-        self._validate_args(transaction, numerator=Decimal,
-                            denominator=Decimal, units=Decimal)
+        assert isinstance(transaction.numerator, Decimal)
+        assert isinstance(transaction.denominator, Decimal)
+        assert isinstance(transaction.units, Decimal)
 
         splitRatio = transaction.numerator / transaction.denominator
 
@@ -358,6 +422,7 @@ class Portfolio(defaultdict):
         unitsFrom = Decimal('0')
 
         for lot in position:
+            assert isinstance(lot.units, Decimal)
             if criterion(lot):
                 units = lot.units * splitRatio
                 price = lot.price / splitRatio
@@ -379,11 +444,17 @@ class Portfolio(defaultdict):
         # Stock splits don't realize Gains
         return []
 
-    def transfer(self, transaction, sort=None):
+    def transfer(
+        self,
+        transaction: TransactionType,
+        sort: Optional[Mapping] = None,
+    ) -> List[Gain]:
         """
         Move Lots from one Position to another, maybe changing Security/units.
         """
-        self._validate_args(transaction, units=Decimal, unitsFrom=Decimal)
+        assert isinstance(transaction.units, Decimal)
+        assert isinstance(transaction.unitsFrom, Decimal)
+
         if transaction.units * transaction.unitsFrom >= 0:
             msg = f"units and unitsFrom aren't oppositely signed in {transaction}"
             raise ValueError(msg)
@@ -426,7 +497,7 @@ class Portfolio(defaultdict):
                 id=transaction.id,
                 uniqueid=transaction.uniqueid,
                 datetime=transaction.datetime,
-                type='transfer',
+                type=transactions.TransactionType.TRANSFER,
                 memo=transaction.memo,
                 currency=lotFrom.currency,
                 cash=-lotFrom.price * lotFrom.units,
@@ -440,17 +511,21 @@ class Portfolio(defaultdict):
 
         return gains
 
-    def spinoff(self, transaction, sort=None):
+    def spinoff(
+        self,
+        transaction: TransactionType,
+        sort: Optional[Mapping] = None,
+    ) -> List[Gain]:
         """
         Remove cost from Position to create Lots in a new Security, preserving
         the holding period through the spinoff and not removing units or
         closing Lots from the source Position.
         """
-        self._validate_args(transaction,
-                            units=Decimal, numerator=Decimal,
-                            denominator=Decimal,
-                            securityPrice=(type(None), Decimal),
-                            securityFromPrice=(type(None), Decimal))
+        assert isinstance(transaction.units, Decimal)
+        assert isinstance(transaction.numerator, Decimal)
+        assert isinstance(transaction.denominator, Decimal)
+        assert isinstance(transaction.securityPrice, (type(None), Decimal))
+        assert isinstance(transaction.securityFromPrice, (type(None), Decimal))
 
         units = transaction.units
         securityFrom = transaction.securityFrom
@@ -464,7 +539,7 @@ class Portfolio(defaultdict):
 
         splitRatio = numerator / denominator
 
-        costFraction = 0
+        costFraction = Decimal("0")
         if (securityPrice is not None) and (securityFromPrice is not None):
             costFraction = Decimal(securityPrice * units) / (
                 Decimal(securityPrice * units)
@@ -478,8 +553,8 @@ class Portfolio(defaultdict):
         takenUnits = sum([lot.units for lot in lotsFrom])
         if abs(takenUnits * splitRatio - units) > 0.0001:
             msg = (f"Spinoff {numerator} for {denominator} requires {securityFrom} "
-                   f"units={units / splitRation} (not units={takenUnits}) "
-                   f"to yield {transactions.security} units={units}")
+                   f"units={units / splitRatio} (not units={takenUnits}) "
+                   f"to yield {transaction.security} units={units}")
             raise Inconsistent(transaction, msg)
 
         self[pocketFrom] = positionFrom
@@ -496,7 +571,7 @@ class Portfolio(defaultdict):
                 id=transaction.id,
                 uniqueid=transaction.uniqueid,
                 datetime=transaction.datetime,
-                type='trade',
+                type=transactions.TransactionType.TRADE,
                 memo=transaction.memo,
                 currency=lotFrom.currency,
                 cash=-lotFrom.price * lotFrom.units,
@@ -510,11 +585,17 @@ class Portfolio(defaultdict):
 
         return gains
 
-    def exercise(self, transaction, sort=None):
+    def exercise(
+        self,
+        transaction: TransactionType,
+        sort: Optional[Mapping] = None,
+    ) -> List[Gain]:
         """
         Options exercise
         """
-        self._validate_args(transaction, unitsFrom=Decimal, cash=Decimal)
+        assert isinstance(transaction.units, Decimal)
+        assert isinstance(transaction.unitsFrom, Decimal)
+        assert isinstance(transaction.cash, Decimal)
 
         unitsFrom = transaction.unitsFrom
         cash = transaction.cash
@@ -531,6 +612,7 @@ class Portfolio(defaultdict):
             raise Inconsistent(transaction, err.msg)
 
         takenUnits = sum([lot.units for lot in lotsFrom])
+        assert isinstance(takenUnits, Decimal)
         if abs(takenUnits) - abs(unitsFrom) > 0.0001:
             msg = f"Exercise Lot.units={takenUnits} (not {unitsFrom})"
             raise Inconsistent(transaction, msg)
@@ -552,7 +634,7 @@ class Portfolio(defaultdict):
             # FIXME - We need a Trade.id for self.trade() to set
             # Lot.createtxid, but "id=transaction.id" is problematic.
             trade = Transaction(
-                type='trade', id=transaction.id,
+                type=transactions.TransactionType.TRADE, id=transaction.id,
                 fiaccount=transaction.fiaccount, uniqueid=transaction.uniqueid,
                 datetime=transaction.datetime, memo=transaction.memo,
                 security=transaction.security, units=units,
@@ -562,38 +644,42 @@ class Portfolio(defaultdict):
 
         return gains
 
-    @staticmethod
-    def _validate_args(transaction, **kwargs):
-        for arg, val in kwargs.items():
-            attr = getattr(transaction, arg)
-            if not isinstance(attr, val):
-                # Unpack kwarg value sequences
-                if hasattr(val, '__getitem__'):
-                    val = tuple(v.__name__ for v in val)
-                else:
-                    val = val.__name__
-                attrname = f"{transaction.__class.__.__name__}.{arg}"
-                msg = (f"{attrname} must be type {val}, "
-                       f"not {type(attr).__name__}: {transaction}")
-                raise ValueError(msg)
+    def processTransaction(
+        self,
+        transaction: TransactionType,
+        sort: Optional[Mapping] = None,
+    ) -> List[Gain]:
+        assert isinstance(transaction.type, transactions.TransactionType)
 
-    def processTransaction(self, transaction, sort=None):
-        sort = sort or globals().get(transaction.sort, None)
-        handler = getattr(self, transaction.type)
-        gains = handler(transaction, sort=sort)
+        handlers = {transactions.TransactionType.RETURNCAP: self.returnofcapital,
+                    transactions.TransactionType.SPLIT: self.split,
+                    transactions.TransactionType.SPINOFF: self.spinoff,
+                    transactions.TransactionType.TRANSFER: self.transfer,
+                    transactions.TransactionType.TRADE: self.trade,
+                    transactions.TransactionType.EXERCISE: self.exercise,}
+
+        handler = handlers[transaction.type]
+        gains = handler(transaction, sort=sort or transaction.sort)  # type: ignore
         return gains
 
 
 ###############################################################################
 # REPORTING FUNCTIONS
 ###############################################################################
-# Data container for reporting gain
-GainReport = namedtuple('GainReport',
-                        ['fiaccount', 'security', 'opentx', 'gaintx', 'units',
-                         'currency', 'cost', 'proceeds', 'longterm'])
+class GainReport(NamedTuple):
+    """ Data container for reporting gain """
+    fiaccount: Any
+    security: Any
+    opentx: Any
+    gaintx: Any
+    units: Decimal
+    currency: str
+    cost: Decimal
+    proceeds: Decimal
+    longterm: bool
 
 
-def report_gain(session, gain):
+def report_gain(session, gain: Gain) -> GainReport:
     """
     Crunch the numbers for a Gain instance.
 
@@ -620,7 +706,7 @@ def report_gain(session, gain):
                       cost=cost, proceeds=proceeds, longterm=longterm)
 
 
-def translate_gain(session, gain):
+def translate_gain(session, gain: Gain) -> Gain:
     """
     Translate Gain instance's realizing transaction to functional currency.
 
@@ -648,8 +734,9 @@ def translate_gain(session, gain):
     if lot.currency != functional_currency:
         opentx = lot.opentransaction
         dtsettle = opentx.dtsettle or opentx.datetime
+        assert isinstance(dtsettle, _datetime.datetime)
         date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
-        exchange_rate = CurrencyRate.get_rate(
+        exchange_rate = transactions.CurrencyRate.get_rate(
             session, fromcurrency=lot.currency, tocurrency=functional_currency,
             date=date_settle)
         opentx_translated = translate_transaction(
@@ -663,7 +750,7 @@ def translate_gain(session, gain):
     if gaintx_currency != functional_currency:
         dtsettle = gaintx.dtsettle or gaintx.datetime
         date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
-        exchange_rate = CurrencyRate.get_rate(
+        exchange_rate = transactions.CurrencyRate.get_rate(
             session, fromcurrency=gaintx_currency,
             tocurrency=functional_currency, date=date_settle)
 
@@ -674,14 +761,18 @@ def translate_gain(session, gain):
     return Gain(lot, gaintx, gainprice)
 
 
-def translate_transaction(transaction, currency, rate):
+def translate_transaction(transaction: TransactionType, currency: str, rate: Decimal) -> Transaction:
+    assert isinstance(transaction.cash, Decimal)
+
     securityPrice = transaction.securityPrice
     if securityPrice is not None:
-        securityPrice = transaction.securityPrice * rate,
+        assert isinstance(securityPrice, Decimal)
+        securityPrice *= rate
 
     securityFromPrice = transaction.securityFromPrice
     if securityFromPrice is not None:
-        securityFromPrice = transaction.securityFromPrice * rate,
+        assert isinstance(securityFromPrice, Decimal)
+        securityFromPrice *= rate
 
     return Transaction(
         id=transaction.id, uniqueid=transaction.uniqueid,
@@ -700,30 +791,30 @@ def translate_transaction(transaction, currency, rate):
 ###############################################################################
 # FILTER CRITERIA
 ###############################################################################
-def openAsOf(datetime_):
+def openAsOf(datetime: _datetime.datetime) -> Callable[[Lot], bool]:
     """
     Filter function that chooses Lots created on or before datetime
     """
     def isOpen(lot):
-        return lot.createtransaction.datetime <= datetime_
+        return lot.createtransaction.datetime <= datetime
 
     return isOpen
 
 
-def longAsOf(datetime_):
+def longAsOf(datetime: _datetime.datetime) -> Callable[[Lot], bool]:
     """
     Filter function that chooses long Lots (i.e. positive units) created
     on or before datetime
     """
     def isOpen(lot):
-        lot_open = lot.createtransaction.datetime <= datetime_
+        lot_open = lot.createtransaction.datetime <= datetime
         lot_long = lot.units > 0
         return lot_open and lot_long
 
     return isOpen
 
 
-def closableBy(transaction):
+def closableBy(transaction: TransactionType) -> Callable[[Lot], bool]:
     """
     Filter function that chooses Lots created on or before the given
     transaction.datetime, with sign opposite to the given transaction.units
@@ -739,35 +830,35 @@ def closableBy(transaction):
 ###############################################################################
 # SORT FUNCTIONS
 ###############################################################################
-def sort_oldest(lot):
+def sort_oldest(lot: Lot) -> Tuple:
     """
     Sort by holding period, then by opening Transaction.uniqueid
     """
     opendt = lot.opentransaction.datetime
+    assert isinstance(opendt, _datetime.datetime)
     opentxid = lot.opentransaction.uniqueid
-    assert opendt is not None
-    return (str(opendt), opentxid or '')
+    return (opendt, opentxid or '')
 
 
-def sort_cheapest(lot):
+def sort_cheapest(lot: Lot) -> Tuple:
     """
     Sort by price, then by opening Transaction.uniqueid
     """
     # FIXME this doesn't sort stably for identical prices but different lots
     price = lot.price
+    assert isinstance(price, Decimal)
     opentxid = lot.opentransaction.uniqueid
-    assert price is not None
     return (price, opentxid or '')
 
 
-def sort_dearest(lot):
+def sort_dearest(lot: Lot) -> Tuple:
     """
     Sort by price, then by opening Transaction.uniqueid
     """
     # FIXME this doesn't sort stably for identical prices but different lots
     price = lot.price
+    assert isinstance(price, Decimal)
     opentxid = lot.opentransaction.uniqueid
-    assert price is not None
     return (-price, opentxid or '')
 
 

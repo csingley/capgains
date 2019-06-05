@@ -18,7 +18,7 @@ from capgains.ofx.scottrade import (
     OfxStatementReader,
 )
 from capgains.models.transactions import (
-    Fi, FiAccount, Security, Transaction
+    Fi, FiAccount, Security, Transaction, TransactionType
 )
 from common import (
     setUpModule,
@@ -48,7 +48,7 @@ class TradeTestCase(OfxSnippetMixin, unittest.TestCase):
         self.assertEqual(len(trans), 11)
         for tran in trans:
             self.assertEqual(tran.fiaccount, self.account)
-            self.assertEqual(tran.type, 'trade')
+            self.assertEqual(tran.type, TransactionType.TRADE)
             self.assertEqual(tran.security, self.securities[0])
             self.assertEqual(tran.currency, 'USD')
 
