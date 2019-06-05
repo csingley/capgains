@@ -40,13 +40,11 @@ Nothing in this module changes a Transaction or a Gain, once created.
 from collections import defaultdict
 from decimal import Decimal
 import datetime as _datetime
-from datetime import date, timedelta
 import itertools
 from typing import NamedTuple, Tuple, List, Mapping, Callable, Any, Optional, Union
 
 
 # local imports
-from capgains import CONFIG
 from capgains.models import transactions
 
 
@@ -775,146 +773,6 @@ FIFO = {"key": sort_oldest, "reverse": False}
 LIFO = {"key": sort_oldest, "reverse": True}
 MINGAIN = {"key": sort_dearest, "reverse": False}
 MAXGAIN = {"key": sort_cheapest, "reverse": False}
-
-
-#######################################################################################
-# REPORTING FUNCTIONS
-# These probably belong in CSV.local instead of this module
-#######################################################################################
-class GainReport(NamedTuple):
-    """ Data container for reporting gain """
-
-    fiaccount: Any
-    security: Any
-    opentx: Any
-    gaintx: Any
-    units: Decimal
-    currency: str
-    cost: Decimal
-    proceeds: Decimal
-    longterm: bool
-
-
-def report_gain(session, gain: Gain) -> GainReport:
-    """ Extract a GainReport from a Gain instance. """
-    gain = translate_gain(session, gain)
-    gaintx = gain.transaction
-    lot = gain.lot
-    units = lot.units
-
-    # Short sales never get long-term capital gains treatment
-    gaindt = gaintx.datetime
-    opendt = lot.opentransaction.datetime
-    longterm = (units > 0) and (gaindt - opendt >= timedelta(days=366))
-
-    return GainReport(
-        fiaccount=gaintx.fiaccount,
-        security=gaintx.security,
-        opentx=lot.opentransaction,
-        gaintx=gaintx,
-        units=units,
-        currency=lot.currency,
-        cost=units * lot.price,
-        proceeds=units * gain.price,
-        longterm=longterm,
-    )
-
-
-def translate_gain(session, gain: Gain) -> Gain:
-    """
-    Translate Gain instance's realizing transaction to functional currency.
-    """
-    # 26 CFR §1.988-2(a)(2)(iv)
-    # (A)Amount realized. If stock or securities traded on an established
-    # securities market are sold by a cash basis taxpayer for nonfunctional
-    # currency, the amount realized with respect to the stock or securities
-    # (as determined on the trade date) shall be computed by translating
-    # the units of nonfunctional currency received into functional currency
-    # at the spot rate on the _settlement date_ of the sale.  [...]
-    #
-    # (B)Basis. If stock or securities traded on an established securities
-    # market are purchased by a cash basis taxpayer for nonfunctional
-    # currency, the basis of the stock or securities shall be determined
-    # by translating the units of nonfunctional currency paid into
-    # functional currency at the spot rate on the _settlement date_ of the
-    # purchase.
-    lot, gaintx, gainprice = gain.lot, gain.transaction, gain.price
-
-    functional_currency = CONFIG["books"]["functional_currency"]
-
-    if lot.currency != functional_currency:
-        opentx = lot.opentransaction
-        dtsettle = opentx.dtsettle or opentx.datetime
-        date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
-        exchange_rate = transactions.CurrencyRate.get_rate(
-            session,
-            fromcurrency=lot.currency,
-            tocurrency=functional_currency,
-            date=date_settle,
-        )
-        opentx_translated = translate_transaction(
-            opentx, functional_currency, exchange_rate
-        )
-        lot = lot._replace(
-            opentransaction=opentx_translated,
-            price=lot.price * exchange_rate,
-            currency=functional_currency,
-        )
-
-    gaintx_currency = gaintx.currency or lot.currency
-    if gaintx_currency != functional_currency:
-        dtsettle = gaintx.dtsettle or gaintx.datetime
-        date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
-        exchange_rate = transactions.CurrencyRate.get_rate(
-            session,
-            fromcurrency=gaintx_currency,
-            tocurrency=functional_currency,
-            date=date_settle,
-        )
-
-        gaintx = translate_transaction(gaintx, functional_currency, exchange_rate)
-        gainprice = gainprice * exchange_rate
-
-    return Gain(lot, gaintx, gainprice)
-
-
-def translate_transaction(
-    transaction: TransactionType, currency: str, rate: Decimal
-) -> Transaction:
-    """ Translate a transaction into a different currency """
-    assert isinstance(transaction.cash, Decimal)
-
-    securityPrice = transaction.securityPrice
-    if securityPrice is not None:
-        securityPrice *= rate
-
-    securityFromPrice = transaction.securityFromPrice
-    if securityFromPrice is not None:
-        securityFromPrice *= rate
-
-    # Sadly, we can't use namedtuple._replace() here because the
-    # input transaction may be a SQLAlchemy model class instance
-    return Transaction(
-        id=transaction.id,
-        uniqueid=transaction.uniqueid,
-        datetime=transaction.datetime,
-        dtsettle=transaction.dtsettle,
-        type=transaction.type,
-        memo=transaction.memo,
-        currency=currency,
-        cash=transaction.cash * rate,
-        fiaccount=transaction.fiaccount,
-        security=transaction.security,
-        units=transaction.units,
-        securityPrice=securityPrice,
-        fiaccountFrom=transaction.fiaccountFrom,
-        securityFrom=transaction.securityFrom,
-        unitsFrom=transaction.unitsFrom,
-        securityFromPrice=securityFromPrice,
-        numerator=transaction.numerator,
-        denominator=transaction.denominator,
-        sort=transaction.sort,
-    )
 
 
 #######################################################################################
