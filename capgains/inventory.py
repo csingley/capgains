@@ -46,6 +46,7 @@ from typing import NamedTuple, Tuple, List, Mapping, Callable, Any, Optional, Un
 
 # local imports
 from capgains.models import transactions
+from capgains import utils
 
 
 class InventoryError(Exception):
@@ -277,7 +278,7 @@ class Portfolio(defaultdict):
 
         # First get a total of shares affected by return of capital,
         # in order to determine return of capital per share
-        unaffected, affected = partition(longAsOf(transaction.datetime), position)
+        unaffected, affected = utils.partition(longAsOf(transaction.datetime), position)
         affected = list(affected)
         if not affected:
             msg = (
@@ -773,17 +774,3 @@ FIFO = {"key": sort_oldest, "reverse": False}
 LIFO = {"key": sort_oldest, "reverse": True}
 MINGAIN = {"key": sort_dearest, "reverse": False}
 MAXGAIN = {"key": sort_cheapest, "reverse": False}
-
-
-#######################################################################################
-# UTILITIES
-#######################################################################################
-def partition(pred, iterable):
-    """
-    Use a predicate to partition entries into false entries and true entries
-
-    https://docs.python.org/3/library/itertools.html#itertools-recipes
-    """
-    # partition(is_odd, range(10)) --> 0 2 4 6 8   and  1 3 5 7 9
-    t1, t2 = itertools.tee(iterable)
-    return itertools.filterfalse(pred, t1), filter(pred, t2)

@@ -6,6 +6,10 @@ import functools
 import itertools
 
 
+# local imports
+from capgains import utils
+
+
 class GroupedList(list):
     """
     Container that groups items and composes operations on those groups/items.
@@ -93,9 +97,7 @@ class GroupedList(list):
                      matching cancelling transacions will be applied in order.
         """
         def applyCancel(items):
-            items1, items2 = itertools.tee(items)
-            originals, cancels = (itertools.filterfalse(filterfunc, items1),
-                                  filter(filterfunc, items2))
+            originals, cancels = utils.partition(filterfunc, items)
             originals = sorted(originals, key=sortfunc)
 
             for cancel in cancels:
