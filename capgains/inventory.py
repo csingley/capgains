@@ -5,32 +5,37 @@ Besides the fundamental requirement of keeping accurate tallies, the main purpos
 of this module is to match opening and closing transactions in order to calculate
 the amount and character of realized gains.
 
-The basic way to use this module is to create a Portfolio instance, then pass
-Transaction instances to its processTransaction() method.
+The normal way to use this module is to create a Portfolio instance, then pass
+Transaction instances to its applyTransaction() method.
 
 Each Lot tracks the current state of a particular bunch of securities - (unit, cost).
+Lots are collected in sequences called "positions", which are the values of a
+Portfolio mapping keyed by a (FI account, security) tuple called a "pocket".
 
 Additionally, each Lot keeps a reference to its opening Transaction, i.e. the
 Transaction which started its holding period for tax purposes (to determine whether
-the character of realized Gains are long-term or short-term).
+the character of realized Gain is long-term or short-term).
 
-Lots are collected in sequences called "positions", which are the values of a
-Portfolio mapping keyed by a (FI account, security) called a "pocket".
-
-Each Lot keeps a reference to its "creating" Transaction, i.e. the Transaction which
-added the Lot to its current pocket.  In the case of an opening trade, the
-opening Transaction and the creating Transaction will be the same.  In the case of
-of a transfer, spin-off, reorg, etc., these will be different; the date of the tax
-holding period can be sourced from the opening Transaction, while the current
-pocket can be sourced from the creating Transaction.
+Each Lot also keeps a reference to its "creating" Transaction, i.e. the Transaction
+which added the Lot to its current pocket.  A Lot's security can be sourced from
+Lot.createtransaction.security, and the account where it's custodied can be sourced
+from Lot.createtransaction.fiaccount.  In the case of an opening trade, the
+opening Transaction and the creating Transaction will be the same.  For transfers,
+spin-offs, mergers, etc., these will be different.
 
 Gains link opening Transactions to realizing Transactions - which are usually closing
 Transactions, but may also come from return of capital distributions that exceed
 cost basis.  Return of capital Transactions generally don't provide per-share
 distribution information, so Gains must keep state for the realizing price.
 
+To compute realized capital gains from a Gain instance:
+* Proceeds - gain.lot.units * gain.price
+* Basis - gain.lot.units * gain.lot.price
+* Holding period start - gain.lot.opentransaction.datetime
+* Holding period end - gain.transaction.datetime
+
 Lots and Transactions are immutable, so you can rely on the accuracy of references
-to them (e.g. Gain.lot & Gain.transaction).  Everything about a Lot (except
+to them (e.g. Gain.lot; Lot.createtransaction).  Everything about a Lot (except
 opentransaction) can be changed by Transactions; the changes are reflected in a
 newly-created Lot, leaving the old Lot undisturbed.
 
@@ -71,9 +76,11 @@ UNITS_RESOLUTION = Decimal("0.001")
 # DATA MODEL
 #######################################################################################
 
-# FIXME - it would be better to decouple the Transaction model from the SQL version
-# and implement transaction types via subclasses, rather than setting Transaction.type.
-# That would let us get rid of the optional typing and default None values below.
+# FIXME - decoupling the Transaction model from the SQL version to implement various
+# transactions as separate types, rather than setting the Transaction.type field, would
+# tighten up the typing in this module quite a bit, letting us get rid of the optional
+# typing and default None values below.
+# However, this would also require an overhaul of CSV.local (reporting).
 class Transaction(NamedTuple):
     """
     A change to a securities position.
@@ -188,7 +195,7 @@ class Portfolio(defaultdict):
         args = (self.default_factory,) + args
         defaultdict.__init__(self, *args, **kwargs)
 
-    def processTransaction(
+    def applyTransaction(
         self, transaction: TransactionType, sort: Optional["SortType"] = None
     ) -> List[Gain]:
         """
@@ -269,7 +276,7 @@ class Portfolio(defaultdict):
         Apply cash to reduce cost basis of long position as of Transaction.datetime;
         realize Gain on Lots where cash proceeds exceed cost basis.
 
-        ``sort`` is in the argument signature for processTransaction(), but unused.
+        ``sort`` is in the argument signature for applyTransaction(), but unused.
         """
         assert isinstance(transaction.cash, Decimal)
 
@@ -306,7 +313,7 @@ class Portfolio(defaultdict):
         """
         Increase/decrease Lot units without affecting basis or realizing Gain.
 
-        ``sort`` is in the argument signature for processTransaction(), but unused.
+        ``sort`` is in the argument signature for applyTransaction(), but unused.
         """
         assert isinstance(transaction.numerator, Decimal)
         assert isinstance(transaction.denominator, Decimal)

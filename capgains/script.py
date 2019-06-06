@@ -2,7 +2,8 @@
 """
 WORKFLOW
 --------
-0) If not the initial period, load CSV dump of previous period lots.
+0) If not the initial period, load CSV dump of previous period lots, or restore
+   database from dump.
 1) Import current period transaction data files.
 2) Dump gains, passing in args for:
     * previous period lots CSV file
@@ -129,7 +130,7 @@ def _process_transactions(session, dtstart=None, dtend=None, begin=None,
         Transaction.datetime < dtend,)
     ).order_by(Transaction.datetime, Transaction.type, Transaction.uniqueid)
 
-    gains = [portfolio.processTransaction(tx) for tx in transactions]
+    gains = [portfolio.applyTransaction(tx) for tx in transactions]
     # Flatten nested list; filter for gains during reporting period
     #  gains = [gain for gs in gains for gain in gs]
     gains = [gain for gs in gains for gain in gs
