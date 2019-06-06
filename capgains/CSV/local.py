@@ -572,7 +572,7 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
 
 def translate_transaction(
     transaction: inventory.TransactionType, currency: str, rate: Decimal
-) -> Transaction:
+) -> inventory.Transaction:
     """ Translate a transaction into a different currency """
     assert isinstance(transaction.cash, Decimal)
 
@@ -586,7 +586,7 @@ def translate_transaction(
 
     # Sadly, we can't use namedtuple._replace() here because the
     # input transaction may be a SQLAlchemy model class instance
-    return Transaction(
+    return inventory.Transaction(
         id=transaction.id,
         uniqueid=transaction.uniqueid,
         datetime=transaction.datetime,
