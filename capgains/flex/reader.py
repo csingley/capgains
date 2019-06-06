@@ -3,9 +3,10 @@
 Importer for Interactive Brokers Flex XML format
 """
 # stdlib imports
-from collections import (namedtuple, OrderedDict)
+from collections import namedtuple, OrderedDict
 from operator import attrgetter
 from decimal import Decimal
+
 #  from datetime import datetime
 import functools
 import warnings
@@ -15,22 +16,28 @@ from copy import copy
 
 # 3rd party imports
 from sqlalchemy import create_engine
-from ofxtools.utils import (validate_cusip, cusip2isin, validate_isin)
+from ofxtools.utils import validate_cusip, cusip2isin, validate_isin
 
 
 # local imports
 from capgains.ofx.reader import OfxStatementReader
 from capgains.database import Base, sessionmanager
-from capgains.models.transactions import (
-    FiAccount, Security, SecurityId, CurrencyRate, TransactionType
-)
+from capgains import models
 from capgains.flex import BROKERID
 from capgains.flex.regexes import (
-    corpActRE, changeSecurityRE, rightsIssueRE, splitRE, stockDividendRE,
-    spinoffRE, subscribeRE, cashMergerRE, kindMergerRE, cashAndKindMergerRE,
+    corpActRE,
+    changeSecurityRE,
+    rightsIssueRE,
+    splitRE,
+    stockDividendRE,
+    spinoffRE,
+    subscribeRE,
+    cashMergerRE,
+    kindMergerRE,
+    cashAndKindMergerRE,
     tenderRE,
 )
-from capgains.flex.parser import (CorporateAction, Trade)
+from capgains.flex.parser import CorporateAction, Trade
 from capgains.containers import GroupedList
 
 
@@ -40,6 +47,7 @@ class FlexResponseReader(object):
     as created by capgains.flex.parser.FlexResponseParser.parse()
 
     """
+
     def __init__(self, session, response):
         """
         Args: session - sqlalchemy.orm.session.Session instance
@@ -47,8 +55,7 @@ class FlexResponseReader(object):
                          instances
         """
         self.session = session
-        self.statements = [FlexStatementReader(session, stmt)
-                           for stmt in response]
+        self.statements = [FlexStatementReader(session, stmt) for stmt in response]
 
     def read(self):
         for stmt in self.statements:
@@ -59,6 +66,7 @@ class FlexStatementReader(OfxStatementReader):
     """
     Processor for capgains.flex.parser.FlexStatement instances
     """
+
     def __init__(self, session, statement=None):
         """
         Args: session - sqlalchemy.orm.session.Session instance
@@ -71,7 +79,7 @@ class FlexStatementReader(OfxStatementReader):
         self.securities = {}
         self.dividends = {}
         self.transactions = []
-        self._basis_stack = {} # HACK - cf. tender(), merge_reorg()
+        self._basis_stack = {}  # HACK - cf. tender(), merge_reorg()
 
     def read(self, doTransactions=True):
         """
@@ -95,9 +103,11 @@ class FlexStatementReader(OfxStatementReader):
 
         Used to fix the accrual dates of CashTransactions.
         """
-        self.dividends = {(div.conid, div.payDate): div
-                          for div in self.statement.dividends
-                          if div.payDate is not None}
+        self.dividends = {
+            (div.conid, div.payDate): div
+            for div in self.statement.dividends
+            if div.payDate is not None
+        }
 
     def read_currency_rates(self):
         """
@@ -108,21 +118,26 @@ class FlexStatementReader(OfxStatementReader):
         """
         rates = self.statement.conversionrates
         for rate in rates:
-            cr = CurrencyRate.merge(self.session, **rate._asdict())
+            cr = models.CurrencyRate.merge(self.session, **rate._asdict())
 
     def read_securities(self):
         for secinfo in self.statement.securities:
-            sec = Security.merge(
-                self.session, uniqueidtype=secinfo.uniqueidtype,
-                uniqueid=secinfo.uniqueid, name=secinfo.secname,
-                ticker=secinfo.ticker)
+            sec = models.Security.merge(
+                self.session,
+                uniqueidtype=secinfo.uniqueidtype,
+                uniqueid=secinfo.uniqueid,
+                name=secinfo.secname,
+                ticker=secinfo.ticker,
+            )
             self.securities[(secinfo.uniqueidtype, secinfo.uniqueid)] = sec
 
-    transaction_handlers = {'Trade': 'doTrades',
-                            'CashTransaction': 'doCashTransactions',
-                            'Transfer': 'doTransfers',
-                            'CorporateAction': 'doCorporateActions',
-                            'Exercise': 'doOptionsExercises'}
+    transaction_handlers = {
+        "Trade": "doTrades",
+        "CashTransaction": "doCashTransactions",
+        "Transfer": "doTransfers",
+        "CorporateAction": "doCorporateActions",
+        "Exercise": "doOptionsExercises",
+    }
 
     ###########################################################################
     # TRADES
@@ -142,7 +157,7 @@ class FlexStatementReader(OfxStatementReader):
         Returns: boolean
         """
         # FIXME - better way to skip currency trades
-        currencyPairs = ['USD.CAD', 'CAD.USD', 'USD.EUR', 'EUR.USD']
+        currencyPairs = ["USD.CAD", "CAD.USD", "USD.EUR", "EUR.USD"]
         # conid for currency pairss
         # '15016062'  # USD.CAD
         # '15016251'  # CAD.USD
@@ -159,7 +174,7 @@ class FlexStatementReader(OfxStatementReader):
         Arg: an instance implementing the interface of flex.parser.Trade
         Returns: boolean
         """
-        return 'Ca' in transaction.notes
+        return "Ca" in transaction.notes
 
     @staticmethod
     def matchTradeWithCancel(canceler, canceled):
@@ -174,12 +189,14 @@ class FlexStatementReader(OfxStatementReader):
         """
         match = False
 
-        if canceler.orig_tradeid not in (None, '', '0'):
+        if canceler.orig_tradeid not in (None, "", "0"):
             match = canceler.orig_tradeid == canceled.fitid
         else:
-            match = (canceler.units == -1 * canceled.units) \
-                    and (canceler.currency == canceled.currency) \
-                    and (canceler.total == -1 * canceled.total)
+            match = (
+                (canceler.units == -1 * canceled.units)
+                and (canceler.currency == canceled.currency)
+                and (canceler.total == -1 * canceled.total)
+            )
 
         return match
 
@@ -206,10 +223,13 @@ class FlexStatementReader(OfxStatementReader):
         Arg: an instance implementing the interface of flex.parser.Trade
         Returns: type str
         """
-        if hasattr(transaction, 'notes'):
-            note2sort = [('ML', 'MINGAIN'), ('LI', 'LIFO')]
-            sorts = [sort for note, sort in note2sort
-                     if transaction.notes and note in transaction.notes]
+        if hasattr(transaction, "notes"):
+            note2sort = [("ML", "MINGAIN"), ("LI", "LIFO")]
+            sorts = [
+                sort
+                for note, sort in note2sort
+                if transaction.notes and note in transaction.notes
+            ]
             assert len(sorts) in (0, 1)
             if sorts:
                 return sorts[0]
@@ -234,8 +254,9 @@ class FlexStatementReader(OfxStatementReader):
         Returns: boolean
         """
         memo = transaction.memo.lower()
-        return transaction.incometype == 'Dividends' and (
-            'return of capital' in memo or 'interimliquidation' in memo)
+        return transaction.incometype == "Dividends" and (
+            "return of capital" in memo or "interimliquidation" in memo
+        )
 
     @classmethod
     def groupCashTransactionsForCancel(cls, transaction):
@@ -261,8 +282,8 @@ class FlexStatementReader(OfxStatementReader):
         Arg: type str
         Returns: type str
         """
-        memo = memo.replace(' - REVERSAL', '')
-        memo = memo.replace('CANCEL ', '')
+        memo = memo.replace(" - REVERSAL", "")
+        memo = memo.replace("CANCEL ", "")
         return memo
 
     @staticmethod
@@ -277,7 +298,7 @@ class FlexStatementReader(OfxStatementReader):
         Returns: boolean
         """
         memo = transaction.memo
-        return 'REVERSAL' in memo or 'CANCEL' in memo
+        return "REVERSAL" in memo or "CANCEL" in memo
 
     @staticmethod
     def sortCanceledCashTransactions(transaction):
@@ -319,29 +340,36 @@ class FlexStatementReader(OfxStatementReader):
     ###########################################################################
     def doTransfers(self, transactions):
         # Only handle securities transfers
-        txs = GroupedList(transactions)\
-                .filter(attrgetter('uniqueid'))\
-                .map(self.merge_account_transfer)
+        txs = (
+            GroupedList(transactions)
+            .filter(attrgetter("uniqueid"))
+            .map(self.merge_account_transfer)
+        )
 
     def merge_account_transfer(self, transaction):
-        if transaction.type == 'INTERNAL':
-            acctFrom = FiAccount.merge(self.session, brokerid=BROKERID,
-                                       number=transaction.other_acctid)
-        elif transaction.type == 'ACATS':
+        if transaction.type == "INTERNAL":
+            acctFrom = models.FiAccount.merge(
+                self.session, brokerid=BROKERID, number=transaction.other_acctid
+            )
+        elif transaction.type == "ACATS":
             # IBKR strips out punctuation from other brokers' acct#;
             # alphanumeric only
-            accts = [(a.id, ''.join([c for c in a.number if c.isalnum()]))
-                     for a in self.session.query(FiAccount).all()]
+            accts = [
+                (a.id, "".join([c for c in a.number if c.isalnum()]))
+                for a in self.session.query(models.FiAccount).all()
+            ]
 
-            acctTuple = first_true(accts, pred=functools.partial(
-                lambda at, num: at[1] == num, num=transaction.other_acctid))
+            acctTuple = first_true(
+                accts,
+                pred=functools.partial(
+                    lambda at, num: at[1] == num, num=transaction.other_acctid
+                ),
+            )
             if not acctTuple:
-                msg = ("Can't find FiAccount.number={}; "
-                       "skipping external transfer {}")
-                warnings.warn(msg.format(transaction.other_acctid,
-                                         transaction.memo))
+                msg = "Can't find FiAccount.number={}; " "skipping external transfer {}"
+                warnings.warn(msg.format(transaction.other_acctid, transaction.memo))
                 return
-            acctFrom = self.session.query(FiAccount).get(acctTuple[0])
+            acctFrom = self.session.query(models.FiAccount).get(acctTuple[0])
         else:
             msg = "type '{}' not one of ('INTERNAL', 'ACATS') for {}"
             raise ValueError(msg.format(transaction.type))
@@ -350,18 +378,24 @@ class FlexStatementReader(OfxStatementReader):
         units = transaction.units
         unitsFrom = -units
         direction = transaction.tferaction
-        assert direction in ('IN', 'OUT')
-        if direction == 'OUT':
+        assert direction in ("IN", "OUT")
+        if direction == "OUT":
             unitsFrom, units = units, unitsFrom
             acctFrom, acct = acct, acctFrom
 
-        security = self.securities[
-            (transaction.uniqueidtype, transaction.uniqueid)]
+        security = self.securities[(transaction.uniqueidtype, transaction.uniqueid)]
         transaction = self.merge_transaction(
-            type=TransactionType.TRANSFER, fiaccount=acct, uniqueid=transaction.fitid,
-            datetime=transaction.dttrade, memo=transaction.memo,
-            security=security, units=units, fiaccountFrom=acctFrom,
-            securityFrom=security, unitsFrom=unitsFrom)
+            type=models.TransactionType.TRANSFER,
+            fiaccount=acct,
+            uniqueid=transaction.fitid,
+            datetime=transaction.dttrade,
+            memo=transaction.memo,
+            security=security,
+            units=units,
+            fiaccountFrom=acctFrom,
+            securityFrom=security,
+            unitsFrom=unitsFrom,
+        )
 
         return transaction
 
@@ -384,35 +418,45 @@ class FlexStatementReader(OfxStatementReader):
             dttrade, type_, memo = pcas.key
             handler_tuple = CORPACT_HANDLERS[type_]
             if handler_tuple is None:
-                msg = ("flex.reader.CORPACT_HANDLERS doesn't know how to "
-                       "handle type='{}' for corporate actions {}")
+                msg = (
+                    "flex.reader.CORPACT_HANDLERS doesn't know how to "
+                    "handle type='{}' for corporate actions {}"
+                )
                 raise ValueError(msg.format(type_, pcas))
             handler = getattr(self, handler_tuple[1])
             handler(pcas, memo=memo)
 
     def preprocessCorporateActions(self, transactions):
         # See containers.GroupedList for detailed workings
-        group = GroupedList(transactions)\
-                .groupby(self.groupCorporateActionsForCancel)\
-                .cancel(filterfunc=self.filterCorporateActionCancels,
-                        matchfunc=self.matchCorporateActionWithCancel,
-                        sortfunc=self.sortCanceledCorporateActions)\
-                .reduce(self.netCorporateActions)\
-                .flatten()\
-                .map(self.parseCorporateActionMemo)\
-                .groupby(self.groupParsedCorporateActions)\
-                .sorted(self.sortParsedCorporateActions)
+        group = (
+            GroupedList(transactions)
+            .groupby(self.groupCorporateActionsForCancel)
+            .cancel(
+                filterfunc=self.filterCorporateActionCancels,
+                matchfunc=self.matchCorporateActionWithCancel,
+                sortfunc=self.sortCanceledCorporateActions,
+            )
+            .reduce(self.netCorporateActions)
+            .flatten()
+            .map(self.parseCorporateActionMemo)
+            .groupby(self.groupParsedCorporateActions)
+            .sorted(self.sortParsedCorporateActions)
+        )
 
         return group
 
     @staticmethod
     def groupCorporateActionsForCancel(corpAct):
-        return ((corpAct.uniqueidtype, corpAct.uniqueid),
-                corpAct.dttrade, corpAct.type, corpAct.memo)
+        return (
+            (corpAct.uniqueidtype, corpAct.uniqueid),
+            corpAct.dttrade,
+            corpAct.type,
+            corpAct.memo,
+        )
 
     @staticmethod
     def filterCorporateActionCancels(transaction):
-        return 'Ca' in transaction.code
+        return "Ca" in transaction.code
 
     @staticmethod
     def matchCorporateActionWithCancel(transaction0, transaction1):
@@ -427,14 +471,19 @@ class FlexStatementReader(OfxStatementReader):
         assert corpAct0.currency == corpAct1.currency
         units = corpAct0.units + corpAct1.units
         total = corpAct0.total + corpAct1.total
-        return CorporateAction(fitid=corpAct0.fitid, dttrade=corpAct0.dttrade,
-                               memo=corpAct0.memo,
-                               uniqueidtype=corpAct0.uniqueidtype,
-                               uniqueid=corpAct0.uniqueid, units=units,
-                               currency=corpAct0.currency, total=total,
-                               type=corpAct0.type,
-                               reportdate=corpAct0.reportdate,
-                               code=corpAct0.code)
+        return CorporateAction(
+            fitid=corpAct0.fitid,
+            dttrade=corpAct0.dttrade,
+            memo=corpAct0.memo,
+            uniqueidtype=corpAct0.uniqueidtype,
+            uniqueid=corpAct0.uniqueid,
+            units=units,
+            currency=corpAct0.currency,
+            total=total,
+            type=corpAct0.type,
+            reportdate=corpAct0.reportdate,
+            code=corpAct0.code,
+        )
 
     def parseCorporateActionMemo(self, transaction):
         """
@@ -445,8 +494,7 @@ class FlexStatementReader(OfxStatementReader):
         Returns: a ParsedCorpAct instance
         """
         memo = transaction.memo
-        typ = getattr(transaction, 'type', '') \
-                or self.inferCorporateActionType(memo)
+        typ = getattr(transaction, "type", "") or self.inferCorporateActionType(memo)
 
         match = corpActRE.match(memo)
         if match is None:
@@ -456,24 +504,33 @@ class FlexStatementReader(OfxStatementReader):
 
         # Try to extract SecurityId data from CorporateAction memo
         matchgroups = match.groupdict()
-        ticker = matchgroups['ticker']
-        secname = matchgroups['secname']
-        uniqueid = matchgroups['cusip']
+        ticker = matchgroups["ticker"]
+        secname = matchgroups["secname"]
+        uniqueid = matchgroups["cusip"]
         if validate_cusip(uniqueid):
-            uniqueidtype = 'CUSIP'
+            uniqueidtype = "CUSIP"
             # Also do ISIN; why not?
             isin = cusip2isin(uniqueid)
-            sec = Security.merge(self.session, uniqueidtype='ISIN',
-                                 uniqueid=isin, name=secname, ticker=ticker)
-            self.securities[('ISIN', isin)] = sec
+            sec = Security.merge(
+                self.session,
+                uniqueidtype="ISIN",
+                uniqueid=isin,
+                name=secname,
+                ticker=ticker,
+            )
+            self.securities[("ISIN", isin)] = sec
         elif validate_isin(uniqueid):
-            uniqueidtype = 'ISIN'
+            uniqueidtype = "ISIN"
         else:
             uniqueidtype = None
         if uniqueidtype:
-            sec = Security.merge(self.session, uniqueidtype=uniqueidtype,
-                                 uniqueid=uniqueid, name=secname,
-                                 ticker=ticker)
+            sec = models.Security.merge(
+                self.session,
+                uniqueidtype=uniqueidtype,
+                uniqueid=uniqueid,
+                name=secname,
+                ticker=ticker,
+            )
             self.securities[(uniqueidtype, uniqueid)] = sec
 
         pca = ParsedCorpAct(transaction, typ, **matchgroups)
@@ -485,9 +542,11 @@ class FlexStatementReader(OfxStatementReader):
         Assign type by matching element 'description' attr to MEMO_SIGNATURES
         """
         err_msg = "Can't infer type of corporate action '{}'".format(memo)
-        sig = first_true(MEMO_SIGNATURES,
-                         default=ValueError(err_msg),
-                         pred=lambda sig: sig[0] in memo)
+        sig = first_true(
+            MEMO_SIGNATURES,
+            default=ValueError(err_msg),
+            pred=lambda sig: sig[0] in memo,
+        )
         return sig[1]
 
     @staticmethod
@@ -512,13 +571,18 @@ class FlexStatementReader(OfxStatementReader):
         match = rightsIssueRE.match(memo)
         matchgroups = match.groupdict()
         # FIXME - tickerFrom could also be ticker1 !
-        return [self.merge_spinoff(
-            transaction=corpAct.raw,
-            securityFrom=self.guess_security(matchgroups['isinFrom'],
-                                             matchgroups['tickerFrom']),
-            numerator=Decimal(matchgroups['numerator0']),
-            denominator=Decimal(matchgroups['denominator0']), memo=memo)
-            for corpAct in corpActs]
+        return [
+            self.merge_spinoff(
+                transaction=corpAct.raw,
+                securityFrom=self.guess_security(
+                    matchgroups["isinFrom"], matchgroups["tickerFrom"]
+                ),
+                numerator=Decimal(matchgroups["numerator0"]),
+                denominator=Decimal(matchgroups["denominator0"]),
+                memo=memo,
+            )
+            for corpAct in corpActs
+        ]
 
     def split(self, corpActs, memo):  # FS, RS
         """ """
@@ -529,10 +593,12 @@ class FlexStatementReader(OfxStatementReader):
 
         if len(corpActs) == 1:
             # Split without CUSIP change
-            return self.merge_split(transaction=corpActs.pop().raw,
-                                    numerator=Decimal(match.group('numerator0')),
-                                    denominator=Decimal(match.group('denominator0')),
-                                    memo=memo)
+            return self.merge_split(
+                transaction=corpActs.pop().raw,
+                numerator=Decimal(match.group("numerator0")),
+                denominator=Decimal(match.group("denominator0")),
+                memo=memo,
+            )
 
         elif len(corpActs) == 2:
             # Split with CUSIP change - Book as Transfer
@@ -540,11 +606,11 @@ class FlexStatementReader(OfxStatementReader):
             # Of the pair, the transaction booking in the new security has
             # XML attribute 'symbol' matching the first ticker in the memo.
             # The other transaction books out the old security.
-            isinFrom = match.group('isinFrom')
+            isinFrom = match.group("isinFrom")
 
             corpActs = sorted(
-                list(corpActs),
-                key=lambda x: x.cusip in isinFrom or isinFrom in x.cusip)
+                list(corpActs), key=lambda x: x.cusip in isinFrom or isinFrom in x.cusip
+            )
             assert corpActs[0].cusip not in isinFrom
             assert corpActs[-1].cusip in isinFrom
             dest, src = [corpAct.raw for corpAct in corpActs]
@@ -554,12 +620,18 @@ class FlexStatementReader(OfxStatementReader):
         match = stockDividendRE.match(memo)
         assert match
 
-        numerator = Decimal(match.group('numerator0'))
-        denominator = Decimal(match.group('denominator0'))
+        numerator = Decimal(match.group("numerator0"))
+        denominator = Decimal(match.group("denominator0"))
         numerator += denominator
-        return [self.merge_split(transaction=corpAct.raw, numerator=numerator,
-                                 denominator=denominator, memo=memo)
-                for corpAct in corpActs]
+        return [
+            self.merge_split(
+                transaction=corpAct.raw,
+                numerator=numerator,
+                denominator=denominator,
+                memo=memo,
+            )
+            for corpAct in corpActs
+        ]
 
     def spinoff(self, corpActs, memo):  # SO
         match = spinoffRE.match(memo)
@@ -568,18 +640,24 @@ class FlexStatementReader(OfxStatementReader):
             raise ValueError(msg)
         matchgroups = match.groupdict()
         try:
-            securityFrom = self.guess_security(matchgroups['isinFrom'],
-                                               matchgroups['tickerFrom'])
+            securityFrom = self.guess_security(
+                matchgroups["isinFrom"], matchgroups["tickerFrom"]
+            )
         except ValueError as e:
             msg = "For spinoff memo '{}': ".format(memo)
             msg += e.args[0]
             raise ValueError(msg)
 
-        return [self.merge_spinoff(
-            transaction=corpAct.raw, securityFrom=securityFrom,
-            numerator=Decimal(matchgroups['numerator0']),
-            denominator=Decimal(matchgroups['denominator0']), memo=memo)
-            for corpAct in corpActs]
+        return [
+            self.merge_spinoff(
+                transaction=corpAct.raw,
+                securityFrom=securityFrom,
+                numerator=Decimal(matchgroups["numerator0"]),
+                denominator=Decimal(matchgroups["denominator0"]),
+                memo=memo,
+            )
+            for corpAct in corpActs
+        ]
 
     def subscribe_rights(self, corpActs, memo):  # SR
         regex = subscribeRE
@@ -588,26 +666,42 @@ class FlexStatementReader(OfxStatementReader):
         src, dest = src.raw, dest.raw
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
         securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
-        txs = [self.merge_transaction(
-            uniqueid=src.fitid, datetime=src.dttrade, type=TransactionType.EXERCISE,
-            memo=memo, currency=src.currency, cash=src.total,
-            fiaccount=self.account, security=security, units=dest.units,
-            securityFrom=securityFrom, unitsFrom=src.units)]
+        txs = [
+            self.merge_transaction(
+                uniqueid=src.fitid,
+                datetime=src.dttrade,
+                type=models.TransactionType.EXERCISE,
+                memo=memo,
+                currency=src.currency,
+                cash=src.total,
+                fiaccount=self.account,
+                security=security,
+                units=dest.units,
+                securityFrom=securityFrom,
+                unitsFrom=src.units,
+            )
+        ]
 
         for spinoff in spinoffs:
-            txs.extend(self.merge_spinoff(
-                transaction=spinoff.raw, securityFrom=securityFrom,
-                numerator=spinoff.units, denominator=-src.units, memo=memo))
+            txs.extend(
+                self.merge_spinoff(
+                    transaction=spinoff.raw,
+                    securityFrom=securityFrom,
+                    numerator=spinoff.units,
+                    denominator=-src.units,
+                    memo=memo,
+                )
+            )
         return txs
 
     def merger(self, corpActs, memo):  # TC
         """ """
+
         def cashMerger(memo, corpActs):
             match = cashMergerRE.match(memo)
             if match:
                 if len(corpActs) != 1:
-                    msg = ("More than one CorporateAction "
-                           "in a cash merger: {}")
+                    msg = "More than one CorporateAction " "in a cash merger: {}"
                     raise ValueError(msg.format([c.raw for c in corpActs]))
                 return [self.merge_trade(corpActs.pop().raw, memo)]
 
@@ -620,8 +714,9 @@ class FlexStatementReader(OfxStatementReader):
             match = cashAndKindMergerRE.match(memo)
             if match:
                 # First process cash proceeds as a return of capital
-                cashportions = [corpAct.raw for corpAct in corpActs
-                                if corpAct.raw.total != 0]
+                cashportions = [
+                    corpAct.raw for corpAct in corpActs if corpAct.raw.total != 0
+                ]
                 assert len(cashportions) == 1
                 cashportion = cashportions.pop()
                 assert cashportion.total > 0
@@ -632,20 +727,24 @@ class FlexStatementReader(OfxStatementReader):
                 txs.extend(self.merge_reorg(corpActs, match, memo))
                 return txs
 
-        txs = cashMerger(memo, corpActs) or kindMerger(memo, corpActs) \
+        txs = (
+            cashMerger(memo, corpActs)
+            or kindMerger(memo, corpActs)
             or cashKindMerger(memo, corpActs)
+        )
 
         if not txs:
-            msg = ("flex.reader.FlexStatementReader.merger(): "
-                   "Can't parse merger memo: '{}'")
+            msg = (
+                "flex.reader.FlexStatementReader.merger(): "
+                "Can't parse merger memo: '{}'"
+            )
             raise ValueError(msg.format(memo))
 
     def tender(self, corpActs, memo):  # TO
         match = tenderRE.match(memo)
         assert match
 
-        cashportions = [corpAct for corpAct in corpActs
-                        if corpAct.raw.total != 0]
+        cashportions = [corpAct for corpAct in corpActs if corpAct.raw.total != 0]
         if cashportions:
             # HACK
             # IBKR processes some rights offerings in two parts -
@@ -674,32 +773,46 @@ class FlexStatementReader(OfxStatementReader):
             dest = dest.raw
             basis_key = (dest.uniqueidtype, dest.uniqueid)
             assert basis_key not in self._basis_stack
-            basis_deferral = CostBasisDeferral(currency=cashportion.currency,
-                                               cash=cash,
-                                               datetime=cashportion.dttrade)
+            basis_deferral = CostBasisDeferral(
+                currency=cashportion.currency, cash=cash, datetime=cashportion.dttrade
+            )
             self._basis_stack[basis_key] = basis_deferral
 
         return self.merge_reorg(corpActs, match, memo)
 
     ### Transaction merge functions ###
     def merge_split(self, transaction, numerator, denominator, memo):
-        security = self.securities[(transaction.uniqueidtype,
-                                    transaction.uniqueid)]
-        return [self.merge_transaction(
-            type=TransactionType.SPLIT, fiaccount=self.account, uniqueid=transaction.fitid,
-            datetime=transaction.dttrade, memo=memo or transaction.memo,
-            security=security, numerator=numerator,
-            denominator=denominator, units=transaction.units)]
+        security = self.securities[(transaction.uniqueidtype, transaction.uniqueid)]
+        return [
+            self.merge_transaction(
+                type=models.TransactionType.SPLIT,
+                fiaccount=self.account,
+                uniqueid=transaction.fitid,
+                datetime=transaction.dttrade,
+                memo=memo or transaction.memo,
+                security=security,
+                numerator=numerator,
+                denominator=denominator,
+                units=transaction.units,
+            )
+        ]
 
-    def merge_spinoff(self, transaction, securityFrom, numerator, denominator,
-                      memo):
-        security = self.securities[(transaction.uniqueidtype,
-                                    transaction.uniqueid)]
-        return [self.merge_transaction(
-            type=TransactionType.SPINOFF, fiaccount=self.account, uniqueid=transaction.fitid,
-            datetime=transaction.dttrade, memo=memo or transaction.memo,
-            security=security, numerator=numerator, denominator=denominator,
-            units=transaction.units, securityFrom=securityFrom)]
+    def merge_spinoff(self, transaction, securityFrom, numerator, denominator, memo):
+        security = self.securities[(transaction.uniqueidtype, transaction.uniqueid)]
+        return [
+            self.merge_transaction(
+                type=models.TransactionType.SPINOFF,
+                fiaccount=self.account,
+                uniqueid=transaction.fitid,
+                datetime=transaction.dttrade,
+                memo=memo or transaction.memo,
+                security=security,
+                numerator=numerator,
+                denominator=denominator,
+                units=transaction.units,
+                securityFrom=securityFrom,
+            )
+        ]
 
     def merge_reorg(self, corpActs, match, memo):
         """
@@ -717,8 +830,10 @@ class FlexStatementReader(OfxStatementReader):
 
         if spinoffs:
             if len(spinoffs) > 1:
-                msg = ("flex.reader.FlexStatementReader.merge_reorg(): "
-                       "More than one spinoff {}")
+                msg = (
+                    "flex.reader.FlexStatementReader.merge_reorg(): "
+                    "More than one spinoff {}"
+                )
                 raise ValueError(msg.format(spinoffs))
             spinoff = spinoffs.pop()
             spinoff = spinoff.raw
@@ -740,22 +855,32 @@ class FlexStatementReader(OfxStatementReader):
             # be sorted in correct time order by groupParsedCorporateActions()
             # and merge_reorg() will have its values ready & waiting from
             # tender().
-            basis_adj = self._basis_stack.pop((src.uniqueidtype, src.uniqueid),
-                                              None)
+            basis_adj = self._basis_stack.pop((src.uniqueidtype, src.uniqueid), None)
             if basis_adj:
                 assert spinoff.units > 0
-                tx = Trade(fitid=spinoff.fitid, dttrade=basis_adj.datetime,
-                           memo=memo, uniqueidtype=spinoff.uniqueidtype,
-                           uniqueid=spinoff.uniqueid, units=spinoff.units,
-                           currency=basis_adj.currency, total=basis_adj.cash,
-                           reportdate=spinoff.reportdate, orig_tradeid=None,
-                           notes=None)
+                tx = Trade(
+                    fitid=spinoff.fitid,
+                    dttrade=basis_adj.datetime,
+                    memo=memo,
+                    uniqueidtype=spinoff.uniqueidtype,
+                    uniqueid=spinoff.uniqueid,
+                    units=spinoff.units,
+                    currency=basis_adj.currency,
+                    total=basis_adj.cash,
+                    reportdate=spinoff.reportdate,
+                    orig_tradeid=None,
+                    notes=None,
+                )
                 txs.append(self.merge_trade(tx))
             else:
-                txs.append(self.merge_spinoff(
-                    transaction=spinoff,
-                    securityFrom=self.securities[(src.uniqueidtype, src.uniqueid)],
-                    numerator=spinoff.units, denominator=-src.units, memo=memo)
+                txs.append(
+                    self.merge_spinoff(
+                        transaction=spinoff,
+                        securityFrom=self.securities[(src.uniqueidtype, src.uniqueid)],
+                        numerator=spinoff.units,
+                        denominator=-src.units,
+                        memo=memo,
+                    )
                 )
         return txs
 
@@ -767,47 +892,65 @@ class FlexStatementReader(OfxStatementReader):
         """
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
         securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
-        return [self.merge_transaction(
-            type=TransactionType.TRANSFER, fiaccount=self.account, uniqueid=dest.fitid,
-            datetime=dest.dttrade, memo=memo, security=security,
-            units=dest.units, fiaccountFrom=self.account,
-            securityFrom=securityFrom, unitsFrom=src.units, )]
+        return [
+            self.merge_transaction(
+                type=models.TransactionType.TRANSFER,
+                fiaccount=self.account,
+                uniqueid=dest.fitid,
+                datetime=dest.dttrade,
+                memo=memo,
+                security=security,
+                units=dest.units,
+                fiaccountFrom=self.account,
+                securityFrom=securityFrom,
+                unitsFrom=src.units,
+            )
+        ]
 
     ### Functions used by Corporate Action handlers ###
     def guess_security(self, uniqueid, ticker):
         """
         Given a Security.uniqueid and/or ticker, try to look up corresponding
-        models.transactions.Security instance from the FlexStatement securities
+        models.Security instance from the FlexStatement securities
         list or the database.
 
         Args: uniqueid - CUSIP or ISIN (type str)
               ticker - type str
 
-        Returns: Security instance
+        Returns: models.Security instance
         """
+
         def lookupDbByUid(uniqueidtype, uniqueid):
-            secid = self.session.query(SecurityId)\
-                    .filter_by(uniqueidtype=uniqueidtype, uniqueid=uniqueid)\
-                    .one_or_none()
+            secid = (
+                self.session.query(models.SecurityId)
+                .filter_by(uniqueidtype=uniqueidtype, uniqueid=uniqueid)
+                .one_or_none()
+            )
             if secid:
                 return secid.security
 
         def lookupSeclistByTicker(ticker):
-            hits = [sec for sec in set(self.securities.values())
-                    if sec.ticker == ticker]
+            hits = [
+                sec for sec in set(self.securities.values()) if sec.ticker == ticker
+            ]
             assert len(hits) <= 1  # triggers self.multipleMatchErrs
             if hits:
                 return hits.pop()
 
-        uniqueidtype = (validate_isin(uniqueid) and 'ISIN') \
-            or (validate_cusip(uniqueid) and 'CUSIP') \
+        uniqueidtype = (
+            (validate_isin(uniqueid) and "ISIN")
+            or (validate_cusip(uniqueid) and "CUSIP")
             or None
+        )
 
-        security = self.securities.get((uniqueidtype, uniqueid), None) \
-            or lookupDbByUid(uniqueidtype, uniqueid) \
-            or lookupSeclistByTicker(ticker) \
-            or self.session.query(Security).filter_by(
-                ticker=ticker).one_or_none()
+        security = (
+            self.securities.get((uniqueidtype, uniqueid), None)
+            or lookupDbByUid(uniqueidtype, uniqueid)
+            or lookupSeclistByTicker(ticker)
+            or self.session.query(models.Security)
+            .filter_by(ticker=ticker)
+            .one_or_none()
+        )
 
         if not security:
             msg = "Can't find security with uniqueid='{}', ticker='{}'"
@@ -836,14 +979,15 @@ class FlexStatementReader(OfxStatementReader):
         corpActs = copy(corpActs)
 
         matchgroups = match.groupdict()
-        isinFrom = matchgroups['isinFrom']
-        tickerFrom = matchgroups['tickerFrom']
-        isinTo0 = matchgroups.get('isinTo0', None)
-        tickerTo0 = matchgroups.get('tickerTo0', None)
+        isinFrom = matchgroups["isinFrom"]
+        tickerFrom = matchgroups["tickerFrom"]
+        isinTo0 = matchgroups.get("isinTo0", None)
+        tickerTo0 = matchgroups.get("tickerTo0", None)
 
         def matchFirst(*testFuncs):
-            return first_true([first_true(corpActs, pred=testFunc)
-                               for testFunc in testFuncs])
+            return first_true(
+                [first_true(corpActs, pred=testFunc) for testFunc in testFuncs]
+            )
 
         def isinFromTestFunc(ca):
             return ca.cusip in isinFrom or isinFrom in ca.cusip
@@ -855,26 +999,30 @@ class FlexStatementReader(OfxStatementReader):
         if not src:
             msg = ("Can't find source transaction for {} within {}").format(
                 {k: v for k, v in match.groupdict().items() if v},
-                [ca.raw for ca in corpActs])
+                [ca.raw for ca in corpActs],
+            )
             raise ValueError(msg)
         corpActs.remove(src)
 
         def isinToTestFunc(ca):
-            return (isinTo0 is not None and ca.cusip is not None) \
-                    and (ca.cusip in isinTo0 or isinTo0 in ca.cusip)
+            return (isinTo0 is not None and ca.cusip is not None) and (
+                ca.cusip in isinTo0 or isinTo0 in ca.cusip
+            )
 
         def tickerToTestFunc(ca):
             return tickerTo0 is not None and ca.ticker == tickerTo0
 
         def loneCandidate():
-            if len(corpActs) == 1 and corpActs[0].cusip not in 'isinFrom':
+            if len(corpActs) == 1 and corpActs[0].cusip not in "isinFrom":
                 return corpActs[0]
 
         dest = matchFirst(isinToTestFunc, tickerToTestFunc) or loneCandidate()
         if not dest:
-            msg = ("On {}, can't find transaction with CUSIP/ISIN "
-                   "or ticker matching destination security "
-                   "for corporate action {}").format(src.rawdttrade, src.memo)
+            msg = (
+                "On {}, can't find transaction with CUSIP/ISIN "
+                "or ticker matching destination security "
+                "for corporate action {}"
+            ).format(src.rawdttrade, src.memo)
             raise ValueError(msg)
         corpActs.remove(dest)
 
@@ -887,14 +1035,20 @@ class FlexStatementReader(OfxStatementReader):
     def doOptionsExercises(self, transactions):
         for tx in transactions:
             security = self.securities[(tx.uniqueidtype, tx.uniqueid)]
-            securityFrom = self.securities[(tx.uniqueidtypeFrom,
-                                            tx.uniqueidFrom)]
+            securityFrom = self.securities[(tx.uniqueidtypeFrom, tx.uniqueidFrom)]
             self.merge_transaction(
-                uniqueid=tx.fitid, datetime=tx.dttrade, type=TransactionType.EXERCISE,
-                memo=tx.memo, currency=tx.currency, cash=tx.total,
-                fiaccount=self.account, security=security, units=tx.units,
-                securityFrom=securityFrom, unitsFrom=tx.unitsFrom,
-                sort=self.sortForTrade(tx.notes)
+                uniqueid=tx.fitid,
+                datetime=tx.dttrade,
+                type=models.TransactionType.EXERCISE,
+                memo=tx.memo,
+                currency=tx.currency,
+                cash=tx.total,
+                fiaccount=self.account,
+                security=security,
+                units=tx.units,
+                securityFrom=securityFrom,
+                unitsFrom=tx.unitsFrom,
+                sort=self.sortForTrade(tx.notes),
             )
 
 
@@ -906,58 +1060,62 @@ class FlexStatementReader(OfxStatementReader):
 # are matched - higher confidence matches toward the front.
 # Since 'SPINOFF' is sometimes used in the security name field of temporary
 # placeholders (contra CUSIPs), it goes toward the back.
-CORPACT_HANDLERS = OrderedDict([
-    ('BM', ('BOND MATURITY', 'treat_as_trade')),  # Bond Maturity
-    ('SR', ('SUBSCRIBES TO', 'subscribe_rights')),  # Subscribe Rights
-    ('IC', ('CUSIP/ISIN CHANGE', 'change_security')),  # Issue Change
-    ('OR', ('OVER SUBSCRIBE', 'treat_as_trade')),  # Asset Purchase
-    ('RI', ('SUBSCRIBABLE RIGHTS ISSUE', 'issue_rights')),  # Subscribable Rights Issue
-    ('SD', ('STOCK DIVIDEND', 'stock_dividend')),  # Stock Dividend
-    ('TO', ('TENDERED TO', 'tender')),
-    ('DW', ('DELISTED', 'treat_as_trade')),  # Delist Worthless
-    ('FS', ('SPLIT', 'split')),  # Forward Split
-    ('RS', ('SPLIT', 'split')),  # Reverse Split
-    ('TC', ('MERGE', 'merger')),  # Merger
-    ('SO', ('SPINOFF', 'spinoff')),  # Spin Off
-    ('BC', None),  # Bond Conversion
-    ('CA', None),  # Contract Soulte (a type of cash settlement)
-    ('CC', None),  # Contact Consolidation
-    ('CD', None),  # Cash Dividend
-    ('CH', None),  # Choice Dividend
-    ('CI', None),  # Convertible Issue
-    ('CO', None),  # Contract Spin Off
-    ('CP', None),  # Coupon Payment
-    ('CS', None),  # Contract Split
-    ('CT', None),  # CFD Termination
-    ('DI', None),  # Dividend Rights Issue
-    ('ED', None),  # Expire Dividend Right
-    ('FA', None),  # Fee Allocation
-    ('FI', None),  # Issue Forward Split
-    ('GV', None),  # Generic Voluntary
-    ('HD', None),  # Choice Dividend Delivery
-    ('HI', None),  # Choice Dividend Issue
-    ('PI', None),  # Share Purchase Issue
-    ('PV', None),  # Proxy Vote
-    ('TI', None),  # Tender Issue
-])
+CORPACT_HANDLERS = OrderedDict(
+    [
+        ("BM", ("BOND MATURITY", "treat_as_trade")),  # Bond Maturity
+        ("SR", ("SUBSCRIBES TO", "subscribe_rights")),  # Subscribe Rights
+        ("IC", ("CUSIP/ISIN CHANGE", "change_security")),  # Issue Change
+        ("OR", ("OVER SUBSCRIBE", "treat_as_trade")),  # Asset Purchase
+        (
+            "RI",
+            ("SUBSCRIBABLE RIGHTS ISSUE", "issue_rights"),
+        ),  # Subscribable Rights Issue
+        ("SD", ("STOCK DIVIDEND", "stock_dividend")),  # Stock Dividend
+        ("TO", ("TENDERED TO", "tender")),
+        ("DW", ("DELISTED", "treat_as_trade")),  # Delist Worthless
+        ("FS", ("SPLIT", "split")),  # Forward Split
+        ("RS", ("SPLIT", "split")),  # Reverse Split
+        ("TC", ("MERGE", "merger")),  # Merger
+        ("SO", ("SPINOFF", "spinoff")),  # Spin Off
+        ("BC", None),  # Bond Conversion
+        ("CA", None),  # Contract Soulte (a type of cash settlement)
+        ("CC", None),  # Contact Consolidation
+        ("CD", None),  # Cash Dividend
+        ("CH", None),  # Choice Dividend
+        ("CI", None),  # Convertible Issue
+        ("CO", None),  # Contract Spin Off
+        ("CP", None),  # Coupon Payment
+        ("CS", None),  # Contract Split
+        ("CT", None),  # CFD Termination
+        ("DI", None),  # Dividend Rights Issue
+        ("ED", None),  # Expire Dividend Right
+        ("FA", None),  # Fee Allocation
+        ("FI", None),  # Issue Forward Split
+        ("GV", None),  # Generic Voluntary
+        ("HD", None),  # Choice Dividend Delivery
+        ("HI", None),  # Choice Dividend Issue
+        ("PI", None),  # Share Purchase Issue
+        ("PV", None),  # Proxy Vote
+        ("TI", None),  # Tender Issue
+    ]
+)
 
-MEMO_SIGNATURES = [(v[0], k) for k, v in CORPACT_HANDLERS.items()
-                   if v is not None]
+MEMO_SIGNATURES = [(v[0], k) for k, v in CORPACT_HANDLERS.items() if v is not None]
 
 # Additional memo signatures to handle data from before FlexQuery schema
 # included 'type' attribute for corporate actions
-MEMO_SIGNATURES.append(('ACQUIRED', 'TC'))
+MEMO_SIGNATURES.append(("ACQUIRED", "TC"))
 
 
 ###############################################################################
 # DATA CONTAINERS
 ###############################################################################
-ParsedCorpAct = namedtuple('ParsedCorpAct', ['raw', 'type', 'ticker',
-                                             'cusip', 'secname', 'memo', ])
+ParsedCorpAct = namedtuple(
+    "ParsedCorpAct", ["raw", "type", "ticker", "cusip", "secname", "memo"]
+)
 
 # HACK - cf. tender(), merge_reorg()
-CostBasisDeferral = namedtuple('CostBasisDeferral',
-                               ['currency', 'cash', 'datetime'])
+CostBasisDeferral = namedtuple("CostBasisDeferral", ["currency", "cash", "datetime"])
 
 
 ###############################################################################
@@ -984,11 +1142,12 @@ def main():
     from argparse import ArgumentParser
     from capgains import flex
 
-    argparser = ArgumentParser(description='Parse Flex Query data')
-    argparser.add_argument('file', nargs='+', help='XML file(s)')
-    argparser.add_argument('--database', '-d', default='sqlite://',
-                           help='Database connection')
-    argparser.add_argument('--verbose', '-v', action='count', default=0)
+    argparser = ArgumentParser(description="Parse Flex Query data")
+    argparser.add_argument("file", nargs="+", help="XML file(s)")
+    argparser.add_argument(
+        "--database", "-d", default="sqlite://", help="Database connection"
+    )
+    argparser.add_argument("--verbose", "-v", action="count", default=0)
     args = argparser.parse_args()
 
     logLevel = (3 - min(args.verbose, 2)) * 10
@@ -1005,11 +1164,11 @@ def main():
             statements = flex.read(session, file)
             for stmt in statements:
                 # for tx in stmt.transactions:
-                    # print(tx)
+                # print(tx)
                 session.add_all(stmt.transactions)
 
     engine.dispose()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

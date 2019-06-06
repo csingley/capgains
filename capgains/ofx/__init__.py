@@ -5,12 +5,14 @@ import ofxtools
 def read(session, source):
     # Avoid import loop by delaying import until after module initialization
     from capgains.ofx.reader import OfxStatementReader
-    from capgains.ofx import (ibkr, amtd, etfc, scottrade)
+    from capgains.ofx import ibkr, amtd, etfc, scottrade
 
-    dispatcher = {ibkr.BROKERID: ibkr.OfxStatementReader,
-                  amtd.BROKERID: amtd.OfxStatementReader,
-                  etfc.BROKERID: etfc.OfxStatementReader,
-                  scottrade.BROKERID: scottrade.OfxStatementReader}
+    dispatcher = {
+        ibkr.BROKERID: ibkr.OfxStatementReader,
+        amtd.BROKERID: amtd.OfxStatementReader,
+        etfc.BROKERID: etfc.OfxStatementReader,
+        scottrade.BROKERID: scottrade.OfxStatementReader,
+    }
 
     ofxtree = ofxtools.OFXTree()
     ofxtree.parse(source)

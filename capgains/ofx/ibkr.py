@@ -11,11 +11,11 @@ from sqlalchemy import create_engine
 
 # Local imports
 from capgains.ofx import reader
-from capgains.flex.reader import (FlexStatementReader,)
-from capgains.database import (Base, sessionmanager)
+from capgains.flex.reader import FlexStatementReader
+from capgains.database import Base, sessionmanager
 
 
-BROKERID = '4705'
+BROKERID = "4705"
 
 
 class OfxStatementReader(FlexStatementReader):
@@ -30,7 +30,7 @@ class OfxStatementReader(FlexStatementReader):
     @staticmethod
     def filterTrades(transaction):
         isFx = False
-        if transaction.memo and 'CASH TRADE' in transaction.memo:
+        if transaction.memo and "CASH TRADE" in transaction.memo:
             isFx = True
         return not isFx
 
@@ -38,7 +38,7 @@ class OfxStatementReader(FlexStatementReader):
     def filterTradeCancels(transaction):
         cancel = False
         memo = transaction.memo
-        if memo and 'cancel' in memo.lower():
+        if memo and "cancel" in memo.lower():
             cancel = True
         return cancel
 
@@ -49,7 +49,7 @@ class OfxStatementReader(FlexStatementReader):
     @staticmethod
     def filterCashTransactions(transaction):
         memo = transaction.memo.lower()
-        return 'return of capital' in memo or 'interimliquidation' in memo
+        return "return of capital" in memo or "interimliquidation" in memo
 
     @staticmethod
     def groupCashTransactionsForCancel(transaction):
@@ -61,7 +61,7 @@ class OfxStatementReader(FlexStatementReader):
                             ofxtools.models.investment.INCOME
         """
         security = (transaction.uniqueidtype, transaction.uniqueid)
-        memo = transaction.memo.replace(' - REVERSAL', '')
+        memo = transaction.memo.replace(" - REVERSAL", "")
         return transaction.dttrade, security, memo
 
     def fixCashTransactions(self, transaction):
@@ -78,11 +78,12 @@ def main():
     from argparse import ArgumentParser
     from capgains.ofx import read
 
-    argparser = ArgumentParser(description='Parse OFX data')
-    argparser.add_argument('file', nargs='+', help='OFX file(s)')
-    argparser.add_argument('--database', '-d', default='sqlite://',
-                           help='Database connection')
-    argparser.add_argument('--verbose', '-v', action='count', default=0)
+    argparser = ArgumentParser(description="Parse OFX data")
+    argparser.add_argument("file", nargs="+", help="OFX file(s)")
+    argparser.add_argument(
+        "--database", "-d", default="sqlite://", help="Database connection"
+    )
+    argparser.add_argument("--verbose", "-v", action="count", default=0)
     args = argparser.parse_args()
 
     logLevel = (3 - min(args.verbose, 2)) * 10
@@ -101,5 +102,5 @@ def main():
     engine.dispose()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

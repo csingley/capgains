@@ -5,8 +5,9 @@ Besides the fundamental requirement of keeping accurate tallies, the main purpos
 of this module is to match opening and closing transactions in order to calculate
 the amount and character of realized gains.
 
-The normal way to use this module is to create a Portfolio instance, then pass
-Transaction instances to its applyTransaction() method.
+To use this module, create a Portfolio instance and pass TransactionType instances
+to its book() method.  Alternatively, you can use any object that implements the
+mapping protocol, and pass it to the module-level book() function.
 
 Each Lot tracks the current state of a particular bunch of securities - (unit, cost).
 Lots are collected in sequences called "positions", which are the values of a
@@ -51,8 +52,8 @@ from typing import (
     NamedTuple,
     Tuple,
     List,
-    DefaultDict,
     Mapping,
+    MutableMapping,
     Callable,
     Any,
     Optional,
@@ -61,7 +62,6 @@ from typing import (
 
 
 # local imports
-from capgains.models import transactions
 from capgains import utils
 
 
@@ -70,11 +70,18 @@ class InventoryError(Exception):
 
 
 class Inconsistent(InventoryError):
-    """
-    Exception raised when Position's state is inconsistent with Transaction
+    """Exception raised when a Position's state is inconsistent with Transaction.
+
+    Args:
+        transaction: 
+        msg:
+
+    Attributes:
+        transaction: 
+        msg:
     """
 
-    def __init__(self, transaction, msg):
+    def __init__(self, transaction: "TransactionType", msg: str) -> None:
         self.transaction = transaction
         self.msg = msg
         super(Inconsistent, self).__init__(f"{transaction} inconsistent: {msg}")
@@ -83,13 +90,26 @@ class Inconsistent(InventoryError):
 UNITS_RESOLUTION = Decimal("0.001")
 
 
-#  SortType = Mapping[str, Union[bool, Callable[["Lot"], Tuple]]]
-PortfolioType = DefaultDict
-
 #######################################################################################
 # DATA MODEL
 #######################################################################################
 class Trade(NamedTuple):
+    """Transaction to buy or sell a security.
+
+    Attributes:
+        id:
+        uniqueid:
+        datetime;
+        fiaccount:
+        security:
+        cash:
+        currency:
+        units:
+        dtsettle:
+        memo:
+        sort:
+    """
+
     id: int
     uniqueid: str
     datetime: _datetime.datetime
@@ -244,9 +264,17 @@ Gain.transaction.__doc__ = "Transaction instance realizing gain"
 Gain.price.__doc__ = "Per-unit proceeds (positive or zero)"
 
 
+# This type alias needs to be defined before it's used, or functools.register
+# freaks out if it's used in a function signature.
+SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]
+
+
 #######################################################################################
 # API
 #######################################################################################
+PortfolioType = MutableMapping
+
+
 class Portfolio(defaultdict):
     """
     Mapping container for positions (i.e. sequences of Lots),
@@ -260,9 +288,7 @@ class Portfolio(defaultdict):
         defaultdict.__init__(self, *args, **kwargs)
 
     def book(
-        self,
-        transaction: TransactionType,
-        sort: Optional["SortType"] = None
+        self, transaction: TransactionType, sort: Optional["SortType"] = None
     ) -> List[Gain]:
         """ Convenience method to call inventory.book() """
         return book(transaction, self, sort=sort)
@@ -306,7 +332,7 @@ def trade(
         raise ValueError(f"units can't be zero: {transaction}")
 
     pocket = (transaction.fiaccount, transaction.security)
-    position = portfolio[pocket]
+    position = portfolio.get(pocket, [])
     position.sort(**(sort or FIFO))
 
     # Remove closed lots from the position
@@ -349,7 +375,7 @@ def returnofcapital(
     ``sort`` is in the argument signature for applyTransaction(), but unused.
     """
     pocket = (transaction.fiaccount, transaction.security)
-    position = portfolio[pocket]
+    position = portfolio.get(pocket, [])
 
     # First get a total of shares affected by return of capital,
     # in order to determine return of capital per share
@@ -394,7 +420,7 @@ def split(
     splitRatio = transaction.numerator / transaction.denominator
 
     pocket = (transaction.fiaccount, transaction.security)
-    position = portfolio[pocket]
+    position = portfolio.get(pocket, [])
 
     if not position:
         msg = (
@@ -451,7 +477,7 @@ def transfer(
         raise ValueError(msg)
 
     pocketFrom = (transaction.fiaccountFrom, transaction.securityFrom)
-    positionFrom = portfolio[pocketFrom]
+    positionFrom = portfolio.get(pocketFrom, [])
     if not positionFrom:
         raise Inconsistent(transaction, f"No position in {pocketFrom}")
     positionFrom.sort(**(sort or FIFO))
@@ -509,7 +535,7 @@ def spinoff(
         raise ValueError(msg)
 
     pocketFrom = (transaction.fiaccount, transaction.securityFrom)
-    positionFrom = portfolio[pocketFrom]
+    positionFrom = portfolio.get(pocketFrom, [])
     if not positionFrom:
         raise Inconsistent(transaction, f"No position in {pocketFrom}")
     positionFrom.sort(**(sort or FIFO))
@@ -568,7 +594,7 @@ def exercise(
     unitsFrom = transaction.unitsFrom
 
     pocketFrom = (transaction.fiaccount, transaction.securityFrom)
-    positionFrom = portfolio[pocketFrom]
+    positionFrom = portfolio.get(pocketFrom, [])
 
     # Remove lots from the source position
     takenLots, remainingPosition = take_lots(
@@ -836,9 +862,6 @@ def closableBy(transaction: TransactionType) -> CriterionType:
 #######################################################################################
 # SORT FUNCTIONS
 #######################################################################################
-SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]
-
-
 def sort_oldest(lot: Lot) -> Tuple:
     """
     Sort by holding period, then by opening Transaction.uniqueid

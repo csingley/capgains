@@ -338,8 +338,8 @@ class PartLotTestCase(LotsMixin, unittest.TestCase):
         self.assertEqual(lot2, self.lot1._replace(units=Decimal("80")))
 
     #  def testPartLotNonDecimalUnits(self):
-        #  with self.assertRaises(ValueError):
-            #  part_lot(self.lot1, 20)
+    #  with self.assertRaises(ValueError):
+    #  part_lot(self.lot1, 20)
 
     def testPartLotUnitsTooBig(self):
         part_lot(self.lot1, Decimal("99.99"))

@@ -15,14 +15,7 @@ from typing import NamedTuple, Any
 
 
 # local imports
-from capgains.models.transactions import (
-    Transaction,
-    Security,
-    SecurityId,
-    FiAccount,
-    CurrencyRate,
-)
-from capgains import inventory, CONFIG
+from capgains import models, inventory, CONFIG
 
 
 class CsvTransactionReader(csv.DictReader):
@@ -63,7 +56,7 @@ class CsvTransactionReader(csv.DictReader):
         for fromAttr, toAttr in decimals:
             self._convert_item(row, fromAttr, toAttr, Decimal)
 
-        transaction = Transaction.merge(self.session, **row)
+        transaction = models.Transaction.merge(self.session, **row)
         return transaction
 
     def _convert_item(self, row, fromAttr, toAttr, fn):
@@ -77,7 +70,7 @@ class CsvTransactionReader(csv.DictReader):
             attr: row.pop("_".join((fromAttr, attr))) for attr in ("brokerid", "number")
         }
         if attrs["brokerid"] is not None:
-            row[toAttr] = FiAccount.merge(self.session, **attrs)
+            row[toAttr] = models.FiAccount.merge(self.session, **attrs)
         else:
             row[toAttr] = None
 
@@ -87,7 +80,7 @@ class CsvTransactionReader(csv.DictReader):
             for attr in ("uniqueidtype", "uniqueid", "ticker", "name")
         }
         if attrs["uniqueidtype"] is not None:
-            row[toAttr] = Security.merge(self.session, **attrs)
+            row[toAttr] = models.Security.merge(self.session, **attrs)
         else:
             row[toAttr] = None
 
@@ -236,14 +229,14 @@ class CsvLotReader(csv.DictReader):
         # Leftovers in row are SecurityId
         for uniqueidtype, uniqueid in row.items():
             if uniqueid:
-                security = Security.merge(
+                security = models.Security.merge(
                     self.session,
                     uniqueidtype=uniqueidtype,
                     uniqueid=uniqueid,
                     ticker=sec_attrs["ticker"],
                     name=sec_attrs["secname"],
                 )
-        account = FiAccount.merge(
+        account = models.FiAccount.merge(
             self.session, brokerid=acct_attrs["brokerid"], number=acct_attrs["acctid"]
         )
         lot_attrs["units"] = Decimal(lot_attrs["units"])
@@ -284,7 +277,7 @@ class CsvLotWriter(csv.DictWriter):
         self.csvfile = csvfile
 
         uniqueidtypes = [
-            d[0] for d in session.query(SecurityId.uniqueidtype).distinct()
+            d[0] for d in session.query(models.SecurityId.uniqueidtype).distinct()
         ]
         fieldnames = self.csvFields + uniqueidtypes
         super(CsvLotWriter, self).__init__(
@@ -541,7 +534,7 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
         else:
             dtsettle = opentx.datetime
         date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
-        exchange_rate = CurrencyRate.get_rate(
+        exchange_rate = models.CurrencyRate.get_rate(
             session,
             fromcurrency=lot.currency,
             tocurrency=functional_currency,
@@ -560,7 +553,7 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
     if gaintx_currency != functional_currency:
         dtsettle = gaintx.dtsettle or gaintx.datetime
         date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
-        exchange_rate = CurrencyRate.get_rate(
+        exchange_rate = models.CurrencyRate.get_rate(
             session,
             fromcurrency=gaintx_currency,
             tocurrency=functional_currency,

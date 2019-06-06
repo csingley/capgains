@@ -3,6 +3,7 @@
 """
 # stdlib imports
 import unittest
+
 #  from unittest.mock import patch
 from datetime import datetime
 from decimal import Decimal
@@ -10,18 +11,15 @@ from decimal import Decimal
 
 # local imports
 from capgains.config import CONFIG
-from capgains.ofx.ibkr import (
-    OfxStatementReader,
-)
+from capgains.ofx.ibkr import OfxStatementReader
 from capgains.models.transactions import (
-    Fi, FiAccount, Security, Transaction, TransactionType
+    Fi,
+    FiAccount,
+    Security,
+    Transaction,
+    TransactionType,
 )
-from common import (
-    setUpModule,
-    tearDownModule,
-    RollbackMixin,
-    OfxSnippetMixin,
-)
+from common import setUpModule, tearDownModule, RollbackMixin, OfxSnippetMixin
 
 
 class TradeTestCase(RollbackMixin, unittest.TestCase):
@@ -51,13 +49,16 @@ class CashTransactionsTestCase(OfxSnippetMixin, unittest.TestCase):
         self.assertEqual(len(self.securities), 1)
         rhdgf = self.securities[0]
         self.assertIsInstance(tran, Transaction)
-        self.assertEqual(tran.uniqueid, '20160413.U999999.e.USD.6356130558')
+        self.assertEqual(tran.uniqueid, "20160413.U999999.e.USD.6356130558")
         # FIXME - timezone adjustment
         #  self.assertEqual(tran.datetime, datetime(2016, 4, 13, 20, 20))
         self.assertEqual(tran.type, TransactionType.RETURNCAP)
-        self.assertEqual(tran.memo, 'RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)')
-        self.assertEqual(tran.currency, 'USD')
-        self.assertEqual(tran.cash, Decimal('139000'))
+        self.assertEqual(
+            tran.memo,
+            "RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)",
+        )
+        self.assertEqual(tran.currency, "USD")
+        self.assertEqual(tran.cash, Decimal("139000"))
         self.assertEqual(tran.fiaccount, self.reader.account)
         self.assertEqual(tran.security, rhdgf)
         self.assertEqual(tran.units, None)
@@ -71,5 +72,5 @@ class CashTransactionsTestCase(OfxSnippetMixin, unittest.TestCase):
         self.assertEqual(tran.sort, None)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main(verbosity=3)

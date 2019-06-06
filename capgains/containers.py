@@ -25,14 +25,16 @@ class GroupedList(list):
     Methods defined here all return GroupedList instances with methods applied,
     for easy function composition.
     """
+
     def __init__(self, *args, **kwargs):
-        self.grouped = kwargs.pop('grouped', False)
-        self.key = kwargs.pop('key', None)
+        self.grouped = kwargs.pop("grouped", False)
+        self.key = kwargs.pop("key", None)
         list.__init__(self, *args, **kwargs)
 
     def __repr__(self):
         return "GroupedList({}, grouped={}, key={})".format(
-            list(self), self.grouped, self.key)
+            list(self), self.grouped, self.key
+        )
 
     def bind_data(self, func):
         """
@@ -58,25 +60,29 @@ class GroupedList(list):
         return self.bind_data(functools.partial(map, func))
 
     def reduce(self, func):
-        return self.bind_data(lambda items:
-                              [functools.reduce(func, items)] if items else [])
+        return self.bind_data(
+            lambda items: [functools.reduce(func, items)] if items else []
+        )
 
     def flatten(self):
         if self.grouped:
-            items = itertools.chain.from_iterable(
-                item.flatten() for item in self)
+            items = itertools.chain.from_iterable(item.flatten() for item in self)
         else:
             items = self
         return self.__class__(items, grouped=False, key=None)
 
     def groupby(self, func):
         if self.grouped:
-            return self.__class__([item.groupby(func) for item in self],
-                                  grouped=self.grouped, key=self.key)
+            return self.__class__(
+                [item.groupby(func) for item in self],
+                grouped=self.grouped,
+                key=self.key,
+            )
         else:
-            items = [self.__class__(v, grouped=False, key=k)
-                     for k, v in itertools.groupby(
-                         sorted(self, key=func), key=func)]
+            items = [
+                self.__class__(v, grouped=False, key=k)
+                for k, v in itertools.groupby(sorted(self, key=func), key=func)
+            ]
             return self.__class__(items, grouped=True, key=self.key)
 
     def cancel(self, filterfunc, matchfunc, sortfunc):
@@ -96,16 +102,19 @@ class GroupedList(list):
                      Used to sort original transactions, against which
                      matching cancelling transacions will be applied in order.
         """
+
         def applyCancel(items):
             originals, cancels = utils.partition(filterfunc, items)
             originals = sorted(originals, key=sortfunc)
 
             for cancel in cancels:
                 canceled = first_true(
-                    originals, pred=functools.partial(matchfunc, cancel))
+                    originals, pred=functools.partial(matchfunc, cancel)
+                )
                 if canceled is False:
                     raise ValueError(
-                        "Can't find Transaction canceled by {}".format(cancel))
+                        "Can't find Transaction canceled by {}".format(cancel)
+                    )
                 # N.B. must remove canceled transaction from further iterations
                 # to avoid multiple cancels matching the same original, thereby
                 # leaving subsequent original(s) uncanceled when they should be

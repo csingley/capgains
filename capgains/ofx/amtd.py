@@ -11,7 +11,7 @@ from capgains.flex.reader import FlexStatementReader
 from capgains.containers import GroupedList
 
 
-BROKERID = 'ameritrade.com'
+BROKERID = "ameritrade.com"
 
 
 class OfxStatementReader(reader.OfxStatementReader):
@@ -22,7 +22,7 @@ class OfxStatementReader(reader.OfxStatementReader):
 
         Args: transaction - ofxtools.models.investment.{BUY*, SELL*} instance
         """
-        return 'TRADE CORRECTION' not in transaction.memo
+        return "TRADE CORRECTION" not in transaction.memo
 
     def doTransfers(self, transactions):
         for key, txs in itertools.groupby(transactions, key=self.groupTransfers):
@@ -77,16 +77,18 @@ class OfxStatementReader(reader.OfxStatementReader):
         # Not ready for prime time
         return
 
-        txs = GroupedList(transactions)\
-                .groupby(self.groupExercises)\
-                .reduce(self.netExercises)\
-                .flatten()\
-                .sorted(self.sortExercises)
+        txs = (
+            GroupedList(transactions)
+            .groupby(self.groupExercises)
+            .reduce(self.netExercises)
+            .flatten()
+            .sorted(self.sortExercises)
+        )
         txs = txs.pop(None)
         assert len(txs) == 2
         dest, src = txs
-        assert dest.tferaction == 'IN'
-        assert src.tferaction == 'OUT'
+        assert dest.tferaction == "IN"
+        assert src.tferaction == "OUT"
 
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
         securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
@@ -94,10 +96,18 @@ class OfxStatementReader(reader.OfxStatementReader):
         # FIXME - exercise cash is sent as INVBANKTRAN; can't get it from
         # just the TRANSFERS which are dispatched to here.
         tx = self.merge_transaction(
-            type='exercise', fiaccount=self.account, uniqueid=src.fitid,
-            datetime=src.dttrade, memo=memo, security=security,
-            units=dest.units, cash=0, fiaccountFrom=None,
-            securityFrom=securityFrom, unitsFrom=src.units)
+            type="exercise",
+            fiaccount=self.account,
+            uniqueid=src.fitid,
+            datetime=src.dttrade,
+            memo=memo,
+            security=security,
+            units=dest.units,
+            cash=0,
+            fiaccountFrom=None,
+            securityFrom=securityFrom,
+            unitsFrom=src.units,
+        )
         # print(tx)
         return tx
 
@@ -108,15 +118,15 @@ class OfxStatementReader(reader.OfxStatementReader):
     @staticmethod
     def netExercises(tx0, tx1):
         units0 = tx0.units
-        if tx0.postype == 'SHORT':
+        if tx0.postype == "SHORT":
             units0 *= -1
-            tx0.postype = 'LONG'
+            tx0.postype = "LONG"
         units1 = tx1.units
-        if tx1.postype == 'SHORT':
+        if tx1.postype == "SHORT":
             units1 *= -1
         tx0.units += tx1.units
         return tx0
 
     @staticmethod
     def sortExercises(tx):
-        return (tx.tferaction)
+        return tx.tferaction

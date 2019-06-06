@@ -6,12 +6,11 @@ import logging
 
 
 import sqlalchemy
-# from sqlalchemy.orm.exc import NoResultFound
 
 
-from capgains.models.transactions import (Fi, FiAccount, Security, SecurityId)
+from capgains import models
 from capgains.ofx.reader import OfxStatementReader
-from capgains.database import (Base, sessionmanager)
+from capgains.database import Base, sessionmanager
 
 
 class CsvStatement(object):
@@ -20,7 +19,7 @@ class CsvStatement(object):
 
 
 class CsvTransactionReader(csv.DictReader, OfxStatementReader):
-    BROKERID = 'etrade.com'
+    BROKERID = "etrade.com"
 
     def __init__(self, session, csvfile):
         self.session = session
@@ -29,13 +28,13 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
         self.securities = {}
         self.transactions = []
         row = next(csvfile)
-        caption, acctid = row.split(',')
-        assert caption == 'For Account:'
+        caption, acctid = row.split(",")
+        assert caption == "For Account:"
         acctid = acctid.strip()
 
-        fi = Fi.merge(session, brokerid=self.BROKERID)
+        fi = models.Fi.merge(session, brokerid=self.BROKERID)
 
-        self.account = FiAccount.merge(session, fi=fi, number=acctid)
+        self.account = models.FiAccount.merge(session, fi=fi, number=acctid)
 
         # Skip blank line before headers
         next(csvfile)
@@ -51,19 +50,25 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
         return self.transactions
 
     def parse(self, index, row):
-        dt = datetime.strptime(row['TransactionDate'], '%m/%d/%y')
+        dt = datetime.strptime(row["TransactionDate"], "%m/%d/%y")
         # CSV file trade dates have a resolution of days, so it's easy
         # to get trades that have all fields identical.
         # To avoid collisions from make_uid(), we increment the datetime
         # by 1 min per row of the file.
         dt += timedelta(minutes=index)
-        ticker = row['Symbol']
+        ticker = row["Symbol"]
         self.merge_security(ticker)
         return CsvTransaction(
-            fitid=None, dttrade=dt, dtsettle=dt, memo=row['Description'],
-            uniqueidtype='TICKER', uniqueid=ticker,
-            units=Decimal(row['Quantity']), currency='USD',
-            total=Decimal(row['Amount']), type=row['TransactionType'],
+            fitid=None,
+            dttrade=dt,
+            dtsettle=dt,
+            memo=row["Description"],
+            uniqueidtype="TICKER",
+            uniqueid=ticker,
+            units=Decimal(row["Quantity"]),
+            currency="USD",
+            total=Decimal(row["Amount"]),
+            type=row["TransactionType"],
         )
 
     def merge_security(self, ticker, name=None):
@@ -74,31 +79,36 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
         CSV files also don't include a list of securities, so we create that
         here as we parse transactions.
         """
-        if ('TICKER', ticker) in self.securities:
+        if ("TICKER", ticker) in self.securities:
             return
 
-        secid = self.session.query(SecurityId)\
-                .filter_by(uniqueidtype='TICKER', uniqueid=ticker)\
-                .one_or_none()
+        secid = (
+            self.session.query(models.SecurityId)
+            .filter_by(uniqueidtype="TICKER", uniqueid=ticker)
+            .one_or_none()
+        )
         if secid is None:
-            security = Security.merge(self.session, ticker=ticker,
-                                      uniqueidtype='TICKER', uniqueid=ticker)
+            security = models.Security.merge(
+                self.session, ticker=ticker, uniqueidtype="TICKER", uniqueid=ticker
+            )
         else:
             security = secid.security
-        self.securities[('TICKER', ticker)] = security
+        self.securities[("TICKER", ticker)] = security
 
     def groupTransactions(self, transaction):
         """
         Sort key for grouping transactions for dispatch (transaction_handlers)
         """
-        return self.transaction_handlers.get(transaction.type, '')
+        return self.transaction_handlers.get(transaction.type, "")
 
-    transaction_handlers = {'Bought': 'doTrades',
-                            'Sold': 'doTrades',
-                            'Cancel Bought': 'doTrades',
-                            'Cancel Sold': 'doTrades',
-                            'Dividend': 'doCashTransactions',
-                            'Reorganization': ''}
+    transaction_handlers = {
+        "Bought": "doTrades",
+        "Sold": "doTrades",
+        "Cancel Bought": "doTrades",
+        "Cancel Sold": "doTrades",
+        "Dividend": "doCashTransactions",
+        "Reorganization": "",
+    }
 
     ###########################################################################
     # TRADES
@@ -114,7 +124,7 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
 
     @staticmethod
     def filterTradeCancels(transaction):
-        return 'cancel' in transaction.memo.lower()
+        return "cancel" in transaction.memo.lower()
 
     ###########################################################################
     # CASH TRANSACTIONS
@@ -124,7 +134,7 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
         """
         """
         memo = transaction.memo.lower()
-        return 'liqd' in memo or 'ret cap' in memo
+        return "liqd" in memo or "ret cap" in memo
 
 
 def read(session, file_):
@@ -136,11 +146,22 @@ def read(session, file_):
 ###############################################################################
 # DATA CONTAINERS
 ###############################################################################
-CsvTransaction = namedtuple('CsvTransaction', [
-    'fitid', 'dttrade', 'dtsettle', 'memo', 'uniqueidtype', 'uniqueid', 'units',
-    'currency', 'total', 'type',
-    # 'reportdate', 'code',
-])
+CsvTransaction = namedtuple(
+    "CsvTransaction",
+    [
+        "fitid",
+        "dttrade",
+        "dtsettle",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "units",
+        "currency",
+        "total",
+        "type",
+        # 'reportdate', 'code',
+    ],
+)
 
 
 ###############################################################################
@@ -149,11 +170,12 @@ CsvTransaction = namedtuple('CsvTransaction', [
 def main():
     from argparse import ArgumentParser
 
-    argparser = ArgumentParser(description='Parse Etrade CSV data')
-    argparser.add_argument('file', nargs='+', help='CSV file(s)')
-    argparser.add_argument('--database', '-d', default='sqlite://',
-                           help='Database connection')
-    argparser.add_argument('--verbose', '-v', action='count', default=0)
+    argparser = ArgumentParser(description="Parse Etrade CSV data")
+    argparser.add_argument("file", nargs="+", help="CSV file(s)")
+    argparser.add_argument(
+        "--database", "-d", default="sqlite://", help="Database connection"
+    )
+    argparser.add_argument("--verbose", "-v", action="count", default=0)
     args = argparser.parse_args()
 
     logLevel = (3 - min(args.verbose, 2)) * 10
@@ -169,5 +191,5 @@ def main():
             read(session, f)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

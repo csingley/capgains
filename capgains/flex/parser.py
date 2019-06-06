@@ -21,34 +21,45 @@ from capgains.flex.regexes import secSymbolRE
 def parse(source):
     statements = []
     response = ibflex.parser.parse(source)
-    for stmt in response['FlexStatements']:
+    for stmt in response["FlexStatements"]:
         # First parse trades, so they can be associated with options activity
-        trades = parse_trades(stmt.get('Trades') or [])
-        exercises = parse_optionEAE(stmt.get('OptionEAE') or [], trades)
+        trades = parse_trades(stmt.get("Trades") or [])
+        exercises = parse_optionEAE(stmt.get("OptionEAE") or [], trades)
         transactions = trades + exercises
         # Then process the rest of the transactions
-        for transactionType in ['TradeTransfers', 'CashTransactions',
-                                'CorporateActions', 'Transfers']:
+        for transactionType in [
+            "TradeTransfers",
+            "CashTransactions",
+            "CorporateActions",
+            "Transfers",
+        ]:
             report = stmt.get(transactionType, None)
             if report is not None:
                 subparser = SUBPARSERS[transactionType]
                 transactions.extend(subparser(report))
 
-        statements.append(FlexStatement(
-            account=parse_acctinfo(stmt['AccountInformation']),
-            securities=parse_securities(stmt['SecuritiesInfo']),
-            dividends=parse_dividends(stmt.get('ChangeInDividendAccruals') or []),
-            transactions=transactions,
-            conversionrates=parse_conversionrates(stmt.get('ConversionRates') or []),
-        ))
+        statements.append(
+            FlexStatement(
+                account=parse_acctinfo(stmt["AccountInformation"]),
+                securities=parse_securities(stmt["SecuritiesInfo"]),
+                dividends=parse_dividends(stmt.get("ChangeInDividendAccruals") or []),
+                transactions=transactions,
+                conversionrates=parse_conversionrates(
+                    stmt.get("ConversionRates") or []
+                ),
+            )
+        )
 
     return statements
 
 
 def parse_acctinfo(acctinfo):
-    return Account(acctid=acctinfo['accountId'], brokerid=BROKERID,
-                   name=acctinfo['acctAlias'],
-                   currency=acctinfo['currency'])
+    return Account(
+        acctid=acctinfo["accountId"],
+        brokerid=BROKERID,
+        name=acctinfo["acctAlias"],
+        currency=acctinfo["currency"],
+    )
 
 
 def parse_securities(secinfos):
@@ -60,33 +71,47 @@ def parse_securities(secinfos):
 
 def parse_security(secinfo):
     securities = []
-    ticker = secSymbolRE.match(secinfo['symbol']).group('ticker')
-    secname = secinfo['description']
-    for uniqueidtype in ('CONID', 'ISIN', 'CUSIP'):
+    ticker = secSymbolRE.match(secinfo["symbol"]).group("ticker")
+    secname = secinfo["description"]
+    for uniqueidtype in ("CONID", "ISIN", "CUSIP"):
         uniqueid = secinfo[uniqueidtype.lower()]
         if uniqueid:
-            securities.append(Security(
-                uniqueidtype=uniqueidtype, uniqueid=uniqueid,
-                ticker=ticker, secname=secname))
+            securities.append(
+                Security(
+                    uniqueidtype=uniqueidtype,
+                    uniqueid=uniqueid,
+                    ticker=ticker,
+                    secname=secname,
+                )
+            )
     return securities
 
 
 def parse_dividends(divs):
     # Dividends paid during period are marked as reversal of accrual
     dividends = [
-        Dividend(conid=div['conid'], exDate=div['exDate'],
-                 payDate=div['payDate'], quantity=div['quantity'],
-                 grossRate=div['grossRate'],
-                 taxesAndFees=div['tax'] + div['fee'],
-                 total=div['netAmount'])
-        for div in divs if 'Re' in div['code']]
+        Dividend(
+            conid=div["conid"],
+            exDate=div["exDate"],
+            payDate=div["payDate"],
+            quantity=div["quantity"],
+            grossRate=div["grossRate"],
+            taxesAndFees=div["tax"] + div["fee"],
+            total=div["netAmount"],
+        )
+        for div in divs
+        if "Re" in div["code"]
+    ]
     return dividends
 
 
 def parse_conversionrates(rates):
-    conversionrates = [ConversionRate(
-        date=date, fromcurrency=fromcurrency, tocurrency=tocurrency, rate=rate)
-        for (fromcurrency, tocurrency, date), rate  in rates.items()]
+    conversionrates = [
+        ConversionRate(
+            date=date, fromcurrency=fromcurrency, tocurrency=tocurrency, rate=rate
+        )
+        for (fromcurrency, tocurrency, date), rate in rates.items()
+    ]
     return conversionrates
 
 
@@ -114,27 +139,40 @@ def parse_trade(tx, description=None):
     # For Trades where `tradeID` is not available, use `transactionID` instead
     # (rather than leaving it blank, which would cause OfxReader.make_uid()
     # to generate one by hashing the relevant data fields).
-    description = description or tx['description']
+    description = description or tx["description"]
     return Trade(
-        fitid=tx['tradeID'] or tx['transactionID'],
-        dttrade=datetime.combine(tx['tradeDate'], tx['tradeTime']),
-        memo=description, uniqueidtype='CONID', uniqueid=tx['conid'],
-        units=tx['quantity'], currency=tx['currency'], total=tx['netCash'],
-        reportdate=tx['reportDate'], orig_tradeid=tx['origTradeID'],
-        notes=tx['notes'])
+        fitid=tx["tradeID"] or tx["transactionID"],
+        dttrade=datetime.combine(tx["tradeDate"], tx["tradeTime"]),
+        memo=description,
+        uniqueidtype="CONID",
+        uniqueid=tx["conid"],
+        units=tx["quantity"],
+        currency=tx["currency"],
+        total=tx["netCash"],
+        reportdate=tx["reportDate"],
+        orig_tradeid=tx["origTradeID"],
+        notes=tx["notes"],
+    )
 
 
 ###########################################################################
 # TRADE TRANSFERS
 ###########################################################################
 def parse_trade_transfers(report):
-    return [parse_trade(
-        tx,
-        description='{} {} {} {} {}: {}'.format(
-            tx['transactionType'], tx['deliveredReceived'],
-            tx['direction'], tx['brokerName'], tx['brokerAccount'],
-            tx['description']),
-    ) for tx in report]
+    return [
+        parse_trade(
+            tx,
+            description="{} {} {} {} {}: {}".format(
+                tx["transactionType"],
+                tx["deliveredReceived"],
+                tx["direction"],
+                tx["brokerName"],
+                tx["brokerAccount"],
+                tx["description"],
+            ),
+        )
+        for tx in report
+    ]
 
 
 ###########################################################################
@@ -152,13 +190,20 @@ def parse_cash_transaction(tx):
     #
     # Payment date is recorded as datetime.date not datetime.datetime;
     # convert to datetime.datetime to match OFX format
-    txdt = tx['dateTime']
+    txdt = tx["dateTime"]
     dtsettle = datetime(txdt.year, txdt.month, txdt.day)
 
     return CashTransaction(
-        fitid=tx['transactionID'], dttrade=None, dtsettle=dtsettle,
-        memo=tx['description'], uniqueidtype='CONID', uniqueid=tx['conid'],
-        incometype=tx['type'], currency=tx['currency'], total=tx['amount'])
+        fitid=tx["transactionID"],
+        dttrade=None,
+        dtsettle=dtsettle,
+        memo=tx["description"],
+        uniqueidtype="CONID",
+        uniqueid=tx["conid"],
+        incometype=tx["type"],
+        currency=tx["currency"],
+        total=tx["amount"],
+    )
 
 
 ###########################################################################
@@ -172,10 +217,18 @@ def parse_corporate_action(tx):
     # CorporateActions don't include any sort of unique transaction identifier.
     # This generally works out OK b/c they're batch-processed at end of day.
     return CorporateAction(
-        fitid=None, dttrade=tx['dateTime'], memo=tx['description'],
-        uniqueidtype='CONID', uniqueid=tx['conid'], units=tx['quantity'],
-        currency=tx['currency'], total=tx['proceeds'], type=tx['type'],
-        reportdate=tx['reportDate'], code=tx['code'])
+        fitid=None,
+        dttrade=tx["dateTime"],
+        memo=tx["description"],
+        uniqueidtype="CONID",
+        uniqueid=tx["conid"],
+        units=tx["quantity"],
+        currency=tx["currency"],
+        total=tx["proceeds"],
+        type=tx["type"],
+        reportdate=tx["reportDate"],
+        code=tx["code"],
+    )
 
 
 ###########################################################################
@@ -189,10 +242,16 @@ def parse_transfer(tx):
     # Transfers don't include any sort of unique transaction identifier.
     # This generally works out OK b/c they're batch-processed at end of day.
     return Transfer(
-        fitid=None, dttrade=tx['date'], memo=tx['description'],
-        uniqueidtype='CONID', uniqueid=tx['conid'], units=tx['quantity'],
-        tferaction=tx['direction'], type=tx['type'],
-        other_acctid=tx['account'])
+        fitid=None,
+        dttrade=tx["date"],
+        memo=tx["description"],
+        uniqueidtype="CONID",
+        uniqueid=tx["conid"],
+        units=tx["quantity"],
+        tferaction=tx["direction"],
+        type=tx["type"],
+        other_acctid=tx["account"],
+    )
 
 
 ###########################################################################
@@ -208,26 +267,36 @@ def parse_optionEAE(report, trades):
     transactions = []
     wip = None
     for elem in report:
-        transactionType = elem['transactionType']
-        if transactionType == 'Expiration':
+        transactionType = elem["transactionType"]
+        if transactionType == "Expiration":
             wip = None
             continue
 
         tx = pluck_trade(elem, trades)
         dttrade = tx.dttrade
 
-        if transactionType in ('Assignment', 'Exercise'):
+        if transactionType in ("Assignment", "Exercise"):
             assert wip is None
             wip = partial(
-                Exercise, fitid=tx.fitid, dttrade=dttrade,
-                memo='Exercise '+tx.memo, uniqueidtypeFrom=tx.uniqueidtype,
-                uniqueidFrom=tx.uniqueid, unitsFrom=tx.units,
-                reportdate=tx.reportdate)
+                Exercise,
+                fitid=tx.fitid,
+                dttrade=dttrade,
+                memo="Exercise " + tx.memo,
+                uniqueidtypeFrom=tx.uniqueidtype,
+                uniqueidFrom=tx.uniqueid,
+                unitsFrom=tx.units,
+                reportdate=tx.reportdate,
+            )
         else:
             transactions.append(
-                wip(uniqueidtype=tx.uniqueidtype, uniqueid=tx.uniqueid,
-                    units=tx.units, currency=tx.currency, total=tx.total,
-                    notes=tx.notes)
+                wip(
+                    uniqueidtype=tx.uniqueidtype,
+                    uniqueid=tx.uniqueid,
+                    units=tx.units,
+                    currency=tx.currency,
+                    total=tx.total,
+                    notes=tx.notes,
+                )
             )
             wip = None
     assert wip is None
@@ -235,61 +304,128 @@ def parse_optionEAE(report, trades):
 
 
 def pluck_trade(elem, trades):
-    hits = [index for index, tx in enumerate(trades)
-            if tx.fitid == elem['tradeID']]
+    hits = [index for index, tx in enumerate(trades) if tx.fitid == elem["tradeID"]]
     assert len(hits) == 1
     trade = trades.pop(hits.pop())
 
     dttrade = trade.dttrade
-    date = elem['date']
+    date = elem["date"]
     assert date.year == dttrade.year
     assert date.month == dttrade.month
     assert date.day == dttrade.day
 
-    assert elem['description'] == trade.memo
-    assert elem['conid'] == trade.uniqueid
-    assert elem['quantity'] == trade.units
+    assert elem["description"] == trade.memo
+    assert elem["conid"] == trade.uniqueid
+    assert elem["quantity"] == trade.units
 
     return trade
 
 
-SUBPARSERS = {'TradeTransfers': parse_trade_transfers,
-              'CashTransactions': parse_cash_transactions,
-              'CorporateActions': parse_corporate_actions,
-              'Transfers': parse_transfers}
+SUBPARSERS = {
+    "TradeTransfers": parse_trade_transfers,
+    "CashTransactions": parse_cash_transactions,
+    "CorporateActions": parse_corporate_actions,
+    "Transfers": parse_transfers,
+}
 
 
 ###############################################################################
 # DATA CONTAINERS - implement ofxtools.models.investment data structures
 # (plus some extra fields)
 ###############################################################################
-Account = namedtuple('Account', ['acctid', 'brokerid', 'name', 'currency'])
-Security = namedtuple('Security',
-                      ['uniqueidtype', 'uniqueid', 'ticker', 'secname'])
-Dividend = namedtuple('Dividend', ['conid', 'exDate', 'payDate', 'quantity',
-                                   'grossRate', 'taxesAndFees', 'total'])
-Trade = namedtuple('Trade', [
-    'fitid', 'dttrade', 'memo', 'uniqueidtype', 'uniqueid', 'units',
-    'currency', 'total', 'reportdate', 'orig_tradeid', 'notes'])
-CashTransaction = namedtuple('CashTransaction', [
-    'fitid', 'dttrade', 'dtsettle', 'memo', 'uniqueidtype', 'uniqueid',
-    'incometype', 'currency', 'total'])
-Transfer = namedtuple('Transfer', [
-    'fitid', 'dttrade', 'memo', 'uniqueidtype', 'uniqueid', 'units',
-    'tferaction', 'type', 'other_acctid'])
-CorporateAction = namedtuple('CorporateAction', [
-    'fitid', 'dttrade', 'memo', 'uniqueidtype', 'uniqueid', 'units',
-    'currency', 'total', 'type', 'reportdate', 'code'])
-Exercise = namedtuple('Exercise', [
-    'fitid', 'dttrade', 'memo', 'uniqueidtype', 'uniqueid', 'units',
-    'uniqueidtypeFrom', 'uniqueidFrom', 'unitsFrom', 'currency', 'total',
-    'reportdate', 'notes'])
+Account = namedtuple("Account", ["acctid", "brokerid", "name", "currency"])
+Security = namedtuple("Security", ["uniqueidtype", "uniqueid", "ticker", "secname"])
+Dividend = namedtuple(
+    "Dividend",
+    ["conid", "exDate", "payDate", "quantity", "grossRate", "taxesAndFees", "total"],
+)
+Trade = namedtuple(
+    "Trade",
+    [
+        "fitid",
+        "dttrade",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "units",
+        "currency",
+        "total",
+        "reportdate",
+        "orig_tradeid",
+        "notes",
+    ],
+)
+CashTransaction = namedtuple(
+    "CashTransaction",
+    [
+        "fitid",
+        "dttrade",
+        "dtsettle",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "incometype",
+        "currency",
+        "total",
+    ],
+)
+Transfer = namedtuple(
+    "Transfer",
+    [
+        "fitid",
+        "dttrade",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "units",
+        "tferaction",
+        "type",
+        "other_acctid",
+    ],
+)
+CorporateAction = namedtuple(
+    "CorporateAction",
+    [
+        "fitid",
+        "dttrade",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "units",
+        "currency",
+        "total",
+        "type",
+        "reportdate",
+        "code",
+    ],
+)
+Exercise = namedtuple(
+    "Exercise",
+    [
+        "fitid",
+        "dttrade",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "units",
+        "uniqueidtypeFrom",
+        "uniqueidFrom",
+        "unitsFrom",
+        "currency",
+        "total",
+        "reportdate",
+        "notes",
+    ],
+)
 
 
 ###############################################################################
 # DATA CONTAINERS - Flex specific
 ###############################################################################
-FlexStatement = namedtuple('FlexStatement', [
-    'account', 'securities', 'dividends', 'transactions', 'conversionrates'])
-ConversionRate = namedtuple('ConversionRate', [
-    'date', 'fromcurrency', 'tocurrency', 'rate'])
+FlexStatement = namedtuple(
+    "FlexStatement",
+    ["account", "securities", "dividends", "transactions", "conversionrates"],
+)
+ConversionRate = namedtuple(
+    "ConversionRate", ["date", "fromcurrency", "tocurrency", "rate"]
+)

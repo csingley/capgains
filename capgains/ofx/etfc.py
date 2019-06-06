@@ -4,7 +4,7 @@
 from capgains.ofx import reader
 
 
-BROKERID = 'etrade.com'
+BROKERID = "etrade.com"
 
 
 class OfxStatementReader(reader.OfxStatementReader):
@@ -17,4 +17,4 @@ class OfxStatementReader(reader.OfxStatementReader):
         Returns: bool
         """
         memo = transaction.memo.lower()
-        return 'ret cap' in memo or 'liqd' in memo
+        return "ret cap" in memo or "liqd" in memo

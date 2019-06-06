@@ -68,8 +68,7 @@ class GroupedListTestCase(unittest.TestCase):
         self.assertIsInstance(items, GroupedList)
         self.assertFalse(items.grouped)
         self.assertIsNone(items.key)
-        self.assertEqual(list(items),
-                         [0, 2, 4, 6, 8, 10, 12, 14, 16, 18])
+        self.assertEqual(list(items), [0, 2, 4, 6, 8, 10, 12, 14, 16, 18])
 
         # Nested
         container = self.grouped_items.map(lambda x: 2 * x)
@@ -219,7 +218,7 @@ class GroupedListTestCase(unittest.TestCase):
         self.assertEqual(container.key, None)
         self.assertEqual(len(container), 3)
         items0, items1, items2 = container
-        
+
         self.assertIsInstance(items0, GroupedList)
         self.assertEqual(items0.grouped, False)
         self.assertEqual(items0.key, 0)
@@ -238,40 +237,101 @@ class GroupedListTestCase(unittest.TestCase):
     def testCancel(self):
         # Flat
         trades = [
-            Trade(fitid='3723709320', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('0.000002769'), reportdate=datetime.datetime(2013, 8, 1, 0, 0), notes=[''], orig_tradeid=None, ),
-            Trade(fitid='3831648707', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('0.276942'), currency='USD', total=Decimal('-0.000002769'), reportdate=datetime.datetime(2013, 9, 20, 0, 0), notes=['Ca'], orig_tradeid=None, ),
-            Trade(fitid='3831652905', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('56.412710421'), reportdate=datetime.datetime(2013, 9, 20, 0, 0), notes=[''], orig_tradeid=None, ),
-            Trade(fitid='3964505548', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('0.276942'), currency='USD', total=Decimal('-56.412710421'), reportdate=datetime.datetime(2013, 11, 18, 0, 0), notes=['Ca'], orig_tradeid=None, ),
-            Trade(fitid='3964508206', dttrade=datetime.datetime(2011, 5, 9, 0, 0), memo='CONVERA CORPORATION - SPINOFF', uniqueidtype='CONID', uniqueid='132118505', units=Decimal('-0.276942'), currency='USD', total=Decimal('1477.3194048'), reportdate=datetime.datetime(2013, 11, 18, 0, 0), notes=[''], orig_tradeid=None, ),
+            Trade(
+                fitid="3723709320",
+                dttrade=datetime.datetime(2011, 5, 9, 0, 0),
+                memo="CONVERA CORPORATION - SPINOFF",
+                uniqueidtype="CONID",
+                uniqueid="132118505",
+                units=Decimal("-0.276942"),
+                currency="USD",
+                total=Decimal("0.000002769"),
+                reportdate=datetime.datetime(2013, 8, 1, 0, 0),
+                notes=[""],
+                orig_tradeid=None,
+            ),
+            Trade(
+                fitid="3831648707",
+                dttrade=datetime.datetime(2011, 5, 9, 0, 0),
+                memo="CONVERA CORPORATION - SPINOFF",
+                uniqueidtype="CONID",
+                uniqueid="132118505",
+                units=Decimal("0.276942"),
+                currency="USD",
+                total=Decimal("-0.000002769"),
+                reportdate=datetime.datetime(2013, 9, 20, 0, 0),
+                notes=["Ca"],
+                orig_tradeid=None,
+            ),
+            Trade(
+                fitid="3831652905",
+                dttrade=datetime.datetime(2011, 5, 9, 0, 0),
+                memo="CONVERA CORPORATION - SPINOFF",
+                uniqueidtype="CONID",
+                uniqueid="132118505",
+                units=Decimal("-0.276942"),
+                currency="USD",
+                total=Decimal("56.412710421"),
+                reportdate=datetime.datetime(2013, 9, 20, 0, 0),
+                notes=[""],
+                orig_tradeid=None,
+            ),
+            Trade(
+                fitid="3964505548",
+                dttrade=datetime.datetime(2011, 5, 9, 0, 0),
+                memo="CONVERA CORPORATION - SPINOFF",
+                uniqueidtype="CONID",
+                uniqueid="132118505",
+                units=Decimal("0.276942"),
+                currency="USD",
+                total=Decimal("-56.412710421"),
+                reportdate=datetime.datetime(2013, 11, 18, 0, 0),
+                notes=["Ca"],
+                orig_tradeid=None,
+            ),
+            Trade(
+                fitid="3964508206",
+                dttrade=datetime.datetime(2011, 5, 9, 0, 0),
+                memo="CONVERA CORPORATION - SPINOFF",
+                uniqueidtype="CONID",
+                uniqueid="132118505",
+                units=Decimal("-0.276942"),
+                currency="USD",
+                total=Decimal("1477.3194048"),
+                reportdate=datetime.datetime(2013, 11, 18, 0, 0),
+                notes=[""],
+                orig_tradeid=None,
+            ),
         ]
         net = GroupedList(trades).cancel(
-            filterfunc=lambda tx: 'Ca' in tx.notes,
+            filterfunc=lambda tx: "Ca" in tx.notes,
             matchfunc=lambda tx0, tx1: tx0.units == -tx1.units,
-            sortfunc=None
+            sortfunc=None,
         )
         self.assertIsInstance(net, GroupedList)
         self.assertFalse(net.grouped)
         self.assertIsNone(net.key)
         self.assertEqual(len(net), 1)
         tx = net[0]
-        self.assertEqual(tx.fitid, '3964508206')
+        self.assertEqual(tx.fitid, "3964508206")
         self.assertEqual(tx.dttrade, datetime.datetime(2011, 5, 9, 0, 0))
-        self.assertEqual(tx.memo, 'CONVERA CORPORATION - SPINOFF')
-        self.assertEqual(tx.uniqueidtype, 'CONID')
-        self.assertEqual(tx.uniqueid, '132118505')
-        self.assertEqual(tx.units, Decimal('-0.276942'))
-        self.assertEqual(tx.currency, 'USD')
-        self.assertEqual(tx.total, Decimal('1477.3194048'))
+        self.assertEqual(tx.memo, "CONVERA CORPORATION - SPINOFF")
+        self.assertEqual(tx.uniqueidtype, "CONID")
+        self.assertEqual(tx.uniqueid, "132118505")
+        self.assertEqual(tx.units, Decimal("-0.276942"))
+        self.assertEqual(tx.currency, "USD")
+        self.assertEqual(tx.total, Decimal("1477.3194048"))
         self.assertEqual(tx.reportdate, datetime.datetime(2013, 11, 18, 0, 0))
-        self.assertEqual(tx.notes, [''])
+        self.assertEqual(tx.notes, [""])
 
         # Nested
-        container = GroupedList([GroupedList(key=0), GroupedList(trades, key=1)],
-                                grouped=True, key=None).cancel(
-                                    filterfunc=lambda tx: 'Ca' in tx.notes,
-                                    matchfunc=lambda tx0, tx1: tx0.units == -tx1.units,
-                                    sortfunc=None
-                                )
+        container = GroupedList(
+            [GroupedList(key=0), GroupedList(trades, key=1)], grouped=True, key=None
+        ).cancel(
+            filterfunc=lambda tx: "Ca" in tx.notes,
+            matchfunc=lambda tx0, tx1: tx0.units == -tx1.units,
+            sortfunc=None,
+        )
         self.assertIsInstance(container, GroupedList)
         self.assertTrue(container.grouped)
         self.assertIsNone(container.key)
@@ -288,17 +348,17 @@ class GroupedListTestCase(unittest.TestCase):
         self.assertEqual(items1.key, 1)
         self.assertEqual(len(items1), 1)
         tx = items1[0]
-        self.assertEqual(tx.fitid, '3964508206')
+        self.assertEqual(tx.fitid, "3964508206")
         self.assertEqual(tx.dttrade, datetime.datetime(2011, 5, 9, 0, 0))
-        self.assertEqual(tx.memo, 'CONVERA CORPORATION - SPINOFF')
-        self.assertEqual(tx.uniqueidtype, 'CONID')
-        self.assertEqual(tx.uniqueid, '132118505')
-        self.assertEqual(tx.units, Decimal('-0.276942'))
-        self.assertEqual(tx.currency, 'USD')
-        self.assertEqual(tx.total, Decimal('1477.3194048'))
+        self.assertEqual(tx.memo, "CONVERA CORPORATION - SPINOFF")
+        self.assertEqual(tx.uniqueidtype, "CONID")
+        self.assertEqual(tx.uniqueid, "132118505")
+        self.assertEqual(tx.units, Decimal("-0.276942"))
+        self.assertEqual(tx.currency, "USD")
+        self.assertEqual(tx.total, Decimal("1477.3194048"))
         self.assertEqual(tx.reportdate, datetime.datetime(2013, 11, 18, 0, 0))
-        self.assertEqual(tx.notes, [''])
+        self.assertEqual(tx.notes, [""])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main(verbosity=3)

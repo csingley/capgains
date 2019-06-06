@@ -17,25 +17,23 @@ from ofxtools.utils import cusip2isin
 
 
 # Local imports
-from capgains.models.transactions import (
-    FiAccount, Security, Transaction, TransactionType
-)
+from capgains import models
 from capgains.containers import GroupedList
-from capgains.database import (Base, sessionmanager)
+from capgains.database import Base, sessionmanager
 
 
 class OfxResponseReader(object):
     """
     Processor for ofxtools.models.ofx.OFX instance
     """
+
     def __init__(self, session, response):
         """
         Args: session - sqlalchemy.orm.session.Session instance
               response - ofxtools.models.ofx.OFX instance
         """
         self.session = session
-        self.statements = [OfxStatementReader(session, stmt)
-                           for stmt in response]
+        self.statements = [OfxStatementReader(session, stmt) for stmt in response]
 
     def read(self):
         for stmt in self.statements:
@@ -46,6 +44,7 @@ class OfxStatementReader(object):
     """
     Processor for ofxtools.models.INVSTMTRS instance
     """
+
     def __init__(self, session, statement=None, seclist=None):
         """
         Args: session - sqlalchemy.orm.session.Session instance
@@ -72,8 +71,9 @@ class OfxStatementReader(object):
 
     def read_account(self):
         account = self.statement.account
-        self.account = FiAccount.merge(self.session, brokerid=account.brokerid,
-                                       number=account.acctid)
+        self.account = models.FiAccount.merge(
+            self.session, brokerid=account.brokerid, number=account.acctid
+        )
 
     def read_securities(self):
         for sec in self.seclist:
@@ -81,18 +81,26 @@ class OfxStatementReader(object):
             uniqueid = sec.uniqueid
             secname = sec.secname
             ticker = sec.ticker
-            sec = Security.merge(self.session, uniqueidtype=uniqueidtype,
-                                 uniqueid=uniqueid, name=secname,
-                                 ticker=ticker)
+            sec = models.Security.merge(
+                self.session,
+                uniqueidtype=uniqueidtype,
+                uniqueid=uniqueid,
+                name=secname,
+                ticker=ticker,
+            )
             self.securities[(uniqueidtype, uniqueid)] = sec
             # Also do ISIN; why not?
-            if uniqueidtype == 'CUSIP':
+            if uniqueidtype == "CUSIP":
                 try:
                     uniqueid = cusip2isin(uniqueid)
-                    uniqueidtype = 'ISIN'
-                    sec = Security.merge(
-                        self.session, uniqueidtype=uniqueidtype,
-                        uniqueid=uniqueid, name=secname, ticker=ticker)
+                    uniqueidtype = "ISIN"
+                    sec = models.Security.merge(
+                        self.session,
+                        uniqueidtype=uniqueidtype,
+                        uniqueid=uniqueid,
+                        name=secname,
+                        ticker=ticker,
+                    )
                     self.securities[(uniqueidtype, uniqueid)] = sec
                 except ValueError:
                     pass
@@ -104,30 +112,31 @@ class OfxStatementReader(object):
         """
         self.statement.transactions.sort(key=self.groupTransactions)
         for handler, transactions in itertools.groupby(
-                self.statement.transactions, key=self.groupTransactions):
+            self.statement.transactions, key=self.groupTransactions
+        ):
             if handler:
                 handler = getattr(self, handler)
                 handler(transactions)
 
     def groupTransactions(self, transaction):
         """ Group parsed statement transaction instances by class name """
-        return self.transaction_handlers.get(
-            transaction.__class__.__name__, '')
+        return self.transaction_handlers.get(transaction.__class__.__name__, "")
 
-    transaction_handlers = {'BUYDEBT': 'doTrades',
-                            'SELLDEBT': 'doTrades',
-                            'BUYMF': 'doTrades',
-                            'SELLMF': 'doTrades',
-                            'BUYOPT': 'doTrades',
-                            'SELLOPT': 'doTrades',
-                            'BUYOTHER': 'doTrades',
-                            'SELLOTHER': 'doTrades',
-                            'BUYSTOCK': 'doTrades',
-                            'SELLSTOCK': 'doTrades',
-                            'INCOME': 'doCashTransactions',
-                            'INVEXPENSE': 'doCashTransactions',
-                            'TRANSFER': 'doTransfers',
-                            }
+    transaction_handlers = {
+        "BUYDEBT": "doTrades",
+        "SELLDEBT": "doTrades",
+        "BUYMF": "doTrades",
+        "SELLMF": "doTrades",
+        "BUYOPT": "doTrades",
+        "SELLOPT": "doTrades",
+        "BUYOTHER": "doTrades",
+        "SELLOTHER": "doTrades",
+        "BUYSTOCK": "doTrades",
+        "SELLSTOCK": "doTrades",
+        "INCOME": "doCashTransactions",
+        "INVEXPENSE": "doCashTransactions",
+        "TRANSFER": "doTransfers",
+    }
 
     ###########################################################################
     # TRADES
@@ -143,14 +152,18 @@ class OfxStatementReader(object):
                              of ofxtools.models.investment.{BUY*, SELL*}
                              (as used by the methods below)
         """
-        txs = GroupedList(transactions)\
-                .filter(self.filterTrades)\
-                .groupby(self.groupTradesForCancel)\
-                .cancel(filterfunc=self.filterTradeCancels,
-                        matchfunc=self.matchTradeWithCancel,
-                        sortfunc=self.sortCanceledTrades)\
-                .filter(operator.attrgetter('units'))\
-                .map(self.merge_trade)
+        txs = (
+            GroupedList(transactions)
+            .filter(self.filterTrades)
+            .groupby(self.groupTradesForCancel)
+            .cancel(
+                filterfunc=self.filterTradeCancels,
+                matchfunc=self.matchTradeWithCancel,
+                sortfunc=self.sortCanceledTrades,
+            )
+            .filter(operator.attrgetter("units"))
+            .map(self.merge_trade)
+        )
 
     @staticmethod
     def filterTrades(transaction):
@@ -172,8 +185,12 @@ class OfxStatementReader(object):
         Arg: an instance implementing the interface of
               ofxtools.models.investment.{BUY*, SELL*}
         """
-        return (transaction.uniqueidtype, transaction.uniqueid,
-                transaction.dttrade, abs(transaction.units))
+        return (
+            transaction.uniqueidtype,
+            transaction.uniqueid,
+            transaction.dttrade,
+            abs(transaction.units),
+        )
 
     @staticmethod
     def filterTradeCancels(transaction):
@@ -220,16 +237,23 @@ class OfxStatementReader(object):
         # Works with Flex currency attribute
         currency = tx.currency
         # Works with OFX Currency Aggregate
-        if hasattr(currency, 'cursym'):
+        if hasattr(currency, "cursym"):
             currency = currency.cursym
         currency = currency or self.currency_default
 
         sort = self.sortForTrade(tx)
         return self.merge_transaction(
-            type=TransactionType.TRADE, fiaccount=self.account,
-            uniqueid=tx.fitid, datetime=tx.dttrade, memo=memo or tx.memo,
-            security=security, units=tx.units, currency=currency,
-            cash=tx.total, sort=sort)
+            type=models.TransactionType.TRADE,
+            fiaccount=self.account,
+            uniqueid=tx.fitid,
+            datetime=tx.dttrade,
+            memo=memo or tx.memo,
+            security=security,
+            units=tx.units,
+            currency=currency,
+            cash=tx.total,
+            sort=sort,
+        )
 
     @staticmethod
     def sortForTrade(transaction):
@@ -263,16 +287,20 @@ class OfxStatementReader(object):
         Args: transactions - a sequence of instances implementing the interface
                              of ofxtools.models.investment.INCOME
         """
-        txs = GroupedList(transactions)\
-                .filter(self.filterCashTransactions)\
-                .groupby(self.groupCashTransactionsForCancel)\
-                .cancel(filterfunc=self.filterCashTransactionCancels,
-                        matchfunc=self.matchCashTransactionWithCancel,
-                        sortfunc=self.sortCanceledCashTransactions)\
-                .reduce(self.netCashTransactions)\
-                .filter(operator.attrgetter('total'))\
-                .map(self.fixCashTransactions)\
-                .map(self.merge_retofcap)
+        txs = (
+            GroupedList(transactions)
+            .filter(self.filterCashTransactions)
+            .groupby(self.groupCashTransactionsForCancel)
+            .cancel(
+                filterfunc=self.filterCashTransactionCancels,
+                matchfunc=self.matchCashTransactionWithCancel,
+                sortfunc=self.sortCanceledCashTransactions,
+            )
+            .reduce(self.netCashTransactions)
+            .filter(operator.attrgetter("total"))
+            .map(self.fixCashTransactions)
+            .map(self.merge_retofcap)
+        )
 
     @staticmethod
     def filterCashTransactions(transaction):
@@ -346,13 +374,19 @@ class OfxStatementReader(object):
                  key parts of the INCOME interface)
         """
         dttrade = self._minDateTime(transaction0.dttrade, transaction1.dttrade)
-        dtsettle = self._minDateTime(transaction0.dtsettle,
-                                     transaction1.dtsettle)
+        dtsettle = self._minDateTime(transaction0.dtsettle, transaction1.dtsettle)
         total = transaction0.total + transaction1.total
         return CashTransaction(
-            transaction0.fitid, dttrade, dtsettle, transaction0.memo,
-            transaction0.uniqueidtype, transaction0.uniqueid,
-            transaction0.incometype, transaction0.currency, total)
+            transaction0.fitid,
+            dttrade,
+            dtsettle,
+            transaction0.memo,
+            transaction0.uniqueidtype,
+            transaction0.uniqueid,
+            transaction0.incometype,
+            transaction0.currency,
+            total,
+        )
 
     @staticmethod
     def _minDateTime(datetime0, datetime1):
@@ -385,20 +419,25 @@ class OfxStatementReader(object):
               memo - override transaction memo (type str)
         """
         assert transaction.total > 0
-        security = self.securities[(transaction.uniqueidtype,
-                                    transaction.uniqueid)]
+        security = self.securities[(transaction.uniqueidtype, transaction.uniqueid)]
         # Work with either Flex currency attribute or OFX Currency Aggregate
         currency = transaction.currency
-        if hasattr(currency, 'cursym'):
+        if hasattr(currency, "cursym"):
             currency = currency.cursym
         currency = currency or self.currency_default
         dttrade = transaction.dttrade
-        dtsettle = getattr(transaction, 'dtsettle', None) or dttrade
+        dtsettle = getattr(transaction, "dtsettle", None) or dttrade
         return self.merge_transaction(
-            type=TransactionType.RETURNCAP, fiaccount=self.account,
-            uniqueid=transaction.fitid, datetime=dttrade,
-            dtsettle=dtsettle, memo=memo or transaction.memo,
-            security=security, currency=currency, cash=transaction.total)
+            type=models.TransactionType.RETURNCAP,
+            fiaccount=self.account,
+            uniqueid=transaction.fitid,
+            datetime=dttrade,
+            dtsettle=dtsettle,
+            memo=memo or transaction.memo,
+            security=security,
+            currency=currency,
+            cash=transaction.total,
+        )
 
     ###########################################################################
     # ACCOUNT TRANSFERS
@@ -421,16 +460,27 @@ class OfxStatementReader(object):
         Persist a transaction to the database, using merge() logic i.e. insert
         if it doesn't already exist.
         """
-        kwargs['uniqueid'] = kwargs['uniqueid'] or self.make_uid(**kwargs)
-        tx = Transaction.merge(self.session, **kwargs)
+        kwargs["uniqueid"] = kwargs["uniqueid"] or self.make_uid(**kwargs)
+        tx = models.Transaction.merge(self.session, **kwargs)
         self.transactions.append(tx)
         return tx
 
     @staticmethod
-    def make_uid(type, datetime, fiaccount, security, units=None,
-                 currency=None, cash=None, fiaccountFrom=None,
-                 securityFrom=None, unitsFrom=None, numerator=None,
-                 denominator=None, **kwargs):
+    def make_uid(
+        type,
+        datetime,
+        fiaccount,
+        security,
+        units=None,
+        currency=None,
+        cash=None,
+        fiaccountFrom=None,
+        securityFrom=None,
+        unitsFrom=None,
+        numerator=None,
+        denominator=None,
+        **kwargs
+    ):
         """
         We require of a Transaction.uniqueid that it be *unique* (duh) and
         *deterministic*.  Transaction.merge() uses uniqueid as a signature,
@@ -448,25 +498,46 @@ class OfxStatementReader(object):
         it sorts in the desired order.
         """
         dateTime = datetime.isoformat()
-        msg = ('{} {}, fiaccount={}, security={}, units={}, currency={},  '
-               'cash={}, fiaccountFrom={}, securityFrom={}, unitsFrom={}, '
-               'numerator={}, denominator={}').format(
-                   dateTime, type, fiaccount.id, security.id, units, currency,
-                   cash, getattr(fiaccountFrom, 'id', None),
-                   getattr(securityFrom, 'id', None), unitsFrom,
-                   numerator, denominator)
+        msg = (
+            "{} {}, fiaccount={}, security={}, units={}, currency={},  "
+            "cash={}, fiaccountFrom={}, securityFrom={}, unitsFrom={}, "
+            "numerator={}, denominator={}"
+        ).format(
+            dateTime,
+            type,
+            fiaccount.id,
+            security.id,
+            units,
+            currency,
+            cash,
+            getattr(fiaccountFrom, "id", None),
+            getattr(securityFrom, "id", None),
+            unitsFrom,
+            numerator,
+            denominator,
+        )
 
-        uid = hashlib.sha256(msg.encode('utf-8')).hexdigest()
+        uid = hashlib.sha256(msg.encode("utf-8")).hexdigest()
         return uid
 
 
 ###############################################################################
 # DATA CONTAINERS
 ###############################################################################
-CashTransaction = namedtuple('CashTransaction',
-                             ['fitid', 'dttrade', 'dtsettle', 'memo',
-                              'uniqueidtype', 'uniqueid', 'incometype',
-                              'currency', 'total'])
+CashTransaction = namedtuple(
+    "CashTransaction",
+    [
+        "fitid",
+        "dttrade",
+        "dtsettle",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "incometype",
+        "currency",
+        "total",
+    ],
+)
 
 
 ##############################################################################
@@ -476,11 +547,12 @@ def main():
     from argparse import ArgumentParser
     from capgains.ofx import read
 
-    argparser = ArgumentParser(description='Parse OFX data')
-    argparser.add_argument('file', nargs='+', help='OFX file(s)')
-    argparser.add_argument('--database', '-d', default='sqlite://',
-                           help='Database connection')
-    argparser.add_argument('--verbose', '-v', action='count', default=0)
+    argparser = ArgumentParser(description="Parse OFX data")
+    argparser.add_argument("file", nargs="+", help="OFX file(s)")
+    argparser.add_argument(
+        "--database", "-d", default="sqlite://", help="Database connection"
+    )
+    argparser.add_argument("--verbose", "-v", action="count", default=0)
     args = argparser.parse_args()
 
     logLevel = (3 - min(args.verbose, 2)) * 10
@@ -499,5 +571,5 @@ def main():
     engine.dispose()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,1 +1,1 @@
-from .config import (CONFIG, CONFIG_PATH)
+from .config import CONFIG, CONFIG_PATH

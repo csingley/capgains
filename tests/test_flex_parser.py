@@ -18,39 +18,45 @@ from capgains.flex import parser
 
 class FlexParserTestCase(unittest.TestCase):
     def testParseAccount(self):
-        acctinfo = ET.Element('AccountInformation', {'accountId': '12345'})
+        acctinfo = ET.Element("AccountInformation", {"accountId": "12345"})
         acctinfo = schemata.AccountInformation.convert(acctinfo)
         acctinfo = parser.parse_acctinfo(acctinfo)
         self.assertIsInstance(acctinfo, parser.Account)
-        self.assertEqual(acctinfo.acctid, '12345')
-        self.assertEqual(acctinfo.brokerid, '4705')
+        self.assertEqual(acctinfo.acctid, "12345")
+        self.assertEqual(acctinfo.brokerid, "4705")
 
     def testParseSecurities(self):
         pass
 
     def testParseSecurity(self):
-        secinfo = ET.Element('SecurityInfo',
-                             {'conid': '54321', 'symbol': 'XYZ',
-                              'description': 'Widgets Inc.'})
+        secinfo = ET.Element(
+            "SecurityInfo",
+            {"conid": "54321", "symbol": "XYZ", "description": "Widgets Inc."},
+        )
         secinfo = schemata.SecurityInfo.convert(secinfo)
         secs = parser.parse_security(secinfo)
         self.assertEqual(len(secs), 1)
         sec = secs.pop()
         self.assertIsInstance(sec, parser.Security)
-        self.assertEqual(sec.uniqueidtype, 'CONID')
-        self.assertEqual(sec.uniqueid, '54321')
-        self.assertEqual(sec.ticker, 'XYZ')
-        self.assertEqual(sec.secname, 'Widgets Inc.')
+        self.assertEqual(sec.uniqueidtype, "CONID")
+        self.assertEqual(sec.uniqueid, "54321")
+        self.assertEqual(sec.ticker, "XYZ")
+        self.assertEqual(sec.secname, "Widgets Inc.")
 
     def testParseSecurityTimeStamp(self):
-        secinfo = ET.Element('SecurityInfo',
-                             {'conid': '54321', 'symbol': '01234567890123XYZ',
-                              'description': 'Widgets Inc.'})
+        secinfo = ET.Element(
+            "SecurityInfo",
+            {
+                "conid": "54321",
+                "symbol": "01234567890123XYZ",
+                "description": "Widgets Inc.",
+            },
+        )
         secinfo = schemata.SecurityInfo.convert(secinfo)
         secs = parser.parse_security(secinfo)
         self.assertEqual(len(secs), 1)
         sec = secs.pop()
-        self.assertEqual(sec.ticker, 'XYZ')
+        self.assertEqual(sec.ticker, "XYZ")
 
     def testParseTrade(self):
         xml = """
@@ -59,38 +65,60 @@ class FlexParserTestCase(unittest.TestCase):
         trade = schemata.Trade.convert(ET.fromstring(xml))
         tran = parser.parse_trade(trade)
         self.assertIsInstance(tran, parser.Trade)
-        self.assertEqual(tran.fitid, '1802867961')
+        self.assertEqual(tran.fitid, "1802867961")
         self.assertEqual(tran.dttrade, datetime.datetime(2017, 4, 25, 10, 55, 58))
-        self.assertEqual(tran.memo, 'SPDR BBG BARC 1-3 MONTH TBIL')
-        self.assertEqual(tran.uniqueidtype, 'CONID')
-        self.assertEqual(tran.uniqueid, '45540682')
-        self.assertEqual(tran.units, Decimal('800'))
-        self.assertEqual(tran.total, Decimal('-36578.082058'))
+        self.assertEqual(tran.memo, "SPDR BBG BARC 1-3 MONTH TBIL")
+        self.assertEqual(tran.uniqueidtype, "CONID")
+        self.assertEqual(tran.uniqueid, "45540682")
+        self.assertEqual(tran.units, Decimal("800"))
+        self.assertEqual(tran.total, Decimal("-36578.082058"))
 
     def testParseCashTransaction(self):
-        attrib = {'accountId': '5678', 'acctAlias': 'Test account',
-                  'amount': '593517', 'assetCategory': 'STK',
-                  'clientReference': '', 'code': '', 'conid': '23',
-                  'currency': 'USD', 'cusip': '', 'dateTime': '2015-04-23',
-                  'description': 'ORGN(US68619E2081) CASH DIVIDEND 1.50000000 USD PER SHARE (Return of Capital)',
-                  'expiry': '', 'fxRateToBase': '1', 'isin': '', 'issuer': '',
-                  'model': '', 'multiplier': '1', 'principalAdjustFactor': '',
-                  'putCall': '', 'reportDate': '2015-04-23', 'securityID': '',
-                  'securityIDType': '', 'strike': '', 'symbol': 'ORGN',
-                  'tradeID': '', 'transactionID': '5279100113',
-                  'type': 'Dividends', 'underlyingConid': '',
-                  'underlyingSymbol': '', }
-        cashtx = ET.Element('CashTransaction', attrib=attrib)
+        attrib = {
+            "accountId": "5678",
+            "acctAlias": "Test account",
+            "amount": "593517",
+            "assetCategory": "STK",
+            "clientReference": "",
+            "code": "",
+            "conid": "23",
+            "currency": "USD",
+            "cusip": "",
+            "dateTime": "2015-04-23",
+            "description": "ORGN(US68619E2081) CASH DIVIDEND 1.50000000 USD PER SHARE (Return of Capital)",
+            "expiry": "",
+            "fxRateToBase": "1",
+            "isin": "",
+            "issuer": "",
+            "model": "",
+            "multiplier": "1",
+            "principalAdjustFactor": "",
+            "putCall": "",
+            "reportDate": "2015-04-23",
+            "securityID": "",
+            "securityIDType": "",
+            "strike": "",
+            "symbol": "ORGN",
+            "tradeID": "",
+            "transactionID": "5279100113",
+            "type": "Dividends",
+            "underlyingConid": "",
+            "underlyingSymbol": "",
+        }
+        cashtx = ET.Element("CashTransaction", attrib=attrib)
         cashtx = schemata.CashTransaction.convert(cashtx)
 
         tran = parser.parse_cash_transaction(cashtx)
         self.assertIsInstance(tran, parser.CashTransaction)
-        self.assertEqual(tran.fitid, '5279100113')
+        self.assertEqual(tran.fitid, "5279100113")
         self.assertEqual(tran.dtsettle, datetime.datetime(2015, 4, 23))
-        self.assertEqual(tran.memo, 'ORGN(US68619E2081) CASH DIVIDEND 1.50000000 USD PER SHARE (Return of Capital)')
-        self.assertEqual(tran.uniqueidtype, 'CONID')
-        self.assertEqual(tran.uniqueid, '23')
-        self.assertEqual(tran.total, Decimal('593517'))
+        self.assertEqual(
+            tran.memo,
+            "ORGN(US68619E2081) CASH DIVIDEND 1.50000000 USD PER SHARE (Return of Capital)",
+        )
+        self.assertEqual(tran.uniqueidtype, "CONID")
+        self.assertEqual(tran.uniqueid, "23")
+        self.assertEqual(tran.total, Decimal("593517"))
 
     def testParseCorporateAction(self):
         xml = """
@@ -102,34 +130,44 @@ class FlexParserTestCase(unittest.TestCase):
         self.assertIsInstance(tran, parser.CorporateAction)
         self.assertEqual(tran.fitid, None)
         self.assertEqual(tran.dttrade, datetime.datetime(2012, 5, 14, 19, 45, 0))
-        self.assertEqual(tran.memo, 'ELAN(US28413U2042) TENDERED TO US28413TEMP2 1 FOR 1 (ELAN, ELANDIA INTERNATIONAL INC, 28413U204)')
-        self.assertEqual(tran.uniqueidtype, 'CONID')
-        self.assertEqual(tran.uniqueid, '44939653')
-        self.assertEqual(tran.units, Decimal('-557915'))
-        self.assertEqual(tran.total, Decimal('0'))
-        self.assertEqual(tran.type, 'TO')
+        self.assertEqual(
+            tran.memo,
+            "ELAN(US28413U2042) TENDERED TO US28413TEMP2 1 FOR 1 (ELAN, ELANDIA INTERNATIONAL INC, 28413U204)",
+        )
+        self.assertEqual(tran.uniqueidtype, "CONID")
+        self.assertEqual(tran.uniqueid, "44939653")
+        self.assertEqual(tran.units, Decimal("-557915"))
+        self.assertEqual(tran.total, Decimal("0"))
+        self.assertEqual(tran.type, "TO")
 
     def testParseTransfer(self):
-        corpact = ET.Element('Transfer',
-                             {'date': '19970617',
-                              'description': 'Transfer sthing',
-                              'conid': '27178', 'quantity': '100',
-                              'direction': 'OUT', 'type': 'ACATS',
-                              'account': '2112', 'symbol': 'XYZ'})
+        corpact = ET.Element(
+            "Transfer",
+            {
+                "date": "19970617",
+                "description": "Transfer sthing",
+                "conid": "27178",
+                "quantity": "100",
+                "direction": "OUT",
+                "type": "ACATS",
+                "account": "2112",
+                "symbol": "XYZ",
+            },
+        )
         corpact = schemata.Transfer.convert(corpact)
         tran = parser.parse_transfer(corpact)
         self.assertIsInstance(tran, parser.Transfer)
         # FIXME - unique ID
         # self.assertEqual(tran.fitid, None)
         self.assertEqual(tran.dttrade, datetime.date(1997, 6, 17))
-        self.assertEqual(tran.memo, 'Transfer sthing')
-        self.assertEqual(tran.uniqueidtype, 'CONID')
-        self.assertEqual(tran.uniqueid, '27178')
-        self.assertEqual(tran.units, Decimal('100'))
-        self.assertEqual(tran.tferaction, 'OUT')
-        self.assertEqual(tran.type, 'ACATS')
-        self.assertEqual(tran.other_acctid, '2112')
+        self.assertEqual(tran.memo, "Transfer sthing")
+        self.assertEqual(tran.uniqueidtype, "CONID")
+        self.assertEqual(tran.uniqueid, "27178")
+        self.assertEqual(tran.units, Decimal("100"))
+        self.assertEqual(tran.tferaction, "OUT")
+        self.assertEqual(tran.type, "ACATS")
+        self.assertEqual(tran.other_acctid, "2112")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main(verbosity=3)

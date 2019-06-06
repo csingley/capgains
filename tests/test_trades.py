@@ -9,16 +9,12 @@ from decimal import Decimal
 # local imports
 from capgains.models.transactions import TransactionType
 from capgains.inventory import Trade
-from common import (
-    setUpModule,
-    tearDownModule,
-    XmlSnippetMixin,
-)
+from common import setUpModule, tearDownModule, XmlSnippetMixin
 
 
 # Test case mixins
 class TradeXmlSnippetMixin(XmlSnippetMixin):
-    txs_entry_point = 'doTrades'
+    txs_entry_point = "doTrades"
 
 
 # Test case classes
@@ -38,13 +34,17 @@ class TradesWithCancelTestCase(TradeXmlSnippetMixin, unittest.TestCase):
         # 2nd trade cancels the 1st; 4th trade cancels the 3rd
         # Leaving the last trade as the only one
         return [
-            Trade(id=1,
-                        uniqueid='DEADBEEF',
-                        datetime=datetime(2011, 5, 9),
-                        memo='CONVERA CORPORATION - SPINOFF',
-                        currency='USD', cash=Decimal('1477.3194048'),
-                        fiaccount=self.account, security=self.securities[0],
-                        units=Decimal('-0.276942')),
+            Trade(
+                id=1,
+                uniqueid="DEADBEEF",
+                datetime=datetime(2011, 5, 9),
+                memo="CONVERA CORPORATION - SPINOFF",
+                currency="USD",
+                cash=Decimal("1477.3194048"),
+                fiaccount=self.account,
+                security=self.securities[0],
+                units=Decimal("-0.276942"),
+            )
         ]
 
 
@@ -52,6 +52,7 @@ class TradesIgnoreTestCase(TradeXmlSnippetMixin, unittest.TestCase):
     """
     Test Trades full stack, ignoring FX and canceling trades.
     """
+
     xml = """
     <Trades>
     <Trade accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="CASH" symbol="EUR.USD" description="EUR.USD" conid="12087792" securityID="" securityIDType="" cusip="" isin="" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" tradeID="1315033695" reportDate="2015-05-29" tradeDate="2015-05-29" tradeTime="105322" settleDateTarget="2015-06-02" transactionType="ExchTrade" exchange="IDEALFX" quantity="57345" tradePrice="1.09755" tradeMoney="62939.00475" proceeds="-62939.00475" taxes="0" ibCommission="-2" ibCommissionCurrency="USD" netCash="0" closePrice="0" openCloseIndicator="" notes="" cost="0" fifoPnlRealized="0" fxPnl="0" mtmPnl="88.88475" origTradePrice="0" origTradeDate="" origTradeID="" origOrderID="0" clearingFirmID="" transactionID="5379869359" buySell="BUY" ibOrderID="669236976" ibExecID="00011364.55624cab.01.01" brokerageOrderID="" orderReference="" volatilityOrderLink="" exchOrderId="N/A" extExecID="8071596799694996971" orderTime="2015-05-29;105322" openDateTime="" holdingPeriodDateTime="" whenRealized="" whenReopened="" levelOfDetail="EXECUTION" changeInPrice="0" changeInQuantity="0" orderType="LMT" traderID="" isAPIOrder="N" />
@@ -68,20 +69,28 @@ class TradesIgnoreTestCase(TradeXmlSnippetMixin, unittest.TestCase):
         # Last trade cancels the 2nd trade
         # Leaving 3rd & 4th XML transactions parsed as trades
         return [
-            Trade(id=1,
-                        uniqueid='DEADBEEF',
-                        datetime=datetime(2015, 9, 10, 15, 51, 34),
-                        memo='SATURNS SEARS ROEBUCK ACCEPTANCE CO',
-                        currency='USD', cash=Decimal('16195.8803475'),
-                        fiaccount=self.account, security=self.securities[1],
-                        units=Decimal('-1000')),
-            Trade(id=1,
-                        uniqueid='DEADBEEF',
-                        datetime=datetime(2015, 9, 10, 15, 52, 20),
-                        memo='SATURNS SEARS ROEBUCK ACCEPTANCE CO',
-                        currency='USD', cash=Decimal('14576.29231275'),
-                        fiaccount=self.account, security=self.securities[1],
-                        units=Decimal('-900')),
+            Trade(
+                id=1,
+                uniqueid="DEADBEEF",
+                datetime=datetime(2015, 9, 10, 15, 51, 34),
+                memo="SATURNS SEARS ROEBUCK ACCEPTANCE CO",
+                currency="USD",
+                cash=Decimal("16195.8803475"),
+                fiaccount=self.account,
+                security=self.securities[1],
+                units=Decimal("-1000"),
+            ),
+            Trade(
+                id=1,
+                uniqueid="DEADBEEF",
+                datetime=datetime(2015, 9, 10, 15, 52, 20),
+                memo="SATURNS SEARS ROEBUCK ACCEPTANCE CO",
+                currency="USD",
+                cash=Decimal("14576.29231275"),
+                fiaccount=self.account,
+                security=self.securities[1],
+                units=Decimal("-900"),
+            ),
         ]
 
 
@@ -95,17 +104,20 @@ class TradesWithSortFieldTestCase(TradeXmlSnippetMixin, unittest.TestCase):
     @property
     def persisted_txs(self):
         return [
-            Trade(id=1,
-                        uniqueid='DEADBEEF',
-                        datetime=datetime(2010, 10, 29, 14, 38, 9),
-                        memo='PILGRIMS PRIDE CORP-NEW',
-                        currency='USD', cash=Decimal('1223'),
-                        fiaccount=self.account,
-                        security=self.securities[0],
-                        units=Decimal('-200'),
-                        sort='MINGAIN'),
+            Trade(
+                id=1,
+                uniqueid="DEADBEEF",
+                datetime=datetime(2010, 10, 29, 14, 38, 9),
+                memo="PILGRIMS PRIDE CORP-NEW",
+                currency="USD",
+                cash=Decimal("1223"),
+                fiaccount=self.account,
+                security=self.securities[0],
+                units=Decimal("-200"),
+                sort="MINGAIN",
+            )
         ]
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
