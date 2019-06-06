@@ -382,44 +382,24 @@ class Portfolio(defaultdict):
             -transaction.unitsFrom,
         )
 
-        lotUnitsFrom = sum([lot.units for lot in lotsFrom])
-        if abs(lotUnitsFrom + transaction.unitsFrom) > UNITS_RESOLUTION:
+        openUnits = sum([lot.units for lot in lotsFrom])
+        if abs(openUnits + transaction.unitsFrom) > UNITS_RESOLUTION:
             msg = (
                 f"Position in {transaction.security} for FI account "
                 f"{transaction.fiaccount} on {transaction.datetime} is only "
-                f"{lotUnitsFrom} units; can't transfer out {transaction.units} units."
+                f"{openUnits} units; can't transfer out {transaction.units} units."
             )
             raise Inconsistent(transaction, msg)
 
         self[pocketFrom] = positionFrom
 
-        # Transform Lots to the destination Security/units and apply
-        # as a Trade (to order closed Lots, if any) with opentxid & opendt
-        # preserved from the source Lot
-        gains = []
-        for lotFrom in lotsFrom:
-            # FIXME - We need a Trade.id for self.trade() to set
-            # Lot.createtxid, but "id=transaction.id" is problematic.
-            trade = Transaction(
-                id=transaction.id,
-                uniqueid=transaction.uniqueid,
-                datetime=transaction.datetime,
-                type=transactions.TransactionType.TRANSFER,
-                memo=transaction.memo,
-                currency=lotFrom.currency,
-                cash=-lotFrom.price * lotFrom.units,
-                fiaccount=transaction.fiaccount,
-                security=transaction.security,
-                units=lotFrom.units * -transaction.units / transaction.unitsFrom,
-            )
-            gs = self.trade(
-                trade,
-                opentransaction=lotFrom.opentransaction,
-                createtransaction=transaction,
-            )
-            gains.extend(gs)
+        transferRatio = -transaction.units / transaction.unitsFrom
 
-        return gains
+        gains = (
+            self._transferBasis(lotFrom, transaction, transferRatio, sort)
+            for lotFrom in lotsFrom
+        )
+        return list(itertools.chain.from_iterable(gains))
 
     def spinoff(
         self, transaction: TransactionType, sort: Optional["SortType"] = None
@@ -436,7 +416,15 @@ class Portfolio(defaultdict):
         assert isinstance(transaction.numerator, Decimal)
         assert isinstance(transaction.denominator, Decimal)
 
-        units = transaction.units
+        if transaction.numerator <= 0 or transaction.denominator <= 0:
+            msg = f"numerator & denominator must be positive Decimals in {transaction}"
+            raise ValueError(msg)
+
+        pocketFrom = (transaction.fiaccount, transaction.securityFrom)
+        positionFrom = self[pocketFrom]
+        if not positionFrom:
+            raise Inconsistent(transaction, f"No position in {pocketFrom}")
+        positionFrom.sort(**(sort or FIFO))
 
         spinRatio = Decimal(transaction.numerator) / Decimal(transaction.denominator)
 
@@ -445,12 +433,9 @@ class Portfolio(defaultdict):
         if transaction.securityPrice is None or transaction.securityFromPrice is None:
             costFraction = Decimal("0")
         else:
-            spinoffFMV = transaction.securityPrice * units
-            spunoffFMV = transaction.securityFromPrice * units / spinRatio
+            spinoffFMV = transaction.securityPrice * transaction.units
+            spunoffFMV = transaction.securityFromPrice * transaction.units / spinRatio
             costFraction = spinoffFMV / (spinoffFMV + spunoffFMV)
-
-        pocketFrom = (transaction.fiaccount, transaction.securityFrom)
-        positionFrom = self[pocketFrom]
 
         # Take the basis from the source Position
         lotsFrom, positionFrom = take_basis(
@@ -458,12 +443,12 @@ class Portfolio(defaultdict):
         )
 
         openUnits = sum([lot.units for lot in lotsFrom])
-        if abs(openUnits * spinRatio - units) > UNITS_RESOLUTION:
+        if abs(openUnits * spinRatio - transaction.units) > UNITS_RESOLUTION:
             msg = (
                 f"Spinoff {transaction.numerator} units {transaction.security} "
                 f"for {transaction.denominator} units {transaction.securityFrom}:\n"
                 f"To receive {transaction.units} units {transaction.security} "
-                f"requires a position of {units / spinRatio} units of "
+                f"requires a position of {transaction.units / spinRatio} units of "
                 f"{transaction.securityFrom} in FI account {transaction.fiaccount} "
                 f"on {transaction.datetime}, not units={openUnits}"
             )
@@ -471,39 +456,9 @@ class Portfolio(defaultdict):
 
         self[pocketFrom] = positionFrom
 
-        # Apply spinoff units to the destination position as a trade (to close Lots
-        # as necessary), preserving opentransaction from source Lot to maintain
-        # holding period.
-
-        def applyTrade(
-            lotFrom: Lot,
-            transaction: TransactionType,
-            ratio: Decimal,
-            sort: Optional[SortType],
-        ) -> List[Gain]:
-            # FIXME - We need a Trade.id for self.trade() to set
-            # Lot.createtxid, but "id=transaction.id" is problematic.
-            trade = Transaction(
-                id=transaction.id,
-                uniqueid=transaction.uniqueid,
-                datetime=transaction.datetime,
-                type=transactions.TransactionType.TRADE,
-                memo=transaction.memo,
-                currency=lotFrom.currency,
-                cash=-lotFrom.price * lotFrom.units,
-                fiaccount=transaction.fiaccount,
-                security=transaction.security,
-                units=lotFrom.units * ratio,
-            )
-            return self.trade(
-                trade,
-                opentransaction=lotFrom.opentransaction,
-                createtransaction=transaction,
-                sort=sort,
-            )
-
         gains = (
-            applyTrade(lotFrom, transaction, spinRatio, sort) for lotFrom in lotsFrom
+            self._transferBasis(lotFrom, transaction, spinRatio, sort)
+            for lotFrom in lotsFrom
         )
         return list(itertools.chain.from_iterable(gains))
 
@@ -538,32 +493,82 @@ class Portfolio(defaultdict):
 
         self[pocketFrom] = remainingPosition
 
-        # Transform Lots to the destination Security/units, add additional
-        # exercise cash as cost pro rata, and apply as a Trade (to order
-        # closed Lots, if any)
+        multiplier = abs(transaction.units / transaction.unitsFrom)
+        strikePrice = abs(transaction.cash / transaction.units)
 
-        def applyTrade(lot, transaction, newUnits, sort):
-            multiplier = abs(transaction.units / transaction.unitsFrom)
-            adjusted_cash = lot.units * (transaction.cash / newUnits - lot.price)
-
-            # FIXME - We need a Trade.id for self.trade() to set
-            # Lot.createtxid, but "id=transaction.id" is problematic.
-            trade = Transaction(
-                type=transactions.TransactionType.TRADE,
-                id=transaction.id,
-                fiaccount=transaction.fiaccount,
-                uniqueid=transaction.uniqueid,
-                datetime=transaction.datetime,
-                memo=transaction.memo,
-                security=transaction.security,
-                units=lot.units * multiplier,
-                cash=adjusted_cash,
-                currency=lot.currency,
+        gains = (
+            self._transferBasis(
+                lot,
+                transaction,
+                multiplier,
+                sort,
+                extra_basis=lot.units * multiplier * strikePrice,
+                preserve_holding_period=False,
             )
-            return self.trade(trade, sort=sort)
-
-        gains = (applyTrade(lot, transaction, takenUnits, sort) for lot in takenLots)
+            for lot in takenLots
+        )
         return list(itertools.chain.from_iterable(gains))
+
+    def _transferBasis(
+        self,
+        lot: Lot,
+        transaction: TransactionType,
+        ratio: Decimal,
+        sort: Optional["SortType"],
+        extra_basis: Optional[Decimal] = None,
+        preserve_holding_period: bool = True,
+    ) -> List[Gain]:
+        """
+        Apply cost basis removed from a position to new units of another position.
+        Apply as a trade in order to close Lots of destination position as needed,
+        preserving opentransaction from source Lot to maintain holding period.
+
+        ``lot``: Lot instance recording the extracted cost basis and source units.
+
+        ``transaction``: Transaction instance booking in the new position.
+
+        ``ratio``: # of new position units to create for each unit of source position.
+
+        ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
+        used to order Lots when closing them.
+
+        ``extra_basis`` is PER SHARE basis to be added to the cost transferred from the
+        source position, e.g. payment of strike price for options exercise.
+
+        ``preserve_holding_period``, if False, sets opentransaction to the transaction
+        booking in the new position rather than maintaining the opentransaction from
+        the source Lot.
+        """
+        costBasis = lot.price * lot.units
+        if extra_basis is None:
+            extra_basis = Decimal("0")
+        costBasis += extra_basis
+
+        if preserve_holding_period:
+            opentransaction = lot.opentransaction
+        else:
+            opentransaction = transaction
+
+        # FIXME - We need a Transaction.id for self.trade() to set
+        # Lot.createtxid, but "id=transaction.id" is problematic.
+        trade = Transaction(
+            id=transaction.id,
+            uniqueid=transaction.uniqueid,
+            datetime=transaction.datetime,
+            type=transactions.TransactionType.TRADE,
+            memo=transaction.memo,
+            currency=lot.currency,
+            cash=-costBasis,
+            fiaccount=transaction.fiaccount,
+            security=transaction.security,
+            units=lot.units * ratio,
+        )
+        return self.trade(
+            trade,
+            opentransaction=opentransaction,
+            createtransaction=transaction,
+            sort=sort,
+        )
 
 
 #######################################################################################
