@@ -943,7 +943,7 @@ class TradeTestCase(unittest.TestCase):
         portfolio = Portfolio()
         gains = []
         for t in self.trades:
-            g = portfolio.trade(t, sort=sort)
+            g = portfolio.book(t, sort=sort)
             gains.extend(g)
 
         testGains.sort(
@@ -1081,7 +1081,7 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             cash=Decimal("600"),
             currency="USD",
         )
-        gains = self.portfolio.returnofcapital(transaction)
+        gains = self.portfolio.book(transaction)
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
         self.assertEqual(position[0], self.lot1._replace(price=Decimal("9")))
@@ -1099,7 +1099,7 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             cash=Decimal("600"),
             currency="USD",
         )
-        gains = self.portfolio.returnofcapital(transaction)
+        gains = self.portfolio.book(transaction)
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
         self.assertEqual(position[0], self.lot1._replace(price=Decimal("8")))
@@ -1119,7 +1119,7 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             cash=Decimal("6000"),
             currency="USD",
         )
-        gains = self.portfolio.returnofcapital(transaction)
+        gains = self.portfolio.book(transaction)
         # Lot 1 cost should be reduced to zero but no Gain generated
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
@@ -1138,7 +1138,7 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             cash=Decimal("7200"),
             currency="USD",
         )
-        gains = self.portfolio.returnofcapital(transaction)
+        gains = self.portfolio.book(transaction)
         # Lot 1 & 2 cost should be reduced to zero with Gain generated
         position = self.portfolio[(None, None)]
         self.assertEqual(position[0], self.lot1._replace(price=Decimal("0")))
@@ -1262,7 +1262,7 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             currency="USD",
         )
         for retofcap in (retofcap1, retofcap2, retofcap3, retofcap4):
-            self.portfolio.returnofcapital(retofcap)
+            self.portfolio.book(retofcap)
 
         position = self.portfolio[(None, None)]
         self.assertEqual(len(position), 3)
@@ -1336,7 +1336,7 @@ class SplitTestCase(unittest.TestCase):
             units=Decimal("-90"),
         )
 
-        gains = self.portfolio.split(split)
+        gains = self.portfolio.book(split)
         self.assertEqual(len(gains), 0)
         position = self.portfolio[(None, None)]
         self.assertEqual(len(position), 2)
@@ -1359,7 +1359,7 @@ class SplitTestCase(unittest.TestCase):
             units=Decimal("90"),
         )
         with self.assertRaises(Inconsistent):
-            self.portfolio.split(split)
+            self.portfolio.book(split)
 
 
 class TransferTestCase(unittest.TestCase):
@@ -1416,7 +1416,7 @@ class TransferTestCase(unittest.TestCase):
             securityFrom=1,
             unitsFrom=Decimal("-50"),
         )
-        gains = self.portfolio.transfer(transfer)
+        gains = self.portfolio.book(transfer)
         self.assertEqual(len(gains), 0)
 
         # Half of lot1 units were transferred out; everything else is the same
@@ -1451,7 +1451,7 @@ class TransferTestCase(unittest.TestCase):
             securityFrom=1,
             unitsFrom=Decimal("-50"),
         )
-        gains = self.portfolio.transfer(transfer)
+        gains = self.portfolio.book(transfer)
 
         pos1 = self.portfolio[(None, 1)]
         self.assertEqual(len(pos1), 1)
@@ -1483,7 +1483,7 @@ class TransferTestCase(unittest.TestCase):
             unitsFrom=Decimal("50"),
         )
         with self.assertRaises(ValueError):
-            self.portfolio.transfer(transfer)
+            self.portfolio.book(transfer)
 
         # Must have an existing position in (accountFrom, securityFrom)
         transfer = Transfer(
@@ -1498,7 +1498,7 @@ class TransferTestCase(unittest.TestCase):
             unitsFrom=Decimal("-50"),
         )
         with self.assertRaises(Inconsistent):
-            self.portfolio.transfer(transfer)
+            self.portfolio.book(transfer)
 
         # Existing position must have enough units to satisfy unitsFrom
         transfer = Transfer(
@@ -1513,7 +1513,7 @@ class TransferTestCase(unittest.TestCase):
             unitsFrom=Decimal("-150"),
         )
         with self.assertRaises(Inconsistent):
-            self.portfolio.transfer(transfer)
+            self.portfolio.book(transfer)
 
 
 class SpinoffTestCase(unittest.TestCase):
@@ -1574,7 +1574,7 @@ class SpinoffTestCase(unittest.TestCase):
             securityPrice=Decimal("5"),
             securityFromPrice=Decimal("1"),
         )
-        gains = self.portfolio.spinoff(spinoff)
+        gains = self.portfolio.book(spinoff)
         self.assertEqual(len(gains), 0)
 
         # Half the original cost is left in lot1; everything else is the same
@@ -1618,7 +1618,7 @@ class SpinoffTestCase(unittest.TestCase):
             securityPrice=Decimal("5"),
             securityFromPrice=Decimal("1"),
         )
-        gains = self.portfolio.spinoff(spinoff)
+        gains = self.portfolio.book(spinoff)
         self.assertEqual(len(gains), 1)
         gain = gains.pop()
         lot = gain.lot

@@ -46,7 +46,18 @@ from collections import defaultdict
 from decimal import Decimal
 import datetime as _datetime
 import itertools
-from typing import NamedTuple, Tuple, List, Mapping, Callable, Any, Optional, Union
+import functools
+from typing import (
+    NamedTuple,
+    Tuple,
+    List,
+    DefaultDict,
+    Mapping,
+    Callable,
+    Any,
+    Optional,
+    Union,
+)
 
 
 # local imports
@@ -71,6 +82,9 @@ class Inconsistent(InventoryError):
 
 UNITS_RESOLUTION = Decimal("0.001")
 
+
+#  SortType = Mapping[str, Union[bool, Callable[["Lot"], Tuple]]]
+PortfolioType = DefaultDict
 
 #######################################################################################
 # DATA MODEL
@@ -245,369 +259,408 @@ class Portfolio(defaultdict):
         args = (self.default_factory,) + args
         defaultdict.__init__(self, *args, **kwargs)
 
-    def applyTransaction(
-        self, transaction: TransactionType, sort: Optional["SortType"] = None
-    ) -> List[Gain]:
-        """
-        Apply a Transaction to the appropriate position(s).
-
-        Main entry point for transaction processing.
-        """
-
-        handlers = {
-            ReturnOfCapital: self.returnofcapital,
-            Split: self.split,
-            Spinoff: self.spinoff,
-            Transfer: self.transfer,
-            Trade: self.trade,
-            Exercise: self.exercise,
-        }
-
-        handler = handlers[type(transaction)]  # type: ignore
-        gains = handler(transaction, sort=sort or transaction.sort)  # type: ignore
-        return gains
-
-    def trade(
+    def book(
         self,
-        transaction: Trade,
-        opentransaction: Optional[TransactionType] = None,
-        createtransaction: Optional[TransactionType] = None,
-        sort: Optional["SortType"] = None,
-    ) -> List[Gain]:
-        """
-        Normal buy or sell, closing open Lots and realizing Gains.
-
-        If ``opentransaction`` is passed in, it overrides lot.opentransaction
-        to preserve holding period.
-
-        If ``createtransaction`` is passed in, it overrides lot.createtransaction
-        and gain.transaction.
-
-        ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-        used to order Lots when closing them.
-        """
-        if transaction.units == 0:
-            raise ValueError(f"units can't be zero: {transaction}")
-
-        pocket = (transaction.fiaccount, transaction.security)
-        position = self[pocket]
-        position.sort(**(sort or FIFO))
-
-        # Remove closed lots from the position
-        lots_closed, position = take_lots(
-            transaction, position, closableBy(transaction), -transaction.units
-        )
-
-        units = transaction.units + sum([lot.units for lot in lots_closed])
-        price = abs(transaction.cash / transaction.units)
-        if units != 0:
-            newLot = Lot(
-                opentransaction=opentransaction or transaction,
-                createtransaction=createtransaction or transaction,
-                units=units,
-                price=price,
-                currency=transaction.currency,
-            )
-            position.append(newLot)
-
-        self[pocket] = position
-
-        return [
-            Gain(lot=lot, transaction=createtransaction or transaction, price=price)
-            for lot in lots_closed
-        ]
-
-    def returnofcapital(self, transaction: ReturnOfCapital, sort=None) -> List[Gain]:
-        """
-        Apply cash to reduce cost basis of long position as of Transaction.datetime;
-        realize Gain on Lots where cash proceeds exceed cost basis.
-
-        ``sort`` is in the argument signature for applyTransaction(), but unused.
-        """
-        pocket = (transaction.fiaccount, transaction.security)
-        position = self[pocket]
-
-        # First get a total of shares affected by return of capital,
-        # in order to determine return of capital per share
-        unaffected, affected = utils.partition(longAsOf(transaction.datetime), position)
-        affected = list(affected)
-        if not affected:
-            msg = (
-                f"Return of capital {transaction}:\n"
-                f"FI account {transaction.fiaccount} has no long position in "
-                f"{transaction.security} as of {transaction.datetime}"
-            )
-            raise Inconsistent(transaction, msg)
-
-        unitROC = transaction.cash / sum([lot.units for lot in affected])
-
-        def reduceBasis(lot: Lot, unitROC: Decimal) -> Tuple[Lot, Optional[Gain]]:
-            gain = None
-            newBasis = lot.price - unitROC
-            if newBasis < 0:
-                gain = Gain(lot=lot, transaction=transaction, price=unitROC)
-                newBasis = Decimal("0")
-            return (lot._replace(price=newBasis), gain)
-
-        basisReduced, gains = zip(*(reduceBasis(lot, unitROC) for lot in affected))
-        self[pocket] = list(basisReduced) + list(unaffected)
-        return [gain for gain in gains if gain is not None]
-
-    def split(self, transaction: Split, sort=None) -> List[Gain]:
-        """
-        Increase/decrease Lot units without affecting basis or realizing Gain.
-
-        ``sort`` is in the argument signature for applyTransaction(), but unused.
-        """
-        splitRatio = transaction.numerator / transaction.denominator
-
-        pocket = (transaction.fiaccount, transaction.security)
-        position = self[pocket]
-
-        if not position:
-            msg = (
-                f"Split {transaction.security} "
-                f"{transaction.numerator}:{transaction.denominator} "
-                f"on {transaction.datetime} -\n"
-                f"No position in FI account {transaction.fiaccount}"
-            )
-            raise Inconsistent(transaction, msg)
-
-        unaffected, affected = utils.partition(openAsOf(transaction.datetime), position)
-
-        def _split(lot: Lot, ratio: Decimal) -> Tuple[Lot, Decimal]:
-            """ Returns (post-split Lot, original Units) """
-            units = lot.units * ratio
-            price = lot.price / ratio
-            return (lot._replace(units=units, price=price), lot.units)
-
-        position_new, origUnits = zip(*(_split(lot, splitRatio) for lot in affected))
-        newUnits = sum([lot.units for lot in position_new]) - sum(origUnits)
-        if abs(newUnits - transaction.units) > UNITS_RESOLUTION:
-            msg = (
-                f"Split {transaction.security} "
-                f"{transaction.numerator}:{transaction.denominator} -\n"
-                f"To receive {transaction.units} units {transaction.security} "
-                f"requires a position of {transaction.units / splitRatio} units of "
-                f"{transaction.security} in FI account {transaction.fiaccount} "
-                f"on {transaction.datetime}, not units={origUnits}"
-            )
-            raise Inconsistent(transaction, msg)
-
-        self[pocket] = list(position_new) + list(unaffected)
-
-        # Stock splits don't realize Gains
-        return []
-
-    def transfer(
-        self, transaction: Transfer, sort: Optional["SortType"] = None
-    ) -> List[Gain]:
-        """
-        Move Lots from one Position to another, maybe changing Security/units.
-
-        ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-        used to order Lots when closing them.
-        """
-        if transaction.units * transaction.unitsFrom >= 0:
-            msg = f"units and unitsFrom aren't oppositely signed in {transaction}"
-            raise ValueError(msg)
-
-        pocketFrom = (transaction.fiaccountFrom, transaction.securityFrom)
-        positionFrom = self[pocketFrom]
-        if not positionFrom:
-            raise Inconsistent(transaction, f"No position in {pocketFrom}")
-        positionFrom.sort(**(sort or FIFO))
-
-        # Remove the Lots from the source position
-        lotsFrom, positionFrom = take_lots(
-            transaction,
-            positionFrom,
-            openAsOf(transaction.datetime),
-            -transaction.unitsFrom,
-        )
-
-        openUnits = sum([lot.units for lot in lotsFrom])
-        if abs(openUnits + transaction.unitsFrom) > UNITS_RESOLUTION:
-            msg = (
-                f"Position in {transaction.security} for FI account "
-                f"{transaction.fiaccount} on {transaction.datetime} is only "
-                f"{openUnits} units; can't transfer out {transaction.units} units."
-            )
-            raise Inconsistent(transaction, msg)
-
-        self[pocketFrom] = positionFrom
-
-        transferRatio = -transaction.units / transaction.unitsFrom
-
-        gains = (
-            self._transferBasis(lotFrom, transaction, transferRatio, sort)
-            for lotFrom in lotsFrom
-        )
-        return list(itertools.chain.from_iterable(gains))
-
-    def spinoff(
-        self, transaction: Spinoff, sort: Optional["SortType"] = None
-    ) -> List[Gain]:
-        """
-        Remove cost from position to create a new position, preserving
-        the holding period through the spinoff and not removing units or
-        closing Lots from the source position.
-
-        ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-        used to order Lots when closing them.
-        """
-        assert isinstance(transaction.units, Decimal)
-        assert isinstance(transaction.numerator, Decimal)
-        assert isinstance(transaction.denominator, Decimal)
-
-        if transaction.numerator <= 0 or transaction.denominator <= 0:
-            msg = f"numerator & denominator must be positive Decimals in {transaction}"
-            raise ValueError(msg)
-
-        pocketFrom = (transaction.fiaccount, transaction.securityFrom)
-        positionFrom = self[pocketFrom]
-        if not positionFrom:
-            raise Inconsistent(transaction, f"No position in {pocketFrom}")
-        positionFrom.sort(**(sort or FIFO))
-
-        spinRatio = Decimal(transaction.numerator) / Decimal(transaction.denominator)
-
-        # costFraction is the fraction of original cost allocated to the spinoff,
-        # with the balance allocated to the source position.
-        if transaction.securityPrice is None or transaction.securityFromPrice is None:
-            costFraction = Decimal("0")
-        else:
-            spinoffFMV = transaction.securityPrice * transaction.units
-            spunoffFMV = transaction.securityFromPrice * transaction.units / spinRatio
-            costFraction = spinoffFMV / (spinoffFMV + spunoffFMV)
-
-        # Take the basis from the source Position
-        lotsFrom, positionFrom = take_basis(
-            positionFrom, openAsOf(transaction.datetime), costFraction
-        )
-
-        openUnits = sum([lot.units for lot in lotsFrom])
-        if abs(openUnits * spinRatio - transaction.units) > UNITS_RESOLUTION:
-            msg = (
-                f"Spinoff {transaction.numerator} units {transaction.security} "
-                f"for {transaction.denominator} units {transaction.securityFrom}:\n"
-                f"To receive {transaction.units} units {transaction.security} "
-                f"requires a position of {transaction.units / spinRatio} units of "
-                f"{transaction.securityFrom} in FI account {transaction.fiaccount} "
-                f"on {transaction.datetime}, not units={openUnits}"
-            )
-            raise Inconsistent(transaction, msg)
-
-        self[pocketFrom] = positionFrom
-
-        gains = (
-            self._transferBasis(lotFrom, transaction, spinRatio, sort)
-            for lotFrom in lotsFrom
-        )
-        return list(itertools.chain.from_iterable(gains))
-
-    def exercise(
-        self, transaction: Exercise, sort: Optional["SortType"] = None
-    ) -> List[Gain]:
-        """
-        Exercise an option.
-
-        ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-        used to order Lots when closing them.
-        """
-        unitsFrom = transaction.unitsFrom
-
-        pocketFrom = (transaction.fiaccount, transaction.securityFrom)
-        positionFrom = self[pocketFrom]
-
-        # Remove lots from the source position
-        takenLots, remainingPosition = take_lots(
-            transaction, positionFrom, openAsOf(transaction.datetime), -unitsFrom
-        )
-
-        takenUnits = sum([lot.units for lot in takenLots])
-        assert isinstance(takenUnits, Decimal)
-        if abs(takenUnits) - abs(unitsFrom) > UNITS_RESOLUTION:
-            msg = f"Exercise Lot.units={takenUnits} (not {unitsFrom})"
-            raise Inconsistent(transaction, msg)
-
-        self[pocketFrom] = remainingPosition
-
-        multiplier = abs(transaction.units / transaction.unitsFrom)
-        strikePrice = abs(transaction.cash / transaction.units)
-
-        gains = (
-            self._transferBasis(
-                lot,
-                transaction,
-                multiplier,
-                sort,
-                extra_basis=lot.units * multiplier * strikePrice,
-                preserve_holding_period=False,
-            )
-            for lot in takenLots
-        )
-        return list(itertools.chain.from_iterable(gains))
-
-    def _transferBasis(
-        self,
-        lot: Lot,
         transaction: TransactionType,
-        ratio: Decimal,
-        sort: Optional["SortType"],
-        extra_basis: Optional[Decimal] = None,
-        preserve_holding_period: bool = True,
+        sort: Optional["SortType"] = None
     ) -> List[Gain]:
-        """
-        Apply cost basis removed from a position to new units of another position.
-        Apply as a trade in order to close Lots of destination position as needed,
-        preserving opentransaction from source Lot to maintain holding period.
+        """ Convenience method to call inventory.book() """
+        return book(transaction, self, sort=sort)
 
-        ``lot``: Lot instance recording the extracted cost basis and source units.
 
-        ``transaction``: Transaction instance booking in the new position.
+@functools.singledispatch
+def book(
+    transaction: TransactionType,
+    portfolio: PortfolioType,
+    sort: Optional["SortType"] = None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Apply a Transaction to the appropriate position(s) in the Portfolio.
+    """
+    raise ValueError(f"Unknown transaction type {type(transaction)}")
 
-        ``ratio``: # of new position units to create for each unit of source position.
 
-        ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-        used to order Lots when closing them.
+@book.register
+def trade(
+    transaction: Trade,
+    portfolio: PortfolioType,
+    sort: Optional["SortType"] = None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Normal buy or sell, closing open Lots and realizing Gains.
 
-        ``extra_basis`` is PER SHARE basis to be added to the cost transferred from the
-        source position, e.g. payment of strike price for options exercise.
+    If ``opentransaction`` is passed in, it overrides lot.opentransaction
+    to preserve holding period.
 
-        ``preserve_holding_period``, if False, sets opentransaction to the transaction
-        booking in the new position rather than maintaining the opentransaction from
-        the source Lot.
-        """
-        costBasis = lot.price * lot.units
-        if extra_basis is None:
-            extra_basis = Decimal("0")
-        costBasis += extra_basis
+    If ``createtransaction`` is passed in, it overrides lot.createtransaction
+    and gain.transaction.
 
-        if preserve_holding_period:
-            opentransaction = lot.opentransaction
-        else:
-            opentransaction = transaction
+    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
+    used to order Lots when closing them.
+    """
+    if transaction.units == 0:
+        raise ValueError(f"units can't be zero: {transaction}")
 
-        # FIXME - We need a Transaction.id for self.trade() to set
-        # Lot.createtxid, but "id=transaction.id" is problematic.
-        trade = Trade(
-            id=transaction.id,
-            uniqueid=transaction.uniqueid,
-            datetime=transaction.datetime,
-            memo=transaction.memo,
-            currency=lot.currency,
-            cash=-costBasis,
-            fiaccount=transaction.fiaccount,
-            security=transaction.security,
-            units=lot.units * ratio,
+    pocket = (transaction.fiaccount, transaction.security)
+    position = portfolio[pocket]
+    position.sort(**(sort or FIFO))
+
+    # Remove closed lots from the position
+    lots_closed, position = take_lots(
+        transaction, position, closableBy(transaction), -transaction.units
+    )
+
+    units = transaction.units + sum([lot.units for lot in lots_closed])
+    price = abs(transaction.cash / transaction.units)
+    if units != 0:
+        newLot = Lot(
+            opentransaction=opentransaction or transaction,
+            createtransaction=createtransaction or transaction,
+            units=units,
+            price=price,
+            currency=transaction.currency,
         )
-        return self.trade(
-            trade,
-            opentransaction=opentransaction,
-            createtransaction=transaction,
-            sort=sort,
+        position.append(newLot)
+
+    portfolio[pocket] = position
+
+    return [
+        Gain(lot=lot, transaction=createtransaction or transaction, price=price)
+        for lot in lots_closed
+    ]
+
+
+@book.register
+def returnofcapital(
+    transaction: ReturnOfCapital,
+    portfolio: PortfolioType,
+    sort=None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Apply cash to reduce cost basis of long position as of Transaction.datetime;
+    realize Gain on Lots where cash proceeds exceed cost basis.
+
+    ``sort`` is in the argument signature for applyTransaction(), but unused.
+    """
+    pocket = (transaction.fiaccount, transaction.security)
+    position = portfolio[pocket]
+
+    # First get a total of shares affected by return of capital,
+    # in order to determine return of capital per share
+    unaffected, affected = utils.partition(longAsOf(transaction.datetime), position)
+    affected = list(affected)
+    if not affected:
+        msg = (
+            f"Return of capital {transaction}:\n"
+            f"FI account {transaction.fiaccount} has no long position in "
+            f"{transaction.security} as of {transaction.datetime}"
         )
+        raise Inconsistent(transaction, msg)
+
+    unitROC = transaction.cash / sum([lot.units for lot in affected])
+
+    def reduceBasis(lot: Lot, unitROC: Decimal) -> Tuple[Lot, Optional[Gain]]:
+        gain = None
+        newBasis = lot.price - unitROC
+        if newBasis < 0:
+            gain = Gain(lot=lot, transaction=transaction, price=unitROC)
+            newBasis = Decimal("0")
+        return (lot._replace(price=newBasis), gain)
+
+    basisReduced, gains = zip(*(reduceBasis(lot, unitROC) for lot in affected))
+    portfolio[pocket] = list(basisReduced) + list(unaffected)
+    return [gain for gain in gains if gain is not None]
+
+
+@book.register
+def split(
+    transaction: Split,
+    portfolio: PortfolioType,
+    sort=None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Increase/decrease Lot units without affecting basis or realizing Gain.
+
+    ``sort`` is in the argument signature for applyTransaction(), but unused.
+    """
+    splitRatio = transaction.numerator / transaction.denominator
+
+    pocket = (transaction.fiaccount, transaction.security)
+    position = portfolio[pocket]
+
+    if not position:
+        msg = (
+            f"Split {transaction.security} "
+            f"{transaction.numerator}:{transaction.denominator} "
+            f"on {transaction.datetime} -\n"
+            f"No position in FI account {transaction.fiaccount}"
+        )
+        raise Inconsistent(transaction, msg)
+
+    unaffected, affected = utils.partition(openAsOf(transaction.datetime), position)
+
+    def _split(lot: Lot, ratio: Decimal) -> Tuple[Lot, Decimal]:
+        """ Returns (post-split Lot, original Units) """
+        units = lot.units * ratio
+        price = lot.price / ratio
+        return (lot._replace(units=units, price=price), lot.units)
+
+    position_new, origUnits = zip(*(_split(lot, splitRatio) for lot in affected))
+    newUnits = sum([lot.units for lot in position_new]) - sum(origUnits)
+    if abs(newUnits - transaction.units) > UNITS_RESOLUTION:
+        msg = (
+            f"Split {transaction.security} "
+            f"{transaction.numerator}:{transaction.denominator} -\n"
+            f"To receive {transaction.units} units {transaction.security} "
+            f"requires a position of {transaction.units / splitRatio} units of "
+            f"{transaction.security} in FI account {transaction.fiaccount} "
+            f"on {transaction.datetime}, not units={origUnits}"
+        )
+        raise Inconsistent(transaction, msg)
+
+    portfolio[pocket] = list(position_new) + list(unaffected)
+
+    # Stock splits don't realize Gains
+    return []
+
+
+@book.register
+def transfer(
+    transaction: Transfer,
+    portfolio: PortfolioType,
+    sort: Optional["SortType"] = None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Move Lots from one Position to another, maybe changing Security/units.
+
+    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
+    used to order Lots when closing them.
+    """
+    if transaction.units * transaction.unitsFrom >= 0:
+        msg = f"units and unitsFrom aren't oppositely signed in {transaction}"
+        raise ValueError(msg)
+
+    pocketFrom = (transaction.fiaccountFrom, transaction.securityFrom)
+    positionFrom = portfolio[pocketFrom]
+    if not positionFrom:
+        raise Inconsistent(transaction, f"No position in {pocketFrom}")
+    positionFrom.sort(**(sort or FIFO))
+
+    # Remove the Lots from the source position
+    lotsFrom, positionFrom = take_lots(
+        transaction,
+        positionFrom,
+        openAsOf(transaction.datetime),
+        -transaction.unitsFrom,
+    )
+
+    openUnits = sum([lot.units for lot in lotsFrom])
+    if abs(openUnits + transaction.unitsFrom) > UNITS_RESOLUTION:
+        msg = (
+            f"Position in {transaction.security} for FI account "
+            f"{transaction.fiaccount} on {transaction.datetime} is only "
+            f"{openUnits} units; can't transfer out {transaction.units} units."
+        )
+        raise Inconsistent(transaction, msg)
+
+    portfolio[pocketFrom] = positionFrom
+
+    transferRatio = -transaction.units / transaction.unitsFrom
+
+    gains = (
+        _transferBasis(portfolio, lotFrom, transaction, transferRatio, sort)
+        for lotFrom in lotsFrom
+    )
+    return list(itertools.chain.from_iterable(gains))
+
+
+@book.register
+def spinoff(
+    transaction: Spinoff,
+    portfolio: PortfolioType,
+    sort: Optional["SortType"] = None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Remove cost from position to create a new position, preserving
+    the holding period through the spinoff and not removing units or
+    closing Lots from the source position.
+
+    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
+    used to order Lots when closing them.
+    """
+    assert isinstance(transaction.units, Decimal)
+    assert isinstance(transaction.numerator, Decimal)
+    assert isinstance(transaction.denominator, Decimal)
+
+    if transaction.numerator <= 0 or transaction.denominator <= 0:
+        msg = f"numerator & denominator must be positive Decimals in {transaction}"
+        raise ValueError(msg)
+
+    pocketFrom = (transaction.fiaccount, transaction.securityFrom)
+    positionFrom = portfolio[pocketFrom]
+    if not positionFrom:
+        raise Inconsistent(transaction, f"No position in {pocketFrom}")
+    positionFrom.sort(**(sort or FIFO))
+
+    spinRatio = Decimal(transaction.numerator) / Decimal(transaction.denominator)
+
+    # costFraction is the fraction of original cost allocated to the spinoff,
+    # with the balance allocated to the source position.
+    if transaction.securityPrice is None or transaction.securityFromPrice is None:
+        costFraction = Decimal("0")
+    else:
+        spinoffFMV = transaction.securityPrice * transaction.units
+        spunoffFMV = transaction.securityFromPrice * transaction.units / spinRatio
+        costFraction = spinoffFMV / (spinoffFMV + spunoffFMV)
+
+    # Take the basis from the source Position
+    lotsFrom, positionFrom = take_basis(
+        positionFrom, openAsOf(transaction.datetime), costFraction
+    )
+
+    openUnits = sum([lot.units for lot in lotsFrom])
+    if abs(openUnits * spinRatio - transaction.units) > UNITS_RESOLUTION:
+        msg = (
+            f"Spinoff {transaction.numerator} units {transaction.security} "
+            f"for {transaction.denominator} units {transaction.securityFrom}:\n"
+            f"To receive {transaction.units} units {transaction.security} "
+            f"requires a position of {transaction.units / spinRatio} units of "
+            f"{transaction.securityFrom} in FI account {transaction.fiaccount} "
+            f"on {transaction.datetime}, not units={openUnits}"
+        )
+        raise Inconsistent(transaction, msg)
+
+    portfolio[pocketFrom] = positionFrom
+
+    gains = (
+        _transferBasis(portfolio, lotFrom, transaction, spinRatio, sort)
+        for lotFrom in lotsFrom
+    )
+    return list(itertools.chain.from_iterable(gains))
+
+
+@book.register
+def exercise(
+    transaction: Exercise,
+    portfolio: PortfolioType,
+    sort: Optional["SortType"] = None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Exercise an option.
+
+    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
+    used to order Lots when closing them.
+    """
+    unitsFrom = transaction.unitsFrom
+
+    pocketFrom = (transaction.fiaccount, transaction.securityFrom)
+    positionFrom = portfolio[pocketFrom]
+
+    # Remove lots from the source position
+    takenLots, remainingPosition = take_lots(
+        transaction, positionFrom, openAsOf(transaction.datetime), -unitsFrom
+    )
+
+    takenUnits = sum([lot.units for lot in takenLots])
+    assert isinstance(takenUnits, Decimal)
+    if abs(takenUnits) - abs(unitsFrom) > UNITS_RESOLUTION:
+        msg = f"Exercise Lot.units={takenUnits} (not {unitsFrom})"
+        raise Inconsistent(transaction, msg)
+
+    portfolio[pocketFrom] = remainingPosition
+
+    multiplier = abs(transaction.units / transaction.unitsFrom)
+    strikePrice = abs(transaction.cash / transaction.units)
+
+    gains = (
+        _transferBasis(
+            portfolio,
+            lot,
+            transaction,
+            multiplier,
+            sort,
+            extra_basis=lot.units * multiplier * strikePrice,
+            preserve_holding_period=False,
+        )
+        for lot in takenLots
+    )
+    return list(itertools.chain.from_iterable(gains))
+
+
+def _transferBasis(
+    portfolio: PortfolioType,
+    lot: Lot,
+    transaction: TransactionType,
+    ratio: Decimal,
+    sort: Optional["SortType"],
+    extra_basis: Optional[Decimal] = None,
+    preserve_holding_period: bool = True,
+) -> List[Gain]:
+    """
+    Apply cost basis removed from a position to new units of another position.
+    Apply as a trade in order to close Lots of destination position as needed,
+    preserving opentransaction from source Lot to maintain holding period.
+
+    ``lot``: Lot instance recording the extracted cost basis and source units.
+
+    ``transaction``: Transaction instance booking in the new position.
+
+    ``ratio``: # of new position units to create for each unit of source position.
+
+    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
+    used to order Lots when closing them.
+
+    ``extra_basis`` is PER SHARE basis to be added to the cost transferred from the
+    source position, e.g. payment of strike price for options exercise.
+
+    ``preserve_holding_period``, if False, sets opentransaction to the transaction
+    booking in the new position rather than maintaining the opentransaction from
+    the source Lot.
+    """
+    costBasis = lot.price * lot.units
+    if extra_basis is None:
+        extra_basis = Decimal("0")
+    costBasis += extra_basis
+
+    if preserve_holding_period:
+        opentransaction = lot.opentransaction
+    else:
+        opentransaction = transaction
+
+    # FIXME - We need a Transaction.id for trade() to set
+    # Lot.createtxid, but "id=transaction.id" is problematic.
+    trade_ = Trade(
+        id=transaction.id,
+        uniqueid=transaction.uniqueid,
+        datetime=transaction.datetime,
+        memo=transaction.memo,
+        currency=lot.currency,
+        cash=-costBasis,
+        fiaccount=transaction.fiaccount,
+        security=transaction.security,
+        units=lot.units * ratio,
+    )
+    return book(
+        trade_,
+        portfolio,
+        opentransaction=opentransaction,
+        createtransaction=transaction,
+        sort=sort,
+    )
 
 
 #######################################################################################
@@ -783,6 +836,9 @@ def closableBy(transaction: TransactionType) -> CriterionType:
 #######################################################################################
 # SORT FUNCTIONS
 #######################################################################################
+SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]
+
+
 def sort_oldest(lot: Lot) -> Tuple:
     """
     Sort by holding period, then by opening Transaction.uniqueid
@@ -809,9 +865,6 @@ def sort_dearest(lot: Lot) -> Tuple:
     price = lot.price
     assert isinstance(price, Decimal)
     return (-price, lot.opentransaction.uniqueid or "")
-
-
-SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]
 
 
 FIFO = {"key": sort_oldest, "reverse": False}

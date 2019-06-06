@@ -15,4 +15,5 @@ build
 dist
 reg_settings.py
 capgains/ipy.py
+capgains/gui.py
 .mypy_cache/
