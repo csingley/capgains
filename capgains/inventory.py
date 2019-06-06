@@ -326,7 +326,7 @@ class Portfolio(defaultdict):
             )
             raise Inconsistent(transaction, msg)
 
-        unaffected, affected = partition(openAsOf(transaction.datetime), position)
+        unaffected, affected = utils.partition(openAsOf(transaction.datetime), position)
 
         def _split(lot: Lot, ratio: Decimal) -> Tuple[Lot, Decimal]:
             """ Returns (post-split Lot, original Units) """
