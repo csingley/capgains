@@ -15,7 +15,6 @@ import ofxtools
 # local imports
 from capgains.config import CONFIG
 from capgains import (database, flex, ofx, models)
-from capgains.inventory import Transaction
 
 
 DB_URI = CONFIG.test_db_uri
@@ -209,7 +208,7 @@ class XmlSnippetMixin(RollbackMixin):
             self._testTransaction(predicted, actual)
 
     def _testTransaction(self, predicted, actual):
-        fields = list(Transaction._fields)
+        fields = list(type(predicted)._fields)
         # Don't test `id`, `uniqueid`
         for unwanted in ['id', 'uniqueid']:
             fields.remove(unwanted)

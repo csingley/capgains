@@ -17,14 +17,18 @@ from capgains.inventory import (
     Lot,
     Gain,
     Portfolio,
-    Transaction,
+    Trade,
+    ReturnOfCapital,
+    Split,
+    Transfer,
+    Spinoff,
+    Exercise,
     Inconsistent,
     part_lot,
     take_lots,
     take_basis,
     openAsOf,
 )
-from capgains.models.transactions import TransactionType
 
 
 class SortTestCase(unittest.TestCase):
@@ -33,13 +37,15 @@ class SortTestCase(unittest.TestCase):
         FIFO sorts first by Lot.opentransaction.datetime,
         then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             uniqueid="b",
             datetime=datetime(2005, 10, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot1 = Lot(
             opentransaction=tx1,
@@ -48,13 +54,15 @@ class SortTestCase(unittest.TestCase):
             price=None,
             currency=None,
         )
-        tx2 = Transaction(
+        tx2 = Trade(
             id=2,
             uniqueid="c",
             datetime=datetime(2005, 10, 4),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot2 = Lot(
             opentransaction=tx2,
@@ -63,13 +71,15 @@ class SortTestCase(unittest.TestCase):
             price=None,
             currency=None,
         )
-        tx3 = Transaction(
+        tx3 = Trade(
             id=3,
             uniqueid="a",
             datetime=datetime(2005, 10, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot3 = Lot(
             opentransaction=tx3,
@@ -87,13 +97,15 @@ class SortTestCase(unittest.TestCase):
         LIFO sorts first by Lot.opentransaction.datetime,
         then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             uniqueid="b",
             datetime=datetime(2005, 10, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot1 = Lot(
             opentransaction=tx1,
@@ -102,13 +114,15 @@ class SortTestCase(unittest.TestCase):
             price=None,
             currency=None,
         )
-        tx2 = Transaction(
+        tx2 = Trade(
             id=2,
             uniqueid="c",
             datetime=datetime(2005, 10, 4),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot2 = Lot(
             opentransaction=tx2,
@@ -117,13 +131,15 @@ class SortTestCase(unittest.TestCase):
             price=None,
             currency=None,
         )
-        tx3 = Transaction(
+        tx3 = Trade(
             id=3,
             uniqueid="a",
             datetime=datetime(2005, 10, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot3 = Lot(
             opentransaction=tx3,
@@ -140,13 +156,15 @@ class SortTestCase(unittest.TestCase):
         """
         MINGAIN sorts first by Lot.price, then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             uniqueid="b",
             datetime=datetime(2005, 10, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot1 = Lot(
             opentransaction=tx1,
@@ -155,13 +173,15 @@ class SortTestCase(unittest.TestCase):
             price=Decimal("10"),
             currency="USD",
         )
-        tx2 = Transaction(
+        tx2 = Trade(
             id=1,
             uniqueid="c",
             datetime=datetime(2005, 10, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot2 = Lot(
             opentransaction=tx2,
@@ -170,13 +190,15 @@ class SortTestCase(unittest.TestCase):
             price=Decimal("9.5"),
             currency="USD",
         )
-        tx3 = Transaction(
+        tx3 = Trade(
             id=1,
             uniqueid="a",
             datetime=datetime(2005, 10, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot3 = Lot(
             opentransaction=tx3,
@@ -193,13 +215,15 @@ class SortTestCase(unittest.TestCase):
         """
         MAXGAIN sorts first by Lot.price, then by Lot.opentransaction.uniqueid
         """
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             uniqueid="b",
             datetime=datetime(2001, 1, 1),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot1 = Lot(
             opentransaction=tx1,
@@ -208,13 +232,15 @@ class SortTestCase(unittest.TestCase):
             price=Decimal("10"),
             currency="USD",
         )
-        tx2 = Transaction(
+        tx2 = Trade(
             id=1,
             uniqueid="c",
             datetime=datetime(2001, 1, 1),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot2 = Lot(
             opentransaction=tx2,
@@ -223,13 +249,15 @@ class SortTestCase(unittest.TestCase):
             price=Decimal("9.5"),
             currency="USD",
         )
-        tx3 = Transaction(
+        tx3 = Trade(
             id=1,
             uniqueid="a",
             datetime=datetime(2001, 1, 2),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         lot3 = Lot(
             opentransaction=tx3,
@@ -245,11 +273,10 @@ class SortTestCase(unittest.TestCase):
 
 class LotsMixin(object):
     def setUp(self):
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             datetime=datetime(2016, 1, 1),
             uniqueid="",
-            type=TransactionType.TRADE,
             fiaccount="",
             security=None,
             units=Decimal("100"),
@@ -264,11 +291,10 @@ class LotsMixin(object):
             currency=tx1.currency,
         )
 
-        tx2 = Transaction(
+        tx2 = Trade(
             id=2,
             datetime=datetime(2016, 1, 2),
             uniqueid="",
-            type=TransactionType.TRADE,
             fiaccount="",
             security=None,
             units=Decimal("200"),
@@ -283,11 +309,10 @@ class LotsMixin(object):
             currency=tx2.currency,
         )
 
-        tx3 = Transaction(
+        tx3 = Trade(
             id=3,
             datetime=datetime(2016, 1, 3),
             uniqueid="",
-            type=TransactionType.TRADE,
             fiaccount="",
             security=None,
             units=Decimal("300"),
@@ -478,11 +503,10 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
 class TradeTestCase(unittest.TestCase):
     def setUp(self):
         self.trades = [
-            Transaction(
+            Trade(
                 id=0,
                 uniqueid="20160104.U99.e.USD.1468544894",
                 datetime=datetime(2016, 1, 4, 14, 57, 40),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-200.00"),
@@ -490,11 +514,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("3161.5975047"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=1,
                 uniqueid="20160104.U99.e.USD.1468552856",
                 datetime=datetime(2016, 1, 4, 14, 59, 51),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-300.00"),
@@ -502,11 +525,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("4739.36631225"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=2,
                 uniqueid="20160104.U99.e.USD.1468552920",
                 datetime=datetime(2016, 1, 4, 14, 59, 53),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-300.00"),
@@ -514,11 +536,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("4739.18631225"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=3,
                 uniqueid="20160104.U99.e.USD.1468942125",
                 datetime=datetime(2016, 1, 4, 17, 33, 15),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-200.00"),
@@ -526,11 +547,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("3159.4575415"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=4,
                 uniqueid="20160105.U99.e.USD.1469598029",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -538,11 +558,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1691.28670995"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=5,
                 uniqueid="20160105.U99.e.USD.1469598030",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -550,11 +569,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1690.79672835"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=6,
                 uniqueid="20160105.U99.e.USD.1469598191",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -562,11 +580,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1694.28665475"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=7,
                 uniqueid="20160105.U99.e.USD.1469598198",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -574,11 +591,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1690.79672835"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=8,
                 uniqueid="20160105.U99.e.USD.1469598231",
                 datetime=datetime(2016, 1, 5, 14, 49, 39),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -586,11 +602,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1690.79672835"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=9,
                 uniqueid="20160105.U99.e.USD.1469598296",
                 datetime=datetime(2016, 1, 5, 14, 49, 39),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-300.00"),
@@ -598,11 +613,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("5072.39018505"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=10,
                 uniqueid="20160105.U99.e.USD.1469598410",
                 datetime=datetime(2016, 1, 5, 14, 49, 42),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -610,11 +624,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1690.79672835"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=11,
                 uniqueid="20160105.U99.e.USD.1469598426",
                 datetime=datetime(2016, 1, 5, 14, 49, 43),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -622,11 +635,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1690.79672835"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=12,
                 uniqueid="20160105.U99.e.USD.1469770926",
                 datetime=datetime(2016, 1, 5, 15, 58, 28),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-125.00"),
@@ -634,11 +646,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("2188.494530438"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=13,
                 uniqueid="20160105.U99.e.USD.1469801076",
                 datetime=datetime(2016, 1, 5, 16, 14, 53),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-61.00"),
@@ -646,11 +657,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1067.332642078"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=14,
                 uniqueid="20160105.U99.e.USD.1469807788",
                 datetime=datetime(2016, 1, 5, 16, 18, 29),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-814.00"),
@@ -658,11 +668,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("14242.766731985"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=15,
                 uniqueid="20160113.U99.e.USD.1476575799",
                 datetime=datetime(2016, 1, 13, 14, 41, 14),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-1.00"),
@@ -670,11 +679,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("14.661247566"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=16,
                 uniqueid="20160113.U99.e.USD.1476579053",
                 datetime=datetime(2016, 1, 13, 14, 42, 15),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-493.00"),
@@ -682,11 +690,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("7236.208799542"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=17,
                 uniqueid="20160113.U99.e.USD.1476579068",
                 datetime=datetime(2016, 1, 13, 14, 42, 15),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-100.00"),
@@ -694,11 +701,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("1473.29072115"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=18,
                 uniqueid="20160113.U99.e.USD.1476579070",
                 datetime=datetime(2016, 1, 13, 14, 42, 15),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-200.00"),
@@ -706,11 +712,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("2935.5816631"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=19,
                 uniqueid="20160113.U99.e.USD.1476581751",
                 datetime=datetime(2016, 1, 13, 14, 42, 58),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-200.00"),
@@ -718,11 +723,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("2970.5810007"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=20,
                 uniqueid="20160113.U99.e.USD.1476581755",
                 datetime=datetime(2016, 1, 13, 14, 42, 58),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-6.00"),
@@ -730,11 +734,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("88.848035541"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=21,
                 uniqueid="20160113.U99.e.USD.1476581819",
                 datetime=datetime(2016, 1, 13, 14, 42, 58),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("-1000.00"),
@@ -742,11 +745,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("14808.0059235"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=22,
                 uniqueid="20160126.U99.e.USD.1487338567",
                 datetime=datetime(2016, 1, 26, 17, 52, 17),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("258.00"),
@@ -754,11 +756,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("-2771.359263705"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=23,
                 uniqueid="20160126.U99.e.USD.1487338568",
                 datetime=datetime(2016, 1, 26, 17, 52, 17),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("200.00"),
@@ -766,11 +767,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("-2148.3405145"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=24,
                 uniqueid="20160126.U99.e.USD.1487338788",
                 datetime=datetime(2016, 1, 26, 17, 52, 25),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("200.00"),
@@ -778,11 +778,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("-2148.3405145"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=25,
                 uniqueid="20160126.U99.e.USD.1487346935",
                 datetime=datetime(2016, 1, 26, 17, 58, 18),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("100.00"),
@@ -790,11 +789,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("-1074.17025725"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=26,
                 uniqueid="20160126.U99.e.USD.1487346940",
                 datetime=datetime(2016, 1, 26, 17, 58, 18),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("242.00"),
@@ -802,11 +800,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("-2599.492022545"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=27,
                 uniqueid="20160126.U99.e.USD.1487504352",
                 datetime=datetime(2016, 1, 26, 19, 45, 40),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("70.00"),
@@ -814,11 +811,10 @@ class TradeTestCase(unittest.TestCase):
                 cash=Decimal("-752.02425725"),
                 currency="USD",
             ),
-            Transaction(
+            Trade(
                 id=28,
                 uniqueid="20160126.U99.e.USD.1487510413",
                 datetime=datetime(2016, 1, 26, 19, 50, 19),
-                type=None,
                 fiaccount=None,
                 security=None,
                 units=Decimal("100.00"),
@@ -922,7 +918,7 @@ class TradeTestCase(unittest.TestCase):
     def _testTradeSort(self, sort, matchedTrades, partialClose):
         """
         Args:
-            sort: FIFO/LIFO/MAXGAIN/MINGAIN/None/list of Transaction.ids
+            sort: FIFO/LIFO/MAXGAIN/MINGAIN/None/list of Trade.ids
             matchedTrades: tuple of (open index, close index, units)
             partialClose: tuple of (index, units)
         """
@@ -1008,11 +1004,10 @@ class TradeTestCase(unittest.TestCase):
 
 class ReturnOfCapitalTestCase(unittest.TestCase):
     def setUp(self):
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
             units=Decimal("100"),
@@ -1027,11 +1022,10 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             currency=tx1.currency,
         )
 
-        tx2 = Transaction(
+        tx2 = Trade(
             id=2,
             uniqueid="",
             datetime=datetime(2016, 1, 2),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
             units=Decimal("200"),
@@ -1046,24 +1040,25 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             currency=tx2.currency,
         )
 
-        tx3 = Transaction(
+        tx3 = Trade(
             id=3,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
             units=Decimal("300"),
             cash=Decimal("3600"),
             currency="USD",
         )
-        tx3c = Transaction(
+        tx3c = Trade(
             id=5,
             uniqueid="",
             datetime=datetime(2016, 1, 3),
-            type=TransactionType.TRADE,
             fiaccount="",
             security="",
+            cash=None,
+            currency=None,
+            units=None,
         )
         self.lot3 = Lot(
             opentransaction=tx3,
@@ -1077,14 +1072,14 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
 
     def testRetOfCapBasic(self):
         """ Test ReturnOfCapital less than basis reduces cost without gain """
-        transaction = Transaction(
+        transaction = ReturnOfCapital(
             id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 4),
-            type=TransactionType.RETURNCAP,
             fiaccount=None,
             security=None,
             cash=Decimal("600"),
+            currency="USD",
         )
         gains = self.portfolio.returnofcapital(transaction)
         self.assertEqual(len(gains), 0)
@@ -1095,14 +1090,14 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
 
     def testRetOfCapDatetime(self):
         """ Test ReturnOfCapital respects Lot.createdt """
-        transaction = Transaction(
+        transaction = ReturnOfCapital(
             id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 2, 1),
-            type=TransactionType.RETURNCAP,
             fiaccount=None,
             security=None,
             cash=Decimal("600"),
+            currency="USD",
         )
         gains = self.portfolio.returnofcapital(transaction)
         self.assertEqual(len(gains), 0)
@@ -1115,14 +1110,14 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
 
     def testRetOfCapZero(self):
         """ Test ReturnOfCapital reduce basis to zero """
-        transaction = Transaction(
+        transaction = ReturnOfCapital(
             id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 4),
-            type=TransactionType.RETURNCAP,
             fiaccount=None,
             security=None,
             cash=Decimal("6000"),
+            currency="USD",
         )
         gains = self.portfolio.returnofcapital(transaction)
         # Lot 1 cost should be reduced to zero but no Gain generated
@@ -1134,14 +1129,14 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
 
     def testRetOfCapLessThanZero(self):
         """ Test ReturnOfCapital in excess of cost basis """
-        transaction = Transaction(
+        transaction = ReturnOfCapital(
             id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 4),
-            type=TransactionType.RETURNCAP,
             fiaccount=None,
             security=None,
             cash=Decimal("7200"),
+            currency="USD",
         )
         gains = self.portfolio.returnofcapital(transaction)
         # Lot 1 & 2 cost should be reduced to zero with Gain generated
@@ -1168,11 +1163,10 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         """
         Test Portfolio route ReturnOfCapital to correct (account, security)
         """
-        tx4 = Transaction(
+        tx4 = Trade(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
-            type=TransactionType.RETURNCAP,
             fiaccount="",
             security="",
             units=Decimal("100"),
@@ -1187,11 +1181,10 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             currency=tx4.currency,
         )
 
-        tx5 = Transaction(
+        tx5 = Trade(
             id=5,
             uniqueid="",
             datetime=datetime(2016, 1, 2),
-            type=TransactionType.RETURNCAP,
             fiaccount="",
             security="",
             units=Decimal("200"),
@@ -1206,11 +1199,10 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             currency=tx5.currency,
         )
 
-        tx6 = Transaction(
+        tx6 = Trade(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 2),
-            type=TransactionType.RETURNCAP,
             fiaccount="",
             security="",
             units=Decimal("300"),
@@ -1230,44 +1222,44 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         self.portfolio[("acct6", None)].append(lot6)
 
         # This routes to (None, None) - [self.lot1, self.lot2, self.lot3]; 600sh
-        retofcap1 = Transaction(
+        retofcap1 = ReturnOfCapital(
             id=10,
             uniqueid="",
-            type=TransactionType.RETURNCAP,
             fiaccount=None,
             security=None,
             datetime=datetime(2016, 6, 1),
             cash=Decimal("1200"),
+            currency="USD",
         )
         # This routes to ('acct6', None) - lot6; 300sh
-        retofcap2 = Transaction(
+        retofcap2 = ReturnOfCapital(
             id=11,
             uniqueid="",
-            type=TransactionType.RETURNCAP,
             fiaccount="acct6",
             security=None,
             datetime=datetime(2016, 6, 1),
             cash=Decimal("600"),
+            currency="USD",
         )
         # This routes to (None, 'sec4') - lot4; 100sh
-        retofcap3 = Transaction(
+        retofcap3 = ReturnOfCapital(
             id=12,
             uniqueid="",
-            type=TransactionType.RETURNCAP,
             fiaccount=None,
             security="sec4",
             datetime=datetime(2016, 6, 1),
             cash=Decimal("300"),
+            currency="USD",
         )
         # This routes to ('acct5', 'sec5') - lot5; 200sh
-        retofcap4 = Transaction(
+        retofcap4 = ReturnOfCapital(
             id=13,
             uniqueid="",
-            type=TransactionType.RETURNCAP,
             fiaccount="acct5",
             security="sec5",
             datetime=datetime(2016, 6, 1),
             cash=Decimal("800"),
+            currency="USD",
         )
         for retofcap in (retofcap1, retofcap2, retofcap3, retofcap4):
             self.portfolio.returnofcapital(retofcap)
@@ -1293,11 +1285,10 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
 
 class SplitTestCase(unittest.TestCase):
     def setUp(self):
-        tx0 = Transaction(
+        tx0 = Trade(
             id=1,
             datetime=datetime(2016, 1, 1),
             uniqueid="",
-            type=TransactionType.TRADE,
             fiaccount=None,
             security=None,
             units=Decimal("100"),
@@ -1312,11 +1303,10 @@ class SplitTestCase(unittest.TestCase):
             currency=tx0.currency,
         )
 
-        tx1 = Transaction(
+        tx1 = Trade(
             id=3,
             datetime=datetime(2016, 1, 3),
             uniqueid="",
-            type=TransactionType.TRADE,
             fiaccount=None,
             security=None,
             units=Decimal("300"),
@@ -1335,11 +1325,10 @@ class SplitTestCase(unittest.TestCase):
 
     def testSplitDatetime(self):
         """ Splits respect Lot.createdt not Lot.opendt """
-        split = Transaction(
+        split = Split(
             id=4,
             datetime=datetime(2016, 1, 2),
             uniqueid=None,
-            type=TransactionType.SPLIT,
             fiaccount=None,
             security=None,
             numerator=Decimal("1"),
@@ -1356,14 +1345,13 @@ class SplitTestCase(unittest.TestCase):
 
     def testSplitWrongUnits(self):
         """
-        Transaction.units must match total Lot.units before
-        Transaction.datetime
+        Split.units must match total Lot.units before
+        Split.datetime
         """
-        split = Transaction(
+        split = Split(
             id=1,
             datetime=datetime(2016, 1, 2),
             uniqueid="",
-            type=TransactionType.SPLIT,
             fiaccount=None,
             security=None,
             numerator=Decimal("1"),
@@ -1376,10 +1364,9 @@ class SplitTestCase(unittest.TestCase):
 
 class TransferTestCase(unittest.TestCase):
     def setUp(self):
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             uniqueid="",
-            type=TransactionType.TRANSFER,
             fiaccount=None,
             datetime=datetime(2016, 1, 1),
             security=1,
@@ -1394,10 +1381,9 @@ class TransferTestCase(unittest.TestCase):
             price=abs(tx1.cash / tx1.units),
             currency=tx1.currency,
         )
-        tx2 = Transaction(
+        tx2 = Trade(
             id=2,
             uniqueid="",
-            type=TransactionType.TRANSFER,
             fiaccount=None,
             datetime=datetime(2016, 1, 1),
             security=2,
@@ -1419,11 +1405,11 @@ class TransferTestCase(unittest.TestCase):
         """
         Transfer divides cost and preserves holding period
         """
-        transfer = Transaction(
+        transfer = Transfer(
             id=4,
             uniqueid="",
-            type=TransactionType.TRANSFER,
             fiaccount=None,
+            fiaccountFrom=None,
             datetime=datetime(2016, 1, 4),
             security=3,
             units=Decimal("100"),
@@ -1454,12 +1440,12 @@ class TransferTestCase(unittest.TestCase):
         """
         Transfer correctly closes oppositely-signed Lots of transfer Security
         """
-        transfer = Transaction(
+        transfer = Transfer(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
-            type=TransactionType.TRANSFER,
             fiaccount=None,
+            fiaccountFrom=None,
             security=2,
             units=Decimal("100"),
             securityFrom=1,
@@ -1485,12 +1471,12 @@ class TransferTestCase(unittest.TestCase):
         Transactions that can't be satisfied raise errors.
         """
         # unitsFrom and units must have opposite signs
-        transfer = Transaction(
+        transfer = Transfer(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
-            type=TransactionType.TRANSFER,
             fiaccount=None,
+            fiaccountFrom=None,
             security=2,
             units=Decimal("100"),
             securityFrom=1,
@@ -1500,12 +1486,12 @@ class TransferTestCase(unittest.TestCase):
             self.portfolio.transfer(transfer)
 
         # Must have an existing position in (accountFrom, securityFrom)
-        transfer = Transaction(
+        transfer = Transfer(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
-            type=TransactionType.TRANSFER,
             fiaccount=None,
+            fiaccountFrom=None,
             security=2,
             units=Decimal("100"),
             securityFrom=3,
@@ -1515,12 +1501,12 @@ class TransferTestCase(unittest.TestCase):
             self.portfolio.transfer(transfer)
 
         # Existing position must have enough units to satisfy unitsFrom
-        transfer = Transaction(
+        transfer = Transfer(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
-            type=TransactionType.TRANSFER,
             fiaccount=None,
+            fiaccountFrom=None,
             security=2,
             units=Decimal("100"),
             securityFrom=1,
@@ -1532,11 +1518,10 @@ class TransferTestCase(unittest.TestCase):
 
 class SpinoffTestCase(unittest.TestCase):
     def setUp(self):
-        tx1 = Transaction(
+        tx1 = Trade(
             id=1,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
-            type=TransactionType.SPINOFF,
             fiaccount=None,
             security=1,
             units=Decimal("100"),
@@ -1551,11 +1536,10 @@ class SpinoffTestCase(unittest.TestCase):
             currency=tx1.currency,
         )
 
-        tx2 = Transaction(
+        tx2 = Trade(
             id=2,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
-            type=TransactionType.SPINOFF,
             fiaccount=None,
             security=2,
             units=Decimal("-300"),
@@ -1577,10 +1561,9 @@ class SpinoffTestCase(unittest.TestCase):
         Spinoff divides cost and preserves holding period
         """
         # 1 for 5 on 100sh: spin 20sh@5; retain 100sh@1
-        spinoff = Transaction(
+        spinoff = Spinoff(
             id=4,
             uniqueid=None,
-            type=TransactionType.SPINOFF,
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
             security=3,
@@ -1622,11 +1605,10 @@ class SpinoffTestCase(unittest.TestCase):
         Spinoff correctly closes oppositely-signed Lots of spin Security
         """
         # 1 for 5 on 100sh: spin 20sh@5; retain 100sh@1
-        spinoff = Transaction(
+        spinoff = Spinoff(
             id=4,
             datetime=datetime(2016, 1, 4),
             uniqueid=None,
-            type=TransactionType.SPINOFF,
             fiaccount=None,
             security=2,
             numerator=Decimal("1"),

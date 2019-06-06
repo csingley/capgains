@@ -7,8 +7,8 @@ from decimal import Decimal
 
 
 # local imports
-from capgains.inventory import Transaction
 from capgains.models.transactions import TransactionType
+from capgains.inventory import Trade
 from common import (
     setUpModule,
     tearDownModule,
@@ -38,10 +38,9 @@ class TradesWithCancelTestCase(TradeXmlSnippetMixin, unittest.TestCase):
         # 2nd trade cancels the 1st; 4th trade cancels the 3rd
         # Leaving the last trade as the only one
         return [
-            Transaction(id=1,
+            Trade(id=1,
                         uniqueid='DEADBEEF',
                         datetime=datetime(2011, 5, 9),
-                        type=TransactionType.TRADE,
                         memo='CONVERA CORPORATION - SPINOFF',
                         currency='USD', cash=Decimal('1477.3194048'),
                         fiaccount=self.account, security=self.securities[0],
@@ -69,18 +68,16 @@ class TradesIgnoreTestCase(TradeXmlSnippetMixin, unittest.TestCase):
         # Last trade cancels the 2nd trade
         # Leaving 3rd & 4th XML transactions parsed as trades
         return [
-            Transaction(id=1,
+            Trade(id=1,
                         uniqueid='DEADBEEF',
                         datetime=datetime(2015, 9, 10, 15, 51, 34),
-                        type=TransactionType.TRADE,
                         memo='SATURNS SEARS ROEBUCK ACCEPTANCE CO',
                         currency='USD', cash=Decimal('16195.8803475'),
                         fiaccount=self.account, security=self.securities[1],
                         units=Decimal('-1000')),
-            Transaction(id=1,
+            Trade(id=1,
                         uniqueid='DEADBEEF',
                         datetime=datetime(2015, 9, 10, 15, 52, 20),
-                        type=TransactionType.TRADE,
                         memo='SATURNS SEARS ROEBUCK ACCEPTANCE CO',
                         currency='USD', cash=Decimal('14576.29231275'),
                         fiaccount=self.account, security=self.securities[1],
@@ -98,10 +95,9 @@ class TradesWithSortFieldTestCase(TradeXmlSnippetMixin, unittest.TestCase):
     @property
     def persisted_txs(self):
         return [
-            Transaction(id=1,
+            Trade(id=1,
                         uniqueid='DEADBEEF',
                         datetime=datetime(2010, 10, 29, 14, 38, 9),
-                        type=TransactionType.TRADE,
                         memo='PILGRIMS PRIDE CORP-NEW',
                         currency='USD', cash=Decimal('1223'),
                         fiaccount=self.account,

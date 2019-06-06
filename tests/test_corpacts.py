@@ -10,7 +10,14 @@ import re
 
 # local imports
 from capgains import (flex, containers, )
-from capgains.inventory import Transaction
+from capgains.inventory import (
+    Trade,
+    ReturnOfCapital,
+    Split,
+    Transfer,
+    Spinoff,
+    Exercise,
+)
 from capgains.models.transactions import TransactionType
 from common import (
     setUpModule,
@@ -129,15 +136,13 @@ class CorpActCancelTestCase(CorpActXmlSnippetMixin, CorpActPreprocessingMixin,
         # Each of the groups in preprocessed_txs() gets processed as transfer
         return [
             # Synthetic trade created by voluntary subscription (backdated)
-            Transaction(id=1, uniqueid="", datetime=datetime(2012, 5, 14, 19, 45),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2012, 5, 14, 19, 45),
                         memo='ELAN(US28413U2042) TENDERED TO US28413TEMP2 1 FOR 1',
                         fiaccount=self.account, security=self.securities[2],
                         units=Decimal('557915'), fiaccountFrom=self.account,
                         securityFrom=self.securities[0],
                         unitsFrom=Decimal('-557915')),
-            Transaction(id=1, uniqueid="", datetime=datetime(2012, 5, 15, 20, 25),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2012, 5, 15, 20, 25),
                         memo='ELAN.TEMP(US28413TEMP2) MERGED(Acquisition)  WITH US284CNT9952 1 FOR 10000',
                         fiaccount=self.account, security=self.securities[1],
                         units=Decimal('56'), fiaccountFrom=self.account,
@@ -205,21 +210,18 @@ class SubscriptionSpanningMultipleDatesTestCase(CorpActXmlSnippetMixin,
         # sorts type=TRADE before type=TRANSFER
         return [
             # Synthetic trade created by voluntary subscription (backdated)
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 2, 19, 19, 45),
-                        type=TransactionType.TRADE,
+            Trade(id=1, uniqueid="", datetime=datetime(2015, 2, 19, 19, 45),
                         memo='SGGHU.EX(US8269922402) MERGED(Voluntary Offer Allocation)  WITH SGRH 1 FOR 1,US8269922576 562 FOR 10',
                         currency='USD', cash=Decimal('-107769.12'),
                         fiaccount=self.account, security=self.securities[2],
                         units=Decimal('19108')),
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 2, 19, 19, 45),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2015, 2, 19, 19, 45),
                         memo='SGGHU(US82670K1280) TENDERED TO US8269922402 1 FOR 1',
                         fiaccount=self.account, security=self.securities[1],
                         units=Decimal('34000'), fiaccountFrom=self.account,
                         securityFrom=self.securities[0],
                         unitsFrom=Decimal('-34000')),
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 2, 25, 20, 25),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2015, 2, 25, 20, 25),
                         memo='SGGHU.EX(US8269922402) MERGED(Voluntary Offer Allocation)  WITH SGRH 1 FOR 1,US8269922576 562 FOR 10',
                         fiaccount=self.account, security=self.securities[3],
                         units=Decimal('34000'), fiaccountFrom=self.account,
@@ -238,8 +240,7 @@ class BondMaturityTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Bond maturity processed as a trade
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2016, 6, 30, 20, 25),
-                        type=TransactionType.TRADE,
+            Trade(id=1, uniqueid="", datetime=datetime(2016, 6, 30, 20, 25),
                         memo='(US929CALLB67) BOND MATURITY FOR USD 1.00000000 PER BOND',
                         currency='USD', cash=Decimal('3'),
                         fiaccount=self.account, security=self.securities[0],
@@ -257,8 +258,7 @@ class DelistTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Delisting processed as a trade with zero proceeds
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2013, 10, 3, 20, 25),
-                        type=TransactionType.TRADE,
+            Trade(id=1, uniqueid="", datetime=datetime(2013, 10, 3, 20, 25),
                         memo='(US284CNT9952) DELISTED',
                         currency='USD', cash=Decimal('0'),
                         fiaccount=self.account, security=self.securities[0],
@@ -277,8 +277,7 @@ class ChangeSecurityTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # CUSIP change processed as transfer
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2010, 11, 30, 20, 25),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2010, 11, 30, 20, 25),
                         memo="EDCI(US2683151086) CUSIP/ISIN CHANGE TO (US2683152076)",
                         fiaccount=self.account, security=self.securities[1], units=Decimal('112833'),
                         fiaccountFrom=self.account, securityFrom=self.securities[0], unitsFrom=Decimal('-112833'),),
@@ -295,8 +294,7 @@ class OversubscribeTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Oversubscription processed as trade
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 11, 30, 19, 45),
-                        type=TransactionType.TRADE,
+            Trade(id=1, uniqueid="", datetime=datetime(2015, 11, 30, 19, 45),
                         memo='OVER SUBSCRIBE TPHS.OS (US89656D10OS) AT 6.00 USD',
                         currency='USD', cash=Decimal('-90000'),
                         fiaccount=self.account, security=self.securities[0], units=Decimal('15000')),
@@ -318,8 +316,7 @@ class RightsIssueTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Rights issue processed as spinoff
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 5, 13, 20, 25),
-                        type=TransactionType.SPINOFF,
+            Spinoff(id=1, uniqueid="", datetime=datetime(2015, 5, 13, 20, 25),
                         memo='AMP(ES0109260531) SUBSCRIBABLE RIGHTS ISSUE  1 FOR 1',
                         fiaccount=self.account, security=self.securities[0], units=Decimal('70576'),
                         securityFrom=self.securities[1],
@@ -338,8 +335,7 @@ class SplitWithCusipChangeTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Stock split with CUSIP change processed as transfer
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2016, 8, 8, 20, 25),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2016, 8, 8, 20, 25),
                         memo='VXX(US06742E7114) SPLIT 1 FOR 4',
                         fiaccount=self.account, security=self.securities[0], units=Decimal('-4250'),
                         fiaccountFrom=self.account, securityFrom=self.securities[1], unitsFrom=Decimal('17000'),),
@@ -356,8 +352,7 @@ class StockDividendTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Stock dividend processed as split (with numerator adjusted)
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2009, 12, 23, 20, 25),
-                        type=TransactionType.SPLIT,
+            Split(id=1, uniqueid="", datetime=datetime(2009, 12, 23, 20, 25),
                         memo='MFCAF(P64605101) STOCK DIVIDEND 1 FOR 11',
                         fiaccount=self.account, security=self.securities[0], units=Decimal('1090.909091'),
                         numerator=Decimal('12'), denominator=Decimal('11')),
@@ -378,8 +373,7 @@ class SpinoffTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     @property
     def persisted_txs(self):
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 6, 12, 20, 25),
-                        type=TransactionType.SPINOFF,
+            Spinoff(id=1, uniqueid="", datetime=datetime(2015, 6, 12, 20, 25),
                         memo='GYRO.NOTE(US403NOTE034) SPINOFF  1 FOR 40',
                         fiaccount=self.account, security=self.securities[0], units=Decimal('1837.125'),
                         securityFrom=self.securities[1],
@@ -398,8 +392,7 @@ class SubscribeRightsBadIsinToTestCase(CorpActXmlSnippetMixin, unittest.TestCase
     def persisted_txs(self):
         # Subscribe to rights treated as option exercise
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 11, 30, 19, 45),
-                        type=TransactionType.EXERCISE,
+            Exercise(id=1, uniqueid="", datetime=datetime(2015, 11, 30, 19, 45),
                         memo='TPHS.RTS (US8969940274) SUBSCRIBES TO ()',
                         currency='USD', cash=Decimal('-23034'),
                         fiaccount=self.account, security=self.securities[0], units=Decimal('3839'),
@@ -420,8 +413,7 @@ class MergerBadIsinFromTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     @property
     def persisted_txs(self):
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2013, 10, 4, 20, 25),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2013, 10, 4, 20, 25),
                         memo='AMP.RSTD(135893865) MERGED(Acquisition)  WITH AMP.REST 1 FOR 1',
                         fiaccount=self.account, security=self.securities[0], units=Decimal('70576'),
                         fiaccountFrom=self.account, securityFrom=self.securities[1], unitsFrom=Decimal('-70576'),
@@ -439,8 +431,7 @@ class CashMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # All-cash merger processed as trade
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2017, 3, 30, 20, 25),
-                        type=TransactionType.TRADE,
+            Trade(id=1, uniqueid="", datetime=datetime(2017, 3, 30, 20, 25),
                         memo='92CALLAB6(US92CALLAB67) MERGED(Partial Call)  FOR USD 1.00000000 PER SHARE',
                         currency='USD', cash=Decimal('1'),
                         fiaccount=self.account, security=self.securities[0], units=Decimal('-1')),
@@ -458,8 +449,7 @@ class KindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Merger in kind processed as transfer
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2017, 4, 12, 20, 25),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2017, 4, 12, 20, 25),
                         memo='TPHS.EX(US89656R10EX) MERGED(Voluntary Offer Allocation)  WITH US89656D1019 1 FOR 1',
                         fiaccount=self.account, security=self.securities[0], units=Decimal('2575'),
                         fiaccountFrom=self.account, securityFrom=self.securities[1], unitsFrom=Decimal('-2575'),
@@ -489,19 +479,16 @@ class CashKindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         return [
             #
             # Synthetic return of capital
-            Transaction(id=1, uniqueid="", datetime=datetime(2012, 4, 16, 20, 25),
+            ReturnOfCapital(id=1, uniqueid="", datetime=datetime(2012, 4, 16, 20, 25),
                         dtsettle=datetime(2012, 4, 16, 20, 25),
-                        type=TransactionType.RETURNCAP,
                         memo='DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000',
                         currency='USD', cash=Decimal('16.5'),
                         fiaccount=self.account, security=self.securities[0]),
-            Transaction(id=1, uniqueid="", datetime=datetime(2012, 4, 16, 20, 25),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2012, 4, 16, 20, 25),
                         memo='DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000',
                         fiaccount=self.account, security=self.securities[1], units=Decimal('17200.005'),
                         fiaccountFrom=self.account, securityFrom=self.securities[0], unitsFrom=Decimal('-150000')),
-            Transaction(id=1, uniqueid="", datetime=datetime(2012, 4, 16, 20, 25),
-                        type=TransactionType.SPINOFF,
+            Spinoff(id=1, uniqueid="", datetime=datetime(2012, 4, 16, 20, 25),
                         memo='DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000',
                         fiaccount=self.account, security=self.securities[2], units=Decimal('150000'),
                         securityFrom=self.securities[0],
@@ -520,8 +507,7 @@ class TenderTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         # Tender processed as transfer
         return [
-            Transaction(id=1, uniqueid="", datetime=datetime(2015, 9, 4, 19, 45),
-                        type=TransactionType.TRANSFER,
+            Transfer(id=1, uniqueid="", datetime=datetime(2015, 9, 4, 19, 45),
                         memo='NTP(G63907102) TENDERED TO G63990272 1 FOR 1',
                         fiaccount=self.account, security=self.securities[1], units=Decimal('60996'),
                         fiaccountFrom=self.account, securityFrom=self.securities[0], unitsFrom=Decimal('-60996'),),

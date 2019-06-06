@@ -75,76 +75,127 @@ UNITS_RESOLUTION = Decimal("0.001")
 #######################################################################################
 # DATA MODEL
 #######################################################################################
-
-# FIXME - decoupling the Transaction model from the SQL version to implement various
-# transactions as separate types, rather than setting the Transaction.type field, would
-# tighten up the typing in this module quite a bit, letting us get rid of the optional
-# typing and default None values below.
-# However, this would also require an overhaul of CSV.local (reporting).
-class Transaction(NamedTuple):
-    """
-    A change to a securities position.
-
-    Persistent SQL implementation of this model in capgains.models.transactions
-    """
-
+class Trade(NamedTuple):
     id: int
     uniqueid: str
     datetime: _datetime.datetime
-    type: transactions.TransactionType
     fiaccount: Any
     security: Any
+    cash: Decimal
+    currency: str
+    units: Decimal
     dtsettle: Optional[_datetime.datetime] = None
     memo: Optional[str] = None
-    currency: Optional[str] = None
-    cash: Optional[Decimal] = None
-    units: Optional[Decimal] = None
-    securityPrice: Optional[Decimal] = None
-    fiaccountFrom: Optional[Any] = None
-    securityFrom: Optional[Any] = None
-    unitsFrom: Optional[Decimal] = None
-    securityFromPrice: Optional[Decimal] = None
-    numerator: Optional[Decimal] = None
-    denominator: Optional[Decimal] = None
     # sort's type is actually Optional[SortType], but mypy chokes on recursion
     sort: Optional[Mapping[str, Union[bool, Callable[[Any], Tuple]]]] = None
 
 
-Transaction.id.__doc__ = "Local transaction unique identifer (database PK)"
-Transaction.uniqueid.__doc__ = "FI transaction unique identifier"
-Transaction.datetime.__doc__ = "Effective date/time (ex-date for distributions)"
-Transaction.dtsettle.__doc__ = "For cash distributions: payment date"
-Transaction.type.__doc__ = (
-    "A transactions.TransactionType enum, i.e. one of "
-    "(RETURNCAP, SPLIT, SPINOFF, TRANSFER, TRADE, EXERCISE)"
-)
-Transaction.memo.__doc__ = "Transaction notes"
-Transaction.currency.__doc__ = "Currency denomination of Transaction.cash (ISO 4217)"
-Transaction.cash.__doc__ = "Change in money amount"
-Transaction.fiaccount.__doc__ = "Financial institution (e.g. brokerage) account"
-Transaction.security.__doc__ = "Security or other asset"
-Transaction.units.__doc__ = "Change in Security quantity"
-Transaction.fiaccountFrom.__doc__ = "For transfers: source FI account"
-Transaction.securityFrom.__doc__ = "For transfers, spinoffs, exercise: source Security"
-Transaction.unitsFrom.__doc__ = (
-    "For splits, transfers, exercise: change in source Security quantity"
-)
-Transaction.securityPrice.__doc__ = (
-    "For spinoffs: FMV of destination Security post-spin"
-)
-Transaction.securityFromPrice.__doc__ = "For spinoffs: FMV of source security post-spin"
-Transaction.numerator.__doc__ = (
-    "For splits, spinoffs: normalized units of destination Security"
-)
-Transaction.denominator.__doc__ = (
-    "For splits, spinoff: normalized units of source Security"
-)
-Transaction.sort.__doc__ = "Sort algorithm for gain recognition"
+Trade.cash.__doc__ = "Change in money amount"
+Trade.currency.__doc__ = "Currency denomination of cash (ISO 4217)"
+Trade.units.__doc__ = "Change in security quantity"
+Trade.dtsettle.__doc__ = "Settlement date/time"
+Trade.sort.__doc__ = "Sort algorithm for gain recognition"
+
+
+class ReturnOfCapital(NamedTuple):
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    cash: Decimal
+    currency: str
+    memo: Optional[str] = None
+    dtsettle: Optional[_datetime.datetime] = None
+
+
+ReturnOfCapital.cash.__doc__ = "Total amount of distribution"
+ReturnOfCapital.currency.__doc__ = "Currency denomination of distribution (ISO 4217)"
+ReturnOfCapital.dtsettle.__doc__ = "Payment date for distribution"
+
+
+class Split(NamedTuple):
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    numerator: Decimal
+    denominator: Decimal
+    units: Decimal
+    memo: Optional[str] = None
+
+
+Split.numerator.__doc__ = "Normalized units of post-split security"
+Split.denominator.__doc__ = "Normalized units of pre-slit security"
+Split.units.__doc__ = "Change in security quantity"
+
+
+class Transfer(NamedTuple):
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    units: Decimal
+    fiaccountFrom: Any
+    securityFrom: Any
+    unitsFrom: Decimal
+    memo: Optional[str] = None
+
+
+Transfer.units.__doc__ = "Change in destination security quantity"
+Transfer.fiaccountFrom.__doc__ = "Source FI account"
+Transfer.securityFrom.__doc__ = "Source security"
+Transfer.unitsFrom.__doc__ = "Change in source security quantity"
+
+
+class Spinoff(NamedTuple):
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    units: Decimal
+    numerator: Decimal
+    denominator: Decimal
+    securityFrom: Any
+    memo: Optional[str] = None
+    securityPrice: Optional[Decimal] = None
+    securityFromPrice: Optional[Decimal] = None
+
+
+Spinoff.units.__doc__ = "Change in destination security quantity"
+Spinoff.numerator.__doc__ = "Normalized units of destination security"
+Spinoff.denominator.__doc__ = "Normalized units of source security"
+Spinoff.securityFrom.__doc__ = "Source security"
+Spinoff.securityPrice.__doc__ = "FMV of destination security post-spin"
+Spinoff.securityFromPrice.__doc__ = "FMV of source security post-spin"
+
+
+class Exercise(NamedTuple):
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    units: Decimal
+    cash: Decimal
+    currency: str
+    securityFrom: Any
+    unitsFrom: Decimal
+    memo: Optional[str] = None
+
+
+Exercise.units.__doc__ = "Change in destination security quantity"
+Exercise.cash.__doc__ = "Cash paid for exercise"
+Exercise.securityFrom.__doc__ = "Source security"
+Exercise.unitsFrom.__doc__ = "Change in source security quantity"
 
 
 #  Type alias involving Transaction must be defined after Transaction itself,
 #  else mypy chokes on the recursive definition.
-TransactionType = Union[Transaction, transactions.Transaction]
+TransactionType = Union[Trade, ReturnOfCapital, Split, Transfer, Spinoff, Exercise]
 
 
 class Lot(NamedTuple):
@@ -166,8 +217,7 @@ Lot.currency.__doc__ = "Currency denomination of cost price"
 
 class Gain(NamedTuple):
     """
-    Binds realizing Transaction to a Lot
-    (and indirectly its opening Transaction)
+    Binds realizing Transaction to a Lot (and indirectly its opening Transaction)
     """
 
     lot: Lot
@@ -205,21 +255,21 @@ class Portfolio(defaultdict):
         """
 
         handlers = {
-            transactions.TransactionType.RETURNCAP: self.returnofcapital,
-            transactions.TransactionType.SPLIT: self.split,
-            transactions.TransactionType.SPINOFF: self.spinoff,
-            transactions.TransactionType.TRANSFER: self.transfer,
-            transactions.TransactionType.TRADE: self.trade,
-            transactions.TransactionType.EXERCISE: self.exercise,
+            ReturnOfCapital: self.returnofcapital,
+            Split: self.split,
+            Spinoff: self.spinoff,
+            Transfer: self.transfer,
+            Trade: self.trade,
+            Exercise: self.exercise,
         }
 
-        handler = handlers[transaction.type]
+        handler = handlers[type(transaction)]  # type: ignore
         gains = handler(transaction, sort=sort or transaction.sort)  # type: ignore
         return gains
 
     def trade(
         self,
-        transaction: TransactionType,
+        transaction: Trade,
         opentransaction: Optional[TransactionType] = None,
         createtransaction: Optional[TransactionType] = None,
         sort: Optional["SortType"] = None,
@@ -236,10 +286,6 @@ class Portfolio(defaultdict):
         ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
         used to order Lots when closing them.
         """
-        assert isinstance(transaction.units, Decimal)
-        assert isinstance(transaction.cash, Decimal)
-        assert isinstance(transaction.currency, str)
-
         if transaction.units == 0:
             raise ValueError(f"units can't be zero: {transaction}")
 
@@ -271,15 +317,13 @@ class Portfolio(defaultdict):
             for lot in lots_closed
         ]
 
-    def returnofcapital(self, transaction: TransactionType, sort=None) -> List[Gain]:
+    def returnofcapital(self, transaction: ReturnOfCapital, sort=None) -> List[Gain]:
         """
         Apply cash to reduce cost basis of long position as of Transaction.datetime;
         realize Gain on Lots where cash proceeds exceed cost basis.
 
         ``sort`` is in the argument signature for applyTransaction(), but unused.
         """
-        assert isinstance(transaction.cash, Decimal)
-
         pocket = (transaction.fiaccount, transaction.security)
         position = self[pocket]
 
@@ -309,16 +353,12 @@ class Portfolio(defaultdict):
         self[pocket] = list(basisReduced) + list(unaffected)
         return [gain for gain in gains if gain is not None]
 
-    def split(self, transaction: TransactionType, sort=None) -> List[Gain]:
+    def split(self, transaction: Split, sort=None) -> List[Gain]:
         """
         Increase/decrease Lot units without affecting basis or realizing Gain.
 
         ``sort`` is in the argument signature for applyTransaction(), but unused.
         """
-        assert isinstance(transaction.numerator, Decimal)
-        assert isinstance(transaction.denominator, Decimal)
-        assert isinstance(transaction.units, Decimal)
-
         splitRatio = transaction.numerator / transaction.denominator
 
         pocket = (transaction.fiaccount, transaction.security)
@@ -360,7 +400,7 @@ class Portfolio(defaultdict):
         return []
 
     def transfer(
-        self, transaction: TransactionType, sort: Optional["SortType"] = None
+        self, transaction: Transfer, sort: Optional["SortType"] = None
     ) -> List[Gain]:
         """
         Move Lots from one Position to another, maybe changing Security/units.
@@ -368,9 +408,6 @@ class Portfolio(defaultdict):
         ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
         used to order Lots when closing them.
         """
-        assert isinstance(transaction.units, Decimal)
-        assert isinstance(transaction.unitsFrom, Decimal)
-
         if transaction.units * transaction.unitsFrom >= 0:
             msg = f"units and unitsFrom aren't oppositely signed in {transaction}"
             raise ValueError(msg)
@@ -409,7 +446,7 @@ class Portfolio(defaultdict):
         return list(itertools.chain.from_iterable(gains))
 
     def spinoff(
-        self, transaction: TransactionType, sort: Optional["SortType"] = None
+        self, transaction: Spinoff, sort: Optional["SortType"] = None
     ) -> List[Gain]:
         """
         Remove cost from position to create a new position, preserving
@@ -470,7 +507,7 @@ class Portfolio(defaultdict):
         return list(itertools.chain.from_iterable(gains))
 
     def exercise(
-        self, transaction: TransactionType, sort: Optional["SortType"] = None
+        self, transaction: Exercise, sort: Optional["SortType"] = None
     ) -> List[Gain]:
         """
         Exercise an option.
@@ -478,10 +515,6 @@ class Portfolio(defaultdict):
         ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
         used to order Lots when closing them.
         """
-        assert isinstance(transaction.units, Decimal)
-        assert isinstance(transaction.unitsFrom, Decimal)
-        assert isinstance(transaction.cash, Decimal)
-
         unitsFrom = transaction.unitsFrom
 
         pocketFrom = (transaction.fiaccount, transaction.securityFrom)
@@ -558,11 +591,10 @@ class Portfolio(defaultdict):
 
         # FIXME - We need a Transaction.id for self.trade() to set
         # Lot.createtxid, but "id=transaction.id" is problematic.
-        trade = Transaction(
+        trade = Trade(
             id=transaction.id,
             uniqueid=transaction.uniqueid,
             datetime=transaction.datetime,
-            type=transactions.TransactionType.TRADE,
             memo=transaction.memo,
             currency=lot.currency,
             cash=-costBasis,

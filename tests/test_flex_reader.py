@@ -24,6 +24,7 @@ from capgains.flex import parser
 from capgains.flex.parser import (CorporateAction, )
 from capgains.models.transactions import (Security, Transaction, TransactionType)
 from capgains.ofx.reader import OfxStatementReader
+from capgains.inventory import ReturnOfCapital
 
 from common import (
     setUpModule,
@@ -339,11 +340,11 @@ class CashTransactionWithFilterCancelTestCase(CashTransactionXmlSnippetMixin, un
         # 3rd CashTransaction cancels 2nd CashTransaction, leaving the last
         # CashTransaction to be persisted.
         return [
-            Transaction(datetime=datetime(2016, 4, 13), dtsettle=datetime(2016, 4, 13),
-                        type=TransactionType.RETURNCAP,
-                        memo='RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)',
-                        currency='USD', cash=Decimal('139000'),
-                        fiaccount=self.account, security=self.securities[0]),
+            ReturnOfCapital(id=None, uniqueid=None,
+                            datetime=datetime(2016, 4, 13), dtsettle=datetime(2016, 4, 13),
+                            memo='RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)',
+                            currency='USD', cash=Decimal('139000'),
+                            fiaccount=self.account, security=self.securities[0]),
         ]
 
 

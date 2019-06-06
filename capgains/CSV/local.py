@@ -536,7 +536,10 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
 
     if lot.currency != functional_currency:
         opentx = lot.opentransaction
-        dtsettle = opentx.dtsettle or opentx.datetime
+        if hasattr(opentx, "dtsettle") and opentx.dtsettle:
+            dtsettle = opentx.dtsettle
+        else:
+            dtsettle = opentx.datetime
         date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
         exchange_rate = CurrencyRate.get_rate(
             session,
