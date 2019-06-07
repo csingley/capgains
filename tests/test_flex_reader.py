@@ -9,10 +9,6 @@ from decimal import Decimal
 import os
 
 
-# 3rd party imports
-from sqlalchemy import create_engine
-
-
 # local imports
 from capgains.flex import reader
 from capgains.flex.reader import FlexStatementReader, ParsedCorpAct
@@ -20,7 +16,7 @@ from capgains.flex.reader import FlexStatementReader, ParsedCorpAct
 from capgains.config import CONFIG
 from capgains.flex import parser
 from capgains.flex.parser import CorporateAction
-from capgains.models.transactions import Security, Transaction, TransactionType
+from capgains import models
 from capgains.ofx.reader import OfxStatementReader
 from capgains.inventory import ReturnOfCapital
 
@@ -99,7 +95,7 @@ class ReadTestCase(unittest.TestCase):
     def testReadCurrencyRates(self):
         pass
 
-    @patch.object(Security, "merge", wraps=lambda session, **sec: sec)
+    @patch.object(models.Security, "merge", wraps=lambda session, **sec: sec)
     def testReadSecurities(self, mock_security_merge_method):
         sec0 = parser.Security(
             uniqueidtype=sentinel.cusip,
@@ -1158,7 +1154,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             mock_merge_transaction_method.mock_calls,
             [
                 call(
-                    type=TransactionType.TRANSFER,
+                    type=models.TransactionType.TRANSFER,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid1,
                     datetime=sentinel.dttrade1,
@@ -1212,7 +1208,7 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
             mock_merge_transaction_method.mock_calls,
             [
                 call(
-                    type=TransactionType.SPLIT,
+                    type=models.TransactionType.SPLIT,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid,
                     datetime=sentinel.dttrade,
@@ -1256,7 +1252,7 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
             mock_merge_transaction_method.mock_calls,
             [
                 call(
-                    type=TransactionType.SPLIT,
+                    type=models.TransactionType.SPLIT,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid,
                     datetime=sentinel.dttrade,
@@ -1303,7 +1299,7 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
             mock_merge_transaction_method.mock_calls,
             [
                 call(
-                    type=TransactionType.SPINOFF,
+                    type=models.TransactionType.SPINOFF,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid,
                     datetime=sentinel.dttrade,

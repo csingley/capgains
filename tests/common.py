@@ -118,10 +118,10 @@ class OfxSnippetMixin(RollbackMixin):
         cls.reader = cls.readerclass(cls.session)
 
         # Manually set up fake account; save copy as class attribute.
-        cls.fi = models.transactions.Fi.merge(
+        cls.fi = models.Fi.merge(
             cls.session, brokerid="4705", name="Dewey Cheatham & Howe"
         )
-        cls.account = models.transactions.FiAccount.merge(
+        cls.account = models.FiAccount.merge(
             cls.session, fi=cls.fi, number="5678", name="Test"
         )
 
@@ -131,7 +131,7 @@ class OfxSnippetMixin(RollbackMixin):
         for tx in cls.parsed_txs:
             uniqueidtype = tx.uniqueidtype
             uniqueid = tx.uniqueid
-            sec = models.transactions.Security.merge(
+            sec = models.Security.merge(
                 cls.session, uniqueidtype=uniqueidtype, uniqueid=uniqueid
             )
             cls.reader.securities[(uniqueidtype, uniqueid)] = sec
@@ -156,10 +156,10 @@ class XmlSnippetMixin(RollbackMixin):
     def setUpClass(cls):
         super(XmlSnippetMixin, cls).setUpClass()
         # Manually set up fake account; save copy as class attribute.
-        cls.fi = models.transactions.Fi.merge(
+        cls.fi = models.Fi.merge(
             cls.session, brokerid="4705", name="Dewey Cheatham & Howe"
         )
-        cls.account = models.transactions.FiAccount.merge(
+        cls.account = models.FiAccount.merge(
             cls.session, fi=cls.fi, number="5678", name="Test"
         )
 
@@ -185,7 +185,7 @@ class XmlSnippetMixin(RollbackMixin):
         for tx in xml_items:
             conid = tx["conid"]
             ticker = tx["symbol"]
-            sec = models.transactions.Security.merge(
+            sec = models.Security.merge(
                 cls.session, ticker=ticker, uniqueidtype="CONID", uniqueid=conid
             )
             cls.reader.securities[("CONID", conid)] = sec
@@ -201,10 +201,7 @@ class XmlSnippetMixin(RollbackMixin):
                 assert type(extra_securities) in (list, tuple)
                 for extra_security in extra_securities:
                     cls.securities.append(
-                        models.transactions.Security.merge(
-                            cls.session, **extra_security
-                        )
-                    )
+                        models.Security.merge(cls.session, **extra_security))
 
     def testEndToEnd(self):
         main_fn = getattr(self.reader, self.txs_entry_point)
@@ -213,12 +210,12 @@ class XmlSnippetMixin(RollbackMixin):
         # Don't order_by() Transaction.type, b/c this sort differently
         # under e.g. sqlite (alpha by string) vs. postgresql (enum order)
         txs = (
-            self.session.query(models.transactions.Transaction)
+            self.session.query(models.Transaction)
             .order_by(
-                models.transactions.Transaction.datetime,
-                models.transactions.Transaction.memo,
-                models.transactions.Transaction.cash,
-                models.transactions.Transaction.units,
+                models.Transaction.datetime,
+                models.Transaction.memo,
+                models.Transaction.cash,
+                models.Transaction.units,
             )
             .all()
         )

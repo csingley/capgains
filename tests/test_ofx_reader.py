@@ -4,7 +4,6 @@
 # stdlib imports
 import unittest
 from unittest.mock import patch
-import os
 from datetime import datetime
 from decimal import Decimal
 
@@ -17,7 +16,7 @@ import ofxtools
 # local imports
 from capgains.config import CONFIG
 from capgains.ofx.reader import OfxStatementReader, CashTransaction
-from capgains.models.transactions import (
+from capgains.models import (
     Fi,
     FiAccount,
     Security,

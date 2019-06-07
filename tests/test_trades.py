@@ -7,7 +7,7 @@ from decimal import Decimal
 
 
 # local imports
-from capgains.models.transactions import TransactionType
+from capgains.models import TransactionType
 from capgains.inventory import Trade
 from common import setUpModule, tearDownModule, XmlSnippetMixin
 

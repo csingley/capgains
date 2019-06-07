@@ -10,12 +10,8 @@ from decimal import Decimal
 
 
 # local imports
-from capgains.config import CONFIG
 from capgains.ofx.ibkr import OfxStatementReader
-from capgains.models.transactions import (
-    Fi,
-    FiAccount,
-    Security,
+from capgains.models import (
     Transaction,
     TransactionType,
 )

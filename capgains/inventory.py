@@ -62,7 +62,7 @@ from typing import (
 
 
 # local imports
-from capgains import utils
+from capgains import models, utils
 
 
 class InventoryError(Exception):
@@ -73,11 +73,11 @@ class Inconsistent(InventoryError):
     """Exception raised when a Position's state is inconsistent with Transaction.
 
     Args:
-        transaction: 
+        transaction:
         msg:
 
     Attributes:
-        transaction: 
+        transaction:
         msg:
     """
 
@@ -229,7 +229,9 @@ Exercise.unitsFrom.__doc__ = "Change in source security quantity"
 
 #  Type alias involving Transaction must be defined after Transaction itself,
 #  else mypy chokes on the recursive definition.
-TransactionType = Union[Trade, ReturnOfCapital, Split, Transfer, Spinoff, Exercise]
+TransactionType = Union[
+    Trade, ReturnOfCapital, Split, Transfer, Spinoff, Exercise, models.Transaction
+]
 
 
 class Lot(NamedTuple):
@@ -296,7 +298,7 @@ class Portfolio(defaultdict):
 
 @functools.singledispatch
 def book(
-    transaction: TransactionType,
+    transaction,
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
     opentransaction: Optional[TransactionType] = None,
@@ -309,8 +311,34 @@ def book(
 
 
 @book.register
+def book_model(
+    transaction: models.Transaction,
+    portfolio: PortfolioType,
+    sort: Optional["SortType"] = None,
+    opentransaction: Optional[TransactionType] = None,
+    createtransaction: Optional[TransactionType] = None,
+) -> List[Gain]:
+    """
+    Dispatch to handler function on models.Transaction.type value.
+    """
+    handlers = {
+        models.TransactionType.RETURNCAP: returnofcapital,
+        models.TransactionType.SPLIT: split,
+        models.TransactionType.SPINOFF: spinoff,
+        models.TransactionType.TRANSFER: transfer,
+        models.TransactionType.TRADE: trade,
+        models.TransactionType.EXERCISE: exercise,
+    }
+    handler = handlers[transaction.type]
+    gains = handler(  # type: ignore
+        transaction, portfolio, sort, opentransaction, createtransaction
+    )
+    return gains  # type: ignore
+
+
+@book.register(Trade)
 def trade(
-    transaction: Trade,
+    transaction: Union[Trade, models.Transaction],
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
     opentransaction: Optional[TransactionType] = None,
@@ -360,9 +388,9 @@ def trade(
     ]
 
 
-@book.register
+@book.register(ReturnOfCapital)
 def returnofcapital(
-    transaction: ReturnOfCapital,
+    transaction: Union[ReturnOfCapital, models.Transaction],
     portfolio: PortfolioType,
     sort=None,
     opentransaction: Optional[TransactionType] = None,
@@ -404,9 +432,9 @@ def returnofcapital(
     return [gain for gain in gains if gain is not None]
 
 
-@book.register
+@book.register(Split)
 def split(
-    transaction: Split,
+    transaction: Union[Split, models.Transaction],
     portfolio: PortfolioType,
     sort=None,
     opentransaction: Optional[TransactionType] = None,
@@ -458,9 +486,9 @@ def split(
     return []
 
 
-@book.register
+@book.register(Transfer)
 def transfer(
-    transaction: Transfer,
+    transaction: Union[Transfer, models.Transaction],
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
     opentransaction: Optional[TransactionType] = None,
@@ -510,9 +538,9 @@ def transfer(
     return list(itertools.chain.from_iterable(gains))
 
 
-@book.register
+@book.register(Spinoff)
 def spinoff(
-    transaction: Spinoff,
+    transaction: Union[Spinoff, models.Transaction],
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
     opentransaction: Optional[TransactionType] = None,
@@ -577,9 +605,9 @@ def spinoff(
     return list(itertools.chain.from_iterable(gains))
 
 
-@book.register
+@book.register(Exercise)
 def exercise(
-    transaction: Exercise,
+    transaction: Union[Exercise, models.Transaction],
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
     opentransaction: Optional[TransactionType] = None,

@@ -7,7 +7,7 @@ import unittest
 
 # local imports
 from capgains.config import CONFIG
-from capgains.models.transactions import (
+from capgains.models import (
     Fi,
     FiAccount,
     Security,

@@ -16,7 +16,7 @@ import ofxtools
 # local imports
 from capgains.config import CONFIG
 from capgains.ofx.scottrade import OfxStatementReader
-from capgains.models.transactions import (
+from capgains.models import (
     Fi,
     FiAccount,
     Security,

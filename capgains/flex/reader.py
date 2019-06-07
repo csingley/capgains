@@ -511,7 +511,7 @@ class FlexStatementReader(OfxStatementReader):
             uniqueidtype = "CUSIP"
             # Also do ISIN; why not?
             isin = cusip2isin(uniqueid)
-            sec = Security.merge(
+            sec = models.Security.merge(
                 self.session,
                 uniqueidtype="ISIN",
                 uniqueid=isin,

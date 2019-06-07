@@ -35,6 +35,7 @@ class ModelError(Exception):
     pass
 
 
+@enum.unique
 class TransactionType(enum.Enum):
     # Postgres sorts Enums by listed order of type definition
     # To ensure reorgs get processed correctly, trade & transfer
@@ -47,6 +48,7 @@ class TransactionType(enum.Enum):
     EXERCISE = 6
 
 
+@enum.unique
 class TransactionSort(enum.Enum):
     FIFO = 1
     LIFO = 2

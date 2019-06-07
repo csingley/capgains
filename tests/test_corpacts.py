@@ -18,7 +18,6 @@ from capgains.inventory import (
     Spinoff,
     Exercise,
 )
-from capgains.models.transactions import TransactionType
 from common import setUpModule, tearDownModule, XmlSnippetMixin
 
 
