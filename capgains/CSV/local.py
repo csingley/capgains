@@ -8,14 +8,22 @@ to & from CSV files.
 # stdlib imports
 import csv
 from decimal import Decimal, ROUND_HALF_UP
+import datetime as _datetime
 from datetime import datetime, date, timedelta
 import functools
 import itertools
-from typing import NamedTuple, Any
+from typing import Tuple, NamedTuple, Sequence, Mapping, Callable, Any, Union, Optional
 
 
 # local imports
 from capgains import models, inventory, CONFIG
+
+
+PocketType = Tuple[models.FiAccount, models.Security]
+PositionType = Sequence[inventory.Lot]
+PortfolioType = Mapping[PocketType, PositionType]
+CsvDictRowRead = Mapping[str, Optional[str]]
+CsvDictRowWrite = Mapping[str, Union[None, str, Decimal, datetime, bool]]
 
 
 class CsvTransactionReader(csv.DictReader):
@@ -26,63 +34,79 @@ class CsvTransactionReader(csv.DictReader):
     def read(self):
         return [self.read_row(row) for row in self]
 
-    def read_row(self, row):
+    def read_row(self, row: Mapping[str, Optional[str]]) -> models.Transaction:
         row = {k: v or None for k, v in row.items()}
-
-        self._convert_account(row, "fiaccount", "fiaccount")
-        self._convert_account(row, "fiaccountfrom", "fiaccountFrom")
-        self._convert_security(row, "security", "security")
-        self._convert_security(row, "securityfrom", "securityFrom")
-
-        datetimes = (("datetime", "datetime"), ("dtsettle", "dtsettle"))
-        for fromAttr, toAttr in datetimes:
-            self._convert_item(
-                row,
-                fromAttr,
-                toAttr,
-                lambda dt: datetime.strptime(dt, "%Y-%m-%dT%H:%M:%S"),
-            )
-
-        decimals = (
-            ("securityprice", "securityPrice"),
-            ("unitsfrom", "unitsFrom"),
-            ("securityfromprice", "securityFromPrice"),
-            ("numerator", "numerator"),
-            ("denominator", "denominator"),
-            ("cash", "cash"),
-            ("units", "units"),
-        )
-
-        for fromAttr, toAttr in decimals:
-            self._convert_item(row, fromAttr, toAttr, Decimal)
-
-        transaction = models.Transaction.merge(self.session, **row)
-        return transaction
-
-    def _convert_item(self, row, fromAttr, toAttr, fn):
-        value = row.pop(fromAttr)
-        if value is not None:
-            value = fn(value)
-        row[toAttr] = value
-
-    def _convert_account(self, row, fromAttr, toAttr):
         attrs = {
-            attr: row.pop("_".join((fromAttr, attr))) for attr in ("brokerid", "number")
+            attr: converter(row, attr) for attr, converter in self.converters.items()
         }
-        if attrs["brokerid"] is not None:
-            row[toAttr] = models.FiAccount.merge(self.session, **attrs)
-        else:
-            row[toAttr] = None
+        return models.Transaction.merge(self.session, **attrs)
 
-    def _convert_security(self, row, fromAttr, toAttr):
+    def convertString(self, row: CsvDictRowRead, attr: str) -> Optional[str]:
+        return row[attr.lower()] or None
+
+    def convertDecimal(self, row: CsvDictRowRead, attr: str) -> Decimal:
+        return self._convertItem(row, attr, Decimal)
+
+    def convertDatetime(self, row: CsvDictRowRead, attr: str) -> datetime:
+        return self._convertItem(row, attr, datetime.fromisoformat)
+
+    def convertType(self, row: CsvDictRowRead, attr: str) -> models.TransactionType:
+        return getattr(models.TransactionType, attr)
+
+    def convertSort(self, row: CsvDictRowRead, attr: str) -> models.TransactionSort:
+        return getattr(models.TransactionSort, attr)
+
+    def convertAccount(
+        self, row: CsvDictRowRead, attr: str
+    ) -> Optional[models.FiAccount]:
+        value = None
+        csv_attr = attr.lower()
+        attrs = {att: row["_".join((csv_attr, att))] for att in ("brokerid", "number")}
+        if attrs["brokerid"] is not None:
+            value = models.FiAccount.merge(self.session, **attrs)
+
+        return value
+
+    def convertSecurity(
+        self, row: CsvDictRowRead, attr: str
+    ) -> Optional[models.Security]:
+        value = None
+        csv_attr = attr.lower()
         attrs = {
-            attr: row.pop("_".join((fromAttr, attr)))
-            for attr in ("uniqueidtype", "uniqueid", "ticker", "name")
+            att: row["_".join((csv_attr, att))]
+            for att in ("uniqueidtype", "uniqueid", "ticker", "name")
         }
         if attrs["uniqueidtype"] is not None:
-            row[toAttr] = models.Security.merge(self.session, **attrs)
-        else:
-            row[toAttr] = None
+            value = models.Security.merge(self.session, **attrs)
+
+        return value
+
+    def _convertItem(self, row: CsvDictRowRead, attr: str, fn: Callable) -> Any:
+        value = row[attr.lower()]
+        if value is not None:
+            value = fn(value)
+        return value
+
+    converters = {
+        "uniqueid": convertString,
+        "datetime": convertDatetime,
+        "dtsettle": convertDatetime,
+        "type": convertType,
+        "memo": convertString,
+        "currency": convertString,
+        "cash": convertDecimal,
+        "fiaccount": convertAccount,
+        "security": convertSecurity,
+        "units": convertDecimal,
+        "securityPrice": convertDecimal,
+        "fiaccountFrom": convertAccount,
+        "securityFrom": convertSecurity,
+        "unitsFrom": convertDecimal,
+        "securityFromPrice": convertDecimal,
+        "numerator": convertDecimal,
+        "denominator": convertDecimal,
+        "sort": convertSort,
+    }
 
 
 class CsvTransactionWriter(csv.DictWriter):
@@ -123,86 +147,77 @@ class CsvTransactionWriter(csv.DictWriter):
             csvfile, self.csvFields, delimiter=",", quoting=csv.QUOTE_NONNUMERIC
         )
 
-    def writerows(self, transactions):
+    def writerows(  # type: ignore
+        self, transactions: Sequence[models.Transaction]
+    ) -> None:
         """ """
         for transaction in transactions:
             # Mandatory fields
-            row = {
-                "uniqueid": transaction.uniqueid,
-                "datetime": transaction.datetime.isoformat(),
-                "type": transaction.type,
-            }
-
-            account = transaction.fiaccount
-            row.update(
-                {
-                    "fiaccount_brokerid": account.fi.brokerid,
-                    "fiaccount_number": account.number,
-                }
-            )
-
-            security = transaction.security
-            # Prefer any uniqueidtype other than `TICKER`
-            security_ids = sorted(
-                security.ids, key=lambda x: x.uniqueidtype.lower() == "ticker"
-            )
-            security_id = security_ids[0]
-            security_uniqueidtype = security_id.uniqueidtype
-            security_uniqueid = security_id.uniqueid
-            security_ticker = security.ticker
-            security_name = security.name
-            row.update(
-                {
-                    "security_uniqueidtype": security_uniqueidtype,
-                    "security_uniqueid": security_uniqueid,
-                    "security_ticker": security_ticker,
-                    "security_name": security_name,
-                }
-            )
-
-            # Optional fields that can be taken as-is
-            row.update(
-                {
-                    "memo": transaction.memo,
-                    "currency": transaction.currency,
-                    "cash": transaction.cash,
-                    "units": transaction.units,
-                    "securityprice": transaction.securityPrice,
-                    "unitsfrom": transaction.unitsFrom,
-                    "securityfromprice": transaction.securityFromPrice,
-                    "numerator": transaction.numerator,
-                    "denominator": transaction.denominator,
-                    "sort": transaction.sort,
-                }
-            )
-
-            # Optional fields needing preprocessing
-            accountFrom = transaction.fiaccountFrom
-            if accountFrom is not None:
-                row.update(
-                    {
-                        "fiaccountfrom_brokerid": accountFrom.fi.brokerid,
-                        "fiaccountfrom_number": accountFrom.number,
-                    }
-                )
-
-            securityFrom = transaction.securityFrom
-            if securityFrom is not None:
-                securityfrom_id = securityFrom.ids[0]
-                securityfrom_uniqueidtype = securityfrom_id.uniqueidtype
-                securityfrom_uniqueid = securityfrom_id.uniqueid
-                securityfrom_ticker = securityFrom.ticker
-                securityfrom_name = securityFrom.name
-                row.update(
-                    {
-                        "securityfrom_uniqueidtype": securityfrom_uniqueidtype,
-                        "securityfrom_uniqueid": securityfrom_uniqueid,
-                        "securityfrom_ticker": securityfrom_ticker,
-                        "securityfrom_name": securityfrom_name,
-                    }
-                )
-
+            row = self.unconvert(transaction)
             self.writerow(row)
+
+    def unconvert(self, transaction: models.Transaction) -> CsvDictRowWrite:
+        row = {
+            "uniqueid": transaction.uniqueid,
+            "datetime": transaction.datetime.isoformat(),
+            "type": transaction.type.name,
+            "memo": transaction.memo,
+            "currency": transaction.currency,
+            "cash": transaction.cash,
+            "units": transaction.units,
+            "securityprice": transaction.securityPrice,
+            "unitsfrom": transaction.unitsFrom,
+            "securityfromprice": transaction.securityFromPrice,
+            "numerator": transaction.numerator,
+            "denominator": transaction.denominator,
+        }
+        row.update(self.unconvert_account(transaction, "fiaccount", required=True))
+        row.update(self.unconvert_security(transaction, "security", required=True))
+        row.update(self.unconvert_account(transaction, "fiaccountFrom"))
+        row.update(self.unconvert_security(transaction, "securityFrom"))
+
+        sort = transaction.sort
+        if sort is not None:
+            row.update({"sort": sort.name})
+
+        return row
+
+    def unconvert_account(
+        self, transaction: models.Transaction, attr: str, required: bool = False
+    ) -> Mapping[str, str]:
+        account = getattr(transaction, attr)
+        if account is None:
+            if required:
+                raise ValueError(f"Empty {attr} in {transaction}")
+            return {}
+        csv_attr = attr.lower()
+        return {
+            f"{csv_attr}_brokerid": account.fi.brokerid,
+            f"{csv_attr}_number": account.number,
+        }
+
+    def unconvert_security(
+        self, transaction: models.Transaction, attr: str, required: bool = False
+    ) -> Mapping[str, str]:
+        security = getattr(transaction, attr)
+        if security is None:
+            if required:
+                raise ValueError(f"Empty {attr} in {transaction}")
+            return {}
+
+        # Prefer any uniqueidtype other than `TICKER`
+        security_ids = sorted(
+            security.ids, key=lambda x: x.uniqueidtype.lower() == "ticker"
+        )
+        security_id = security_ids[0]
+
+        csv_attr = attr.lower()
+        return {
+            f"{csv_attr}_uniqueidtype": security_id.uniqueidtype,
+            f"{csv_attr}_uniqueid": security_id.uniqueid,
+            f"{csv_attr}_ticker": security.ticker,
+            f"{csv_attr}_name": security.name,
+        }
 
 
 class CsvLotReader(csv.DictReader):
@@ -284,60 +299,67 @@ class CsvLotWriter(csv.DictWriter):
             csvfile, fieldnames, delimiter=",", quoting=csv.QUOTE_NONNUMERIC
         )
 
-    def writerows(self, portfolio, consolidate=False):
+    def writerows(  # type: ignore
+        self, portfolio: PortfolioType, consolidate: bool = False
+    ) -> None:
         """ """
         for (account, security), position in portfolio.items():
             if not position:
                 continue
             self.session.add_all([account, security])
-            position_attrs = {
-                secid.uniqueidtype: secid.uniqueid for secid in security.ids
-            }
-            position_attrs.update(
-                {
-                    "brokerid": account.fi.brokerid,
-                    "acctid": account.number,
-                    "ticker": security.ticker,
-                    "secname": security.name,
-                }
-            )
 
-            rows = self.rows_for_position(position, consolidate=consolidate)
+            rows = [self.row_for_lot(account, security, lot) for lot in position]
+            if consolidate:
+                rows = [functools.reduce(self.consolidate_lots, rows)]
+
             for row in rows:
-                if row["units"]:
-                    row.update(position_attrs)
-                    self.writerow(row)
+                self.writerow(row)
 
-    def rows_for_position(self, position, consolidate=False):
-        rows = [self.row_for_lot(lot, consolidate) for lot in position]
-        if consolidate:
-            rows = [functools.reduce(self.add_lots, rows)]
-        return rows
+    def row_for_lot(
+        self, account: models.FiAccount, security: models.Security, lot: inventory.Lot
+    ) -> CsvDictRowWrite:
 
-    def row_for_lot(self, lot, consolidate):
-        row = {
-            "units": Decimal(
-                lot.units.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-            ),
-            "cost": (lot.units * lot.price).quantize(
-                Decimal("0.0001"), rounding=ROUND_HALF_UP
-            ),
-            "currency": lot.currency,
-        }
-        if not consolidate:
-            row.update(
-                {
-                    "opendt": lot.opentransaction.datetime,
-                    "opentxid": lot.opentransaction.uniqueid,
-                }
-            )
+        row = {secid.uniqueidtype: secid.uniqueid for secid in security.ids}
+        row.update(
+            {
+                "brokerid": account.fi.brokerid,
+                "acctid": account.number,
+                "ticker": security.ticker,
+                "secname": security.name,
+            }
+        )
+
+        def decimal_round(number: Decimal) -> Decimal:
+            PRECISION = Decimal("0.0001")
+            return Decimal(number.quantize(PRECISION, rounding=ROUND_HALF_UP))
+
+        row.update(
+            {
+                "units": decimal_round(lot.units),
+                "cost": decimal_round(lot.units * lot.price),
+                "currency": lot.currency,
+                "opendt": lot.opentransaction.datetime,
+                "opentxid": lot.opentransaction.uniqueid,
+            }
+        )
         return row
 
-    def add_lots(self, lot0, lot1):
+    @staticmethod
+    def consolidate_lots(
+        lot0: CsvDictRowWrite, lot1: CsvDictRowWrite
+    ) -> CsvDictRowWrite:
+        assert isinstance(lot0["units"], Decimal)
+        assert isinstance(lot0["cost"], Decimal)
+        assert isinstance(lot1["units"], Decimal)
+        assert isinstance(lot1["cost"], Decimal)
+
         assert lot0["currency"] == lot1["currency"]  # FIXME
-        lot0["units"] += lot1["units"]
-        lot0["cost"] += lot1["cost"]
-        return lot0
+
+        return {
+            "units": lot0["units"] + lot1["units"],
+            "cost": lot0["cost"] + lot1["cost"],
+            "currency": lot0["currency"],
+        }
 
 
 class CsvGainWriter(csv.DictWriter):
@@ -366,16 +388,16 @@ class CsvGainWriter(csv.DictWriter):
             csvfile, self.fieldnames, delimiter=",", quoting=csv.QUOTE_NONNUMERIC
         )
 
-    def writerows(self, gains, consolidate=False):
+    def writerows(  # type: ignore
+        self, gains: Sequence[inventory.Gain], consolidate: bool = False
+    ) -> None:
         """ """
         if consolidate:
 
             def keyfunc(gain):
                 return gain.transaction.security.id
 
-            gains.sort(key=keyfunc)
-            for k, gs in itertools.groupby(gains, keyfunc):
-                #  print(k)
+            for k, gs in itertools.groupby(sorted(gains, key=keyfunc), key=keyfunc):
                 row = self._gains2row(list(gs))
                 self.writerow(row)
 
@@ -384,7 +406,7 @@ class CsvGainWriter(csv.DictWriter):
                 row = self._gain2row(gain)
                 self.writerow(row)
 
-    def _gain2row(self, gain):
+    def _gain2row(self, gain: inventory.Gain) -> CsvDictRowRead:
         """
         Transform a single Gain into a dict suitable to hand to self.writerow()
         """
@@ -412,7 +434,7 @@ class CsvGainWriter(csv.DictWriter):
         }
         return row
 
-    def _gains2row(self, gains):
+    def _gains2row(self, gains: Sequence[inventory.Gain]) -> CsvDictRowWrite:
         """
         Sum a list of Gains and transform into a dict suitable to hand to
         self.writerow()
@@ -422,8 +444,7 @@ class CsvGainWriter(csv.DictWriter):
         # input gains have identical security ( itertools.groupby() )
         security = reports[0].security
 
-        # FIXME - can't do currency conversions
-        # input gains must have identical currency
+        # FIXME - do currency conversions
         currency = reports[0].currency
         assert all(report.currency == currency for report in reports)
 
@@ -443,7 +464,7 @@ class CsvGainWriter(csv.DictWriter):
         )
         total = list(running_totals)[-1]
 
-        row = {
+        return {
             "brokerid": None,
             "acctid": None,
             "ticker": security.ticker,
@@ -460,7 +481,6 @@ class CsvGainWriter(csv.DictWriter):
             "realized": total.proceeds - total.cost,
             "disallowed": None,
         }
-        return row
 
 
 #######################################################################################
@@ -478,6 +498,32 @@ class GainReport(NamedTuple):
     cost: Decimal
     proceeds: Decimal
     longterm: bool
+
+
+class Transaction(NamedTuple):
+    """Nonpersistent implementation of the models.Transaction interface.
+    """
+
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    type: models.TransactionType
+    dtsettle: Optional[_datetime.datetime] = None
+    cash: Optional[Decimal] = None
+    currency: Optional[str] = None
+    units: Optional[Decimal] = None
+    securityPrice: Optional[Decimal] = None
+    fiaccountFrom: Any = None
+    securityFrom: Any = None
+    unitsFrom: Optional[Decimal] = None
+    securityFromPrice: Optional[Decimal] = None
+    numerator: Optional[Decimal] = None
+    denominator: Optional[Decimal] = None
+    memo: Optional[str] = None
+    #  sort: Optional[Mapping[str, Union[bool, Callable[[Any], Tuple]]]] = None
+    sort: Optional[inventory.SortType] = None
 
 
 def report_gain(session, gain: inventory.Gain) -> GainReport:
@@ -529,8 +575,10 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
 
     if lot.currency != functional_currency:
         opentx = lot.opentransaction
-        if hasattr(opentx, "dtsettle") and opentx.dtsettle:
-            dtsettle = opentx.dtsettle
+        if isinstance(
+            opentx, (models.Transaction, inventory.Trade, inventory.ReturnOfCapital)
+        ):
+            dtsettle = opentx.dtsettle or opentx.datetime
         else:
             dtsettle = opentx.datetime
         date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
@@ -566,23 +614,52 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
     return inventory.Gain(lot, gaintx, gainprice)
 
 
-def translate_transaction(
-    transaction: inventory.TransactionType, currency: str, rate: Decimal
-) -> inventory.Transaction:
-    """ Translate a transaction into a different currency """
-    assert isinstance(transaction.cash, Decimal)
+@functools.singledispatch
+def translate_transaction(transaction, currency: str, rate: Decimal):
+    """
+    Translate a transaction into a different currency for reporting purposes.
 
-    securityPrice = transaction.securityPrice
-    if securityPrice is not None:
-        securityPrice *= rate
+    By default, return the transaction unmodified.
+    """
+    return transaction
 
-    securityFromPrice = transaction.securityFromPrice
-    if securityFromPrice is not None:
-        securityFromPrice *= rate
 
-    # Sadly, we can't use namedtuple._replace() here because the
-    # input transaction may be a SQLAlchemy model class instance
-    return inventory.Transaction(
+@translate_transaction.register
+def translate_cash_currency(
+    transaction: Union[inventory.Trade, inventory.ReturnOfCapital, inventory.Exercise],
+    currency: str,
+    rate: Decimal,
+):
+    """
+    Translate a transaction into a different currency for reporting purposes.
+    """
+
+    return transaction._replace(
+        cash=_scaleAttr(transaction, "cash", rate), currency=currency
+    )
+
+
+@translate_transaction.register
+def translate_security_pricing(
+    transaction: inventory.Spinoff, currency: str, rate: Decimal
+):
+    """
+    Translate a transaction into a different currency for reporting purposes.
+    """
+
+    return transaction._replace(
+        securityPrice=_scaleAttr(transaction, "securityPrice", rate),
+        securityFromPrice=_scaleAttr(transaction, "securityFromPrice", rate),
+    )
+
+
+@translate_transaction.register
+def translate_model(transaction: models.Transaction, currency: str, rate: Decimal):
+    """
+    Translate a transaction into a different currency for reporting purposes.
+    """
+
+    return Transaction(
         id=transaction.id,
         uniqueid=transaction.uniqueid,
         datetime=transaction.datetime,
@@ -590,16 +667,24 @@ def translate_transaction(
         type=transaction.type,
         memo=transaction.memo,
         currency=currency,
-        cash=transaction.cash * rate,
+        cash=_scaleAttr(transaction, "cash", rate),
         fiaccount=transaction.fiaccount,
         security=transaction.security,
         units=transaction.units,
-        securityPrice=securityPrice,
+        securityPrice=_scaleAttr(transaction, "securityPrice", rate),
         fiaccountFrom=transaction.fiaccountFrom,
-        securityFrom=transaction.securityFrom,
         unitsFrom=transaction.unitsFrom,
-        securityFromPrice=securityFromPrice,
+        securityFromPrice=_scaleAttr(transaction, "securityFromPrice", rate),
         numerator=transaction.numerator,
         denominator=transaction.denominator,
         sort=transaction.sort,
     )
+
+
+def _scaleAttr(instance: object, attr: str, coefficient: Decimal) -> Decimal:
+    """
+    """
+    value = getattr(instance, attr)
+    if value is not None:
+        value *= coefficient
+    return value
