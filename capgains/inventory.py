@@ -52,9 +52,11 @@ from typing import (
     NamedTuple,
     Tuple,
     List,
+    Sequence,
     Mapping,
     MutableMapping,
     Callable,
+    Generator,
     Any,
     Optional,
     Union,
@@ -73,12 +75,12 @@ class Inconsistent(InventoryError):
     """Exception raised when a Position's state is inconsistent with Transaction.
 
     Args:
-        transaction:
-        msg:
+        transaction: the transaction instance that couldn't be applied.
+        msg: Error message detailing the inconsistency.
 
     Attributes:
-        transaction:
-        msg:
+        transaction: the transaction instance that couldn't be applied.
+        msg: Error message detailing the inconsistency.
     """
 
     def __init__(self, transaction: "TransactionType", msg: str) -> None:
@@ -88,26 +90,33 @@ class Inconsistent(InventoryError):
 
 
 UNITS_RESOLUTION = Decimal("0.001")
+"""Significance threshold for difference between predicted units and reported units.
+
+For transactions that involve scaling units by a ratio (i.e. Split & Spinoff), if the
+product of that ratio and the total position Lot.units affected by the transaction
+differs from the reported transaction.units by at least UNITS_RESOLUTION, then
+an Inconsistent error is raised.
+"""
 
 
 #######################################################################################
 # DATA MODEL
 #######################################################################################
 class Trade(NamedTuple):
-    """Transaction to buy or sell a security.
+    """Buy/sell a security, creating basis (if opening) or realizing gain (if closing).
 
     Attributes:
-        id:
-        uniqueid:
-        datetime;
-        fiaccount:
-        security:
-        cash:
-        currency:
-        units:
-        dtsettle:
-        memo:
-        sort:
+        id: database primary key of transaction.
+        uniqueid: transaction unique identifier (e.g. FITID).
+        datetime: trade date/time.
+        fiaccount: brokerage account where the trade is executed.
+        security: asset bought/sold.
+        cash: change in money amount (+ increases cash, - decreases cash).
+        currency: currency denomination of cash (ISO 4217 code).
+        units: change in security amount.
+        dtsettle: trade settlement date/time.
+        memo: transaction notes.
+        sort: sort algorithm for gain recognition.
     """
 
     id: int
@@ -124,14 +133,21 @@ class Trade(NamedTuple):
     sort: Optional[Mapping[str, Union[bool, Callable[[Any], Tuple]]]] = None
 
 
-Trade.cash.__doc__ = "Change in money amount"
-Trade.currency.__doc__ = "Currency denomination of cash (ISO 4217)"
-Trade.units.__doc__ = "Change in security quantity"
-Trade.dtsettle.__doc__ = "Settlement date/time"
-Trade.sort.__doc__ = "Sort algorithm for gain recognition"
-
-
 class ReturnOfCapital(NamedTuple):
+    """Cash distribution that reduces cost basis.
+
+    Attributes:
+        id: database primary key of transaction.
+        uniqueid: transaction unique identifier (e.g. FITID).
+        datetime: effective date/time of distribution (ex-date).
+        fiaccount: brokerage account where the distribution is received.
+        security: security making the distribution.
+        cash: amount of distribution (+ increases cash, - decreases cash).
+        currency: currency denomination of cash (ISO 4217 code).
+        dtsettle: pay date of distribution.
+        memo: transaction notes.
+    """
+
     id: int
     uniqueid: str
     datetime: _datetime.datetime
@@ -139,33 +155,31 @@ class ReturnOfCapital(NamedTuple):
     security: Any
     cash: Decimal
     currency: str
-    memo: Optional[str] = None
     dtsettle: Optional[_datetime.datetime] = None
-
-
-ReturnOfCapital.cash.__doc__ = "Total amount of distribution"
-ReturnOfCapital.currency.__doc__ = "Currency denomination of distribution (ISO 4217)"
-ReturnOfCapital.dtsettle.__doc__ = "Payment date for distribution"
-
-
-class Split(NamedTuple):
-    id: int
-    uniqueid: str
-    datetime: _datetime.datetime
-    fiaccount: Any
-    security: Any
-    numerator: Decimal
-    denominator: Decimal
-    units: Decimal
     memo: Optional[str] = None
-
-
-Split.numerator.__doc__ = "Normalized units of post-split security"
-Split.denominator.__doc__ = "Normalized units of pre-slit security"
-Split.units.__doc__ = "Change in security quantity"
 
 
 class Transfer(NamedTuple):
+    """Move assets between (fiaccount, security) pockets, retaining basis/ open date.
+
+    Units can also be changed during the Transfer, so it's useful for corporate
+    reorganizations (mergers, etc.)
+
+    Attributes:
+        id: database primary key of transaction.
+        uniqueid: transaction unique identifier (e.g. FITID).
+        datetime: transfer date/time.
+        fiaccount: destination brokerage account.
+        security: destination security.
+        fiaccount: destination brokerage account.
+        security: destination security.
+        units: destination security amount.
+        fiaccountFrom: source brokerage account.
+        securityFrom: source security.
+        unitsFrom: source security amount.
+        memo: transaction notes.
+    """
+
     id: int
     uniqueid: str
     datetime: _datetime.datetime
@@ -178,13 +192,63 @@ class Transfer(NamedTuple):
     memo: Optional[str] = None
 
 
-Transfer.units.__doc__ = "Change in destination security quantity"
-Transfer.fiaccountFrom.__doc__ = "Source FI account"
-Transfer.securityFrom.__doc__ = "Source security"
-Transfer.unitsFrom.__doc__ = "Change in source security quantity"
+class Split(NamedTuple):
+    """Change position units without affecting costs basis or holding period.
+
+    Splits are declared in terms of new units : old units (the split ratio).
+
+    Note:
+        A Split is essentially a Transfer where fiaccount=fiaccountFrom and
+        security=SecurityFrom, differing only in units/unitsFrom.
+
+    Attributes:
+        id: database primary key of transaction.
+        uniqueid: transaction unique identifier (e.g. FITID).
+        datetime: effective date/time of split (ex-date).
+        fiaccount: brokerage account where the split happens.
+        security: security being split.
+        numerator: normalized units of post-split security.
+        denominator: normalized units of pre-slit security.
+        units: change in security amount resulting from the split.
+        memo: transaction notes.
+    """
+
+    id: int
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    numerator: Decimal
+    denominator: Decimal
+    units: Decimal
+    memo: Optional[str] = None
 
 
 class Spinoff(NamedTuple):
+    """Turn one security into two, partitioning cost basis between them.
+
+    Spinoffs are declared in terms of (units new security) : (units original security).
+    Per the US tax code, cost basis must be divided between the two securities
+    positions in proportion to their fair market value.  For exchange-traded securities
+    this is normally derived from market prices immediately after the spinoff.  This
+    pricing isn't known at the time of the spinoff; securityPrice and securityFromPrice
+    must be edited in after market data becomes available.
+
+    Attributes:
+        id: database primary key of transaction.
+        uniqueid: transaction unique identifier (e.g. FITID).
+        datetime: effective date/time of spinoff (ex-date).
+        fiaccount: brokerage account where the spinoff happens.
+        security: destination security (i.e. new spinoff security).
+        units: amount of destination security received.
+        numerator: normalized units of destination security.
+        denominator: normalized units of source security.
+        securityFrom: source security (i.e. security subject to spinoff).
+        memo: transaction notes.
+        securityPrice: unit price used to fair-value source security.
+        securityFromPrice: unit price used to fair-value destination security.
+    """
+
     id: int
     uniqueid: str
     datetime: _datetime.datetime
@@ -199,15 +263,27 @@ class Spinoff(NamedTuple):
     securityFromPrice: Optional[Decimal] = None
 
 
-Spinoff.units.__doc__ = "Change in destination security quantity"
-Spinoff.numerator.__doc__ = "Normalized units of destination security"
-Spinoff.denominator.__doc__ = "Normalized units of source security"
-Spinoff.securityFrom.__doc__ = "Source security"
-Spinoff.securityPrice.__doc__ = "FMV of destination security post-spin"
-Spinoff.securityFromPrice.__doc__ = "FMV of source security post-spin"
-
-
 class Exercise(NamedTuple):
+    """Exercise a securities option, buying/selling the underlying security.
+
+    Exercising an option removes its units from the FI account and rolls its cost
+    basis into the underlying.  For tax purposes, the holding period for the
+    underlying begins at exercise, not at purchase of the option.
+
+    Attributes:
+        id: database primary key of transaction.
+        uniqueid: transaction unique identifier (e.g. FITID).
+        datetime: date/time of option exercise.
+        fiaccount: brokerage account where the option is exercised.
+        security: destination security (i.e. underlying received via exercise).
+        units: change in amount of destination security (i.e. the underlying).
+        cash: net exercise payment (+ long put/short call; - long call/short put)
+        currency: currency denomination of cash (ISO 4217 code).
+        securityFrom: source security (i.e. the option).
+        unitsFrom: change in mount of source security (i.e. the option).
+        memo: transaction notes.
+    """
+
     id: int
     uniqueid: str
     datetime: _datetime.datetime
@@ -221,21 +297,29 @@ class Exercise(NamedTuple):
     memo: Optional[str] = None
 
 
-Exercise.units.__doc__ = "Change in destination security quantity"
-Exercise.cash.__doc__ = "Cash paid for exercise"
-Exercise.securityFrom.__doc__ = "Source security"
-Exercise.unitsFrom.__doc__ = "Change in source security quantity"
-
-
-#  Type alias involving Transaction must be defined after Transaction itself,
-#  else mypy chokes on the recursive definition.
 TransactionType = Union[
     Trade, ReturnOfCapital, Split, Transfer, Spinoff, Exercise, models.Transaction
 ]
+"""Type alias for classes implementing the Transaction interface.
+
+Includes models.Transaction, as well as the NamedTuple subclasses defined above that
+implement each relevant subset of Transaction attributes.
+
+This type alias must be defined after the transaction NamedTuples to which it refers,
+because mypy can't yet handle the recursive type definition.
+"""
 
 
 class Lot(NamedTuple):
-    """ Cost basis/holding data container for a securities position """
+    """Cost basis/holding data container for a securities position.
+
+    Attributes:
+        opentransaction: transaction creating basis, which began tax holding period.
+        createtransaction: transaction booking Lot into current (account, security).
+        units: amount of security comprising the Lot (must be nonzero).
+        price: per-unit cost basis (must be positive or zero).
+        currency: currency denomination of price (ISO 4217 code).
+    """
 
     opentransaction: TransactionType
     createtransaction: TransactionType
@@ -244,26 +328,24 @@ class Lot(NamedTuple):
     currency: str
 
 
-Lot.opentransaction.__doc__ = "Transaction that began holding period"
-Lot.createtransaction.__doc__ = "Transaction that created the Lot for current position"
-Lot.units.__doc__ = "(Nonzero)"
-Lot.price.__doc__ = "Per-unit cost (positive or zero)"
-Lot.currency.__doc__ = "Currency denomination of cost price"
-
-
 class Gain(NamedTuple):
-    """
-    Binds realizing Transaction to a Lot (and indirectly its opening Transaction)
+    """Binds realizing Transaction to a Lot (and indirectly its opening Transaction).
+
+    Note:
+        Realizing Transactions are usually closing Transactions, but may also come from
+        return of capital distributions that exceed cost basis.  Return of capital
+        Transactions generally don't provide per-share distribution information, so
+        Gains must keep state for the realizing price.
+
+    Attributes:
+        lot: Lot instance for which gain is realized.
+        transaction: Transaction instance realizing gain.
+        price: per-unit cash amount of the realizing transaction.
     """
 
     lot: Lot
     transaction: Any
     price: Decimal
-
-
-Gain.lot.__doc__ = "Lot instance for which gain is realized"
-Gain.transaction.__doc__ = "Transaction instance realizing gain"
-Gain.price.__doc__ = "Per-unit proceeds (positive or zero)"
 
 
 # This type alias needs to be defined before it's used, or functools.register
@@ -278,9 +360,13 @@ PortfolioType = MutableMapping
 
 
 class Portfolio(defaultdict):
-    """
-    Mapping container for positions (i.e. sequences of Lots),
-    keyed by (FI account, security) a/k/a "pocket".
+    """Mapping container for securities positions (i.e. sequences of Lot instances).
+
+    Keyed by (FI account, security) a/k/a "pocket".
+
+    Note:
+        Any object implementing the mapping protocol may be used with the functions in
+        this module.  It's convenient to inherit from collections.defaultdict.
     """
 
     default_factory = list
@@ -290,9 +376,19 @@ class Portfolio(defaultdict):
         defaultdict.__init__(self, *args, **kwargs)
 
     def book(
-        self, transaction: TransactionType, sort: Optional["SortType"] = None
+        self,
+        transaction: TransactionType,
+        sort: Optional["SortType"] = None,
     ) -> List[Gain]:
-        """ Convenience method to call inventory.book() """
+        """Convenience method to call inventory.book()
+
+        Args:
+            transaction: the transaction to apply to the Portfolio.
+            sort: sort algorithm for gain recognition.
+
+        Returns:
+            A sequence of Gain instances, reflecting Lots closed by the transaction.
+        """
         return book(transaction, self, sort=sort)
 
 
@@ -304,9 +400,26 @@ def book(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
+    """Apply a Transaction to the appropriate position(s) in the Portfolio.
+
+    Dispatch to handler function below based on type of transaction.
+
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
+
+    Raises:
+        ValueError: if functools.singledispatch doesn't have a handler registered
+                    for the transaction type.
     """
-    Apply a Transaction to the appropriate position(s) in the Portfolio.
-    """
+
     raise ValueError(f"Unknown transaction type {type(transaction)}")
 
 
@@ -318,9 +431,23 @@ def book_model(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
+    """Apply a models.Transaction to the appropriate position(s) in the Portfolio.
+
+    models.Transaction doesn't have subclasses, so dispatch based on the instance's
+    type attribute.
+
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
     """
-    Dispatch to handler function on models.Transaction.type value.
-    """
+
     handlers = {
         models.TransactionType.RETURNCAP: returnofcapital,
         models.TransactionType.SPLIT: split,
@@ -344,17 +471,21 @@ def trade(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
-    """
-    Normal buy or sell, closing open Lots and realizing Gains.
+    """Apply a Trade to the appropriate position(s) in the Portfolio.
 
-    If ``opentransaction`` is passed in, it overrides lot.opentransaction
-    to preserve holding period.
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
 
-    If ``createtransaction`` is passed in, it overrides lot.createtransaction
-    and gain.transaction.
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
 
-    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-    used to order Lots when closing them.
+    Raises:
+        ValueError: if `Trade.units` is zero.
     """
     if transaction.units == 0:
         raise ValueError(f"units can't be zero: {transaction}")
@@ -396,11 +527,22 @@ def returnofcapital(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
-    """
-    Apply cash to reduce cost basis of long position as of Transaction.datetime;
-    realize Gain on Lots where cash proceeds exceed cost basis.
+    """Apply a ReturnOfCapital to the appropriate position(s) in the Portfolio.
 
-    ``sort`` is in the argument signature for applyTransaction(), but unused.
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
+
+    Raises:
+        Inconsistent: if no position in the `portfolio` as of `ReturnOfCapital.datetime`
+                      is found to receive the distribution.
     """
     pocket = (transaction.fiaccount, transaction.security)
     position = portfolio.get(pocket, [])
@@ -440,11 +582,25 @@ def split(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
-    """
-    Increase/decrease Lot units without affecting basis or realizing Gain.
+    """Apply a Split to the appropriate position(s) in the Portfolio.
 
-    ``sort`` is in the argument signature for applyTransaction(), but unused.
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
+
+    Raises:
+        Inconsistent: if the relevant position in the `portfolio`, when adjusted for
+                      the split ratio, wouldn't cause a share delta that matches
+                      `Split.units`.
     """
+
     splitRatio = transaction.numerator / transaction.denominator
 
     pocket = (transaction.fiaccount, transaction.security)
@@ -494,12 +650,26 @@ def transfer(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
-    """
-    Move Lots from one Position to another, maybe changing Security/units.
+    """Apply a Transfer to the appropriate position(s) in the Portfolio.
 
-    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-    used to order Lots when closing them.
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
+
+    Raises:
+        ValueError: if `Transfer.units` and `Transfer.unitsFrom` aren't
+                    oppositely signed.
+        Inconsistent: if the relevant position in `portfolio` is insufficient to
+                      satisfy `Transfer.unitsFrom`.
     """
+
     if transaction.units * transaction.unitsFrom >= 0:
         msg = f"units and unitsFrom aren't oppositely signed in {transaction}"
         raise ValueError(msg)
@@ -546,17 +716,26 @@ def spinoff(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
-    """
-    Remove cost from position to create a new position, preserving
-    the holding period through the spinoff and not removing units or
-    closing Lots from the source position.
+    """Apply a Spinoff to the appropriate position(s) in the Portfolio.
 
-    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-    used to order Lots when closing them.
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
+
+    Raises:
+        ValueError: if either `Spinoff.numerator` or `Spinoff.denominator` isn't a
+                    positive number.
+        Inconsistent: if the relevant position in `portfolio` as of `Spinoff.datetime`,
+                      when adjusted for the spinoff ratio, wouldn't produce a change in
+                      # units that matches `Spinoff.units`.
     """
-    assert isinstance(transaction.units, Decimal)
-    assert isinstance(transaction.numerator, Decimal)
-    assert isinstance(transaction.denominator, Decimal)
 
     if transaction.numerator <= 0 or transaction.denominator <= 0:
         msg = f"numerator & denominator must be positive Decimals in {transaction}"
@@ -613,12 +792,25 @@ def exercise(
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
-    """
-    Exercise an option.
+    """Apply an Exercise transaction to the appropriate position(s) in the Portfolio.
 
-    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-    used to order Lots when closing them.
+    Args:
+        transaction: the transaction to apply to the Portfolio.
+        portfolio: map of (FI account, security) to sequence of Lots.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        opentransaction: if present, overrides transaction in any Lots created to
+                         preserve holding period.
+        createtransaction: if present, overrides transaction in any Lots/Gains created.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
+
+    Raises:
+        Inconsistent: if the relevant position in `portfolio` as of `Exercise.datetime`
+                      doesn't contain enough units of the option to satisfy the
+                      `Exercise.units`.
     """
+
     unitsFrom = transaction.unitsFrom
 
     pocketFrom = (transaction.fiaccount, transaction.securityFrom)
@@ -630,7 +822,6 @@ def exercise(
     )
 
     takenUnits = sum([lot.units for lot in takenLots])
-    assert isinstance(takenUnits, Decimal)
     if abs(takenUnits) - abs(unitsFrom) > UNITS_RESOLUTION:
         msg = f"Exercise Lot.units={takenUnits} (not {unitsFrom})"
         raise Inconsistent(transaction, msg)
@@ -664,27 +855,27 @@ def _transferBasis(
     extra_basis: Optional[Decimal] = None,
     preserve_holding_period: bool = True,
 ) -> List[Gain]:
-    """
-    Apply cost basis removed from a position to new units of another position.
+    """Apply cost basis removed from one position to new units of another position.
+
     Apply as a trade in order to close Lots of destination position as needed,
     preserving opentransaction from source Lot to maintain holding period.
 
-    ``lot``: Lot instance recording the extracted cost basis and source units.
+    Args:
+        portfolio: map of (FI account, security) to sequence of Lots.
+        lot: Lot instance recording the extracted cost basis and source units.
+        transaction: transaction booking in the new position.
+        ratio: # of new position units to create for each unit of source position.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        extra_basis: PER SHARE basis to be added to the cost transferred from the
+                     source position, e.g. payment of strike price for options exercise.
+        preserve_holding_period: if False, sets opentransaction to the transaction
+                                 booking in the new position rather than maintaining
+                                 the opentransaction from the source Lot.
 
-    ``transaction``: Transaction instance booking in the new position.
-
-    ``ratio``: # of new position units to create for each unit of source position.
-
-    ``sort`` is a mapping of (key func, reverse) such as FIFO/MINGAIN etc.
-    used to order Lots when closing them.
-
-    ``extra_basis`` is PER SHARE basis to be added to the cost transferred from the
-    source position, e.g. payment of strike price for options exercise.
-
-    ``preserve_holding_period``, if False, sets opentransaction to the transaction
-    booking in the new position rather than maintaining the opentransaction from
-    the source Lot.
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
     """
+
     costBasis = lot.price * lot.units
     if extra_basis is None:
         extra_basis = Decimal("0")
@@ -721,9 +912,22 @@ def _transferBasis(
 # FUNCTIONS OPERATING ON LOTS
 #######################################################################################
 def part_lot(lot: Lot, units: Decimal) -> Tuple[Lot, Lot]:
+    """Partition Lot at specified # of units, adding new Lot of leftover units.
+
+    The partitioned Lots differ only in units; all other attributes are the same.
+
+    Args:
+        lot: a Lot instance.
+        units: # of units to carve out into separate Lot.
+
+    Returns:
+        (Lot matching requested # of units, Lot holding remaining units)
+
+    Raises:
+        ValueError: if `units` magnitude exceeds `lot.units`, or if `units` and
+                    `lot.units` are oppositely signed / zero.
     """
-    Partition Lot at specified # of units, adding new Lot of leftover units.
-    """
+
     if not abs(units) < abs(lot.units):
         msg = f"units={units} must have smaller magnitude than lot.units={lot.units}"
         raise ValueError(msg)
@@ -739,20 +943,22 @@ def take_lots(
     criterion: Optional["CriterionType"] = None,
     max_units: Optional[Decimal] = None,
 ) -> Tuple[List[Lot], List[Lot]]:
+    """Remove a selection of Lots from the Position in sequential order.
+
+    Args:
+        transaction: source transaction (only used for error reporting).
+        lots: sequence of Lots.  Must be presorted by caller.
+        criterion: filter function that accepts a Lot instance and returns bool,
+                   e.g. openAsOf(datetime) or closableBy(transaction).
+                   By default, matches everything.
+        max_units: limit of units matching criterion to take.  Sign convention
+                   is SAME SIGN as position, i.e. units arg must be positive for long,
+                   negative for short. By default, take all units that match criterion.
+
+    Returns:
+        (Lots matching criterion/max_units, nonmatching Lots)
     """
-    Remove a selection of Lots from the Position in sequential order.
 
-    ``lots`` must be presorted by caller.
-
-    ``criterion`` is a filter function that accepts a Lot instance and returns bool
-    e.g. openAsOf(datetime) or closableBy(transaction). By default, matches everything.
-
-    ``max_units`` is the limit of units matching criterion to take.  Sign convention
-    is SAME SIGN as position, i.e. units arg must be positive for long, negative for
-    short. By default, take all units that match criterion without limit.
-
-    Returns (Lots matching criterion/max_units, nonmatching Lots)
-    """
     if not lots:
         return [], []
 
@@ -763,7 +969,29 @@ def take_lots(
 
         criterion = _criterion
 
-    def take(lots: List[Lot], criterion: CriterionType, max_units: Optional[Decimal]):
+    def take(
+        lots: Sequence[Lot],
+        criterion: CriterionType,
+        max_units: Optional[Decimal],
+    ) -> Generator[Tuple[Optional[Lot], Optional[Lot]], None, None]:
+        """
+        Args:
+            lots:
+            criterion:
+            max_units:
+
+        Yields:
+            2-tuple of:
+                0) If criterion doesn't match - None.
+                   If criterion matches - newly created Lot (copy of original Lot
+                   with units updated to reflect units removed from original).
+                1) Original Lot, with units reduced by the amount removed.
+
+        Raises:
+            ValueError: if remaining units counter and `lot.units` are differently
+                        signed / zero.
+
+        """
         units_remain = max_units
         for lot in lots:
             if not criterion(lot):
@@ -773,7 +1001,7 @@ def take_lots(
             elif units_remain == 0:
                 yield (None, lot)
             else:
-                if not lot.units * units_remain > 0:
+                if lot.units * units_remain <= 0:
                     msg = (
                         f"units_remain={units_remain} and Lot.units={lot.units} "
                         "must have same sign (nonzero)"
@@ -796,26 +1024,43 @@ def take_lots(
 
 
 def take_basis(
-    lots: List[Lot], criterion: Optional["CriterionType"], fraction: Decimal
+    lots: List[Lot],
+    criterion: Optional["CriterionType"],
+    fraction: Decimal,
 ) -> Tuple[List[Lot], List[Lot]]:
-    """
-    Remove a fraction of the cost from each Lot in the Position.
+    """Remove a fraction of the cost from each Lot in the Position.
 
-    ``lots`` must be presorted by caller.
+    Args:
+        lots: sequence of Lots.  Must be presorted by caller.
+        criterion: filter function that accepts a Lot instance and returns bool,
+                   e.g. openAsOf(datetime) or closableBy(transaction).
+                   By default, matches everything.
+        fraction: portion of cost to remove from each Lot matching criterion.
+        max_units: limit of units matching criterion to take.  Sign convention
+                   is SAME SIGN as position, i.e. units arg must be positive for long,
+                   negative for short. By default, take all units that match criterion.
 
-    ``criterion`` is a filter function that accepts a Lot instance and returns bool
-    e.g. openAsOf(datetime) or closableBy(transaction). By default, matches everything.
-
-    ``fraction`` is the portion of cost to take from each Lot
-
-    Returns: 2-tuple of
+    Returns:
+        2-tuple of:
             0) list of Lots (copies of Lots meeting criterion, with each
-               price updated to reflect the basis removed)
-            1) list of Lots (original position, less basis removed)
+               price updated to reflect the basis removed from the original).
+            1) list of Lots (original position, less basis removed).
+
+    Raises:
+        ValueError: if `fraction` isn't between 0 and 1.
     """
+
     if criterion is None:
 
-        def _criterion(lot):
+        def _criterion(lot: Lot) -> bool:
+            """Default criterion for take_basis() - matches everything.
+
+            Args:
+                lot - a Lot instance.
+
+            Returns:
+                True!
+            """
             return True
 
         criterion = _criterion
@@ -825,10 +1070,30 @@ def take_basis(
         raise ValueError(msg)
 
     def take(
-        lot: Lot, criterion: CriterionType, fraction: Decimal
-    ) -> Tuple[Optional[Lot], Optional[Lot]]:
+        lot: Lot,
+        criterion: CriterionType,
+        fraction: Decimal,
+    ) -> Tuple[Optional[Lot], Lot]:
+        """Extract a fraction of a Lot's cost into a new Lot, if the criterion matches.
+
+        Args:
+            lot: a Lot instance.
+            criterion: filter function that accepts a Lot instance and returns bool,
+                       e.g. openAsOf(datetime) or closableBy(transaction).
+                       By default, matches anything.
+            fraction: portion of cost to remove from the Lot, if it matches criterion.
+
+        Returns:
+            2-tuple of:
+                0) If criterion doesn't match - None.
+                   If criterion matches - newly created Lot (copy of original Lot
+                   with price updated to reflect the basis removed from the original).
+                1) Original Lot, with price reduced by the basis removed.
+        """
+
         if not criterion(lot):
             return (None, lot)
+
         takenprice = lot.price * fraction
         return (
             lot._replace(price=takenprice),
@@ -849,23 +1114,35 @@ CriterionType = Callable[[Lot], bool]
 
 
 def openAsOf(datetime: _datetime.datetime) -> CriterionType:
-    """
-    Filter function that chooses Lots created on or before datetime
+    """Factory for functions that select open Lots created on or before datetime.
+
+    Args:
+        datetime: a datetime.datetime instance.
+
+    Returns:
+        Filter function accepting a Lot instance and returning bool.
     """
 
-    def isOpen(lot):
+    def isOpen(lot: Lot) -> bool:
         return lot.createtransaction.datetime <= datetime
 
     return isOpen
 
 
 def longAsOf(datetime: _datetime.datetime) -> CriterionType:
-    """
-    Filter function that chooses long Lots (i.e. positive units) created
-    on or before datetime
+    """Factory for functions that select open long Lots created on or before datetime.
+
+    Note:
+        "long" Lots have positive units.
+
+    Args:
+        datetime: a datetime.datetime instance.
+
+    Returns:
+        Filter function accepting a Lot instance and returning bool.
     """
 
-    def isOpen(lot):
+    def isOpen(lot: Lot) -> bool:
         lot_open = lot.createtransaction.datetime <= datetime
         lot_long = lot.units > 0
         return lot_open and lot_long
@@ -874,9 +1151,16 @@ def longAsOf(datetime: _datetime.datetime) -> CriterionType:
 
 
 def closableBy(transaction: TransactionType) -> CriterionType:
-    """
-    Filter function that chooses Lots created on or before the given
+    """Factory for functions that select Lots that can be closed by a transaction.
+
+    The relevent criteria are an open Lot created on or before the given
     transaction.datetime, with sign opposite to the given transaction.units
+
+    Args:
+        transaction: a Transaction instance.
+
+    Returns:
+        Filter function accepting a transaction and returning bool.
     """
 
     def closeMe(lot):
@@ -891,31 +1175,42 @@ def closableBy(transaction: TransactionType) -> CriterionType:
 # SORT FUNCTIONS
 #######################################################################################
 def sort_oldest(lot: Lot) -> Tuple:
-    """
-    Sort by holding period, then by opening Transaction.uniqueid
+    """Sort by holding period, then by opening Transaction.uniqueid.
+
+    Args:
+        lot: a Lot instance.
+
+    Returns:
+        (Lot.opentransaction.datetime, Lot.opentransaction.uniqueid)
     """
     opentx = lot.opentransaction
     return (opentx.datetime, opentx.uniqueid or "")
 
 
 def sort_cheapest(lot: Lot) -> Tuple:
-    """
-    Sort by price, then by opening Transaction.uniqueid
+    """Sort by price, then by opening Transaction.uniqueid.
+
+    Args:
+        lot: a Lot instance.
+
+    Returns:
+        (Lot.price, Lot.opentransaction.uniqueid)
     """
     # FIXME this doesn't sort stably for identical prices but different lots
-    price = lot.price
-    assert isinstance(price, Decimal)
-    return (price, lot.opentransaction.uniqueid or "")
+    return (lot.price, lot.opentransaction.uniqueid or "")
 
 
 def sort_dearest(lot: Lot) -> Tuple:
-    """
-    Sort by inverse price, then by opening Transaction.uniqueid
+    """Sort by inverse price, then by opening Transaction.uniqueid.
+
+    Args:
+        lot: a Lot instance.
+
+    Returns:
+        (-Lot.price, Lot.opentransaction.uniqueid)
     """
     # FIXME this doesn't sort stably for identical prices but different lots
-    price = lot.price
-    assert isinstance(price, Decimal)
-    return (-price, lot.opentransaction.uniqueid or "")
+    return (-lot.price, lot.opentransaction.uniqueid or "")
 
 
 FIFO = {"key": sort_oldest, "reverse": False}
