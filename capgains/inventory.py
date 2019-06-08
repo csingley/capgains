@@ -99,9 +99,9 @@ an Inconsistent error is raised.
 """
 
 
-#######################################################################################
-# DATA MODEL
-#######################################################################################
+########################################################################################
+#  DATA MODEL
+########################################################################################
 class Trade(NamedTuple):
     """Buy/sell a security, creating basis (if opening) or realizing gain (if closing).
 
@@ -353,9 +353,9 @@ class Gain(NamedTuple):
 SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]
 
 
-#######################################################################################
-# API
-#######################################################################################
+########################################################################################
+#  API
+########################################################################################
 PortfolioType = MutableMapping
 
 
@@ -376,9 +376,7 @@ class Portfolio(defaultdict):
         defaultdict.__init__(self, *args, **kwargs)
 
     def book(
-        self,
-        transaction: TransactionType,
-        sort: Optional["SortType"] = None,
+        self, transaction: TransactionType, sort: Optional["SortType"] = None
     ) -> List[Gain]:
         """Convenience method to call inventory.book()
 
@@ -908,9 +906,9 @@ def _transferBasis(
     )
 
 
-#######################################################################################
-# FUNCTIONS OPERATING ON LOTS
-#######################################################################################
+########################################################################################
+#  FUNCTIONS OPERATING ON LOTS
+########################################################################################
 def part_lot(lot: Lot, units: Decimal) -> Tuple[Lot, Lot]:
     """Partition Lot at specified # of units, adding new Lot of leftover units.
 
@@ -970,9 +968,7 @@ def take_lots(
         criterion = _criterion
 
     def take(
-        lots: Sequence[Lot],
-        criterion: CriterionType,
-        max_units: Optional[Decimal],
+        lots: Sequence[Lot], criterion: CriterionType, max_units: Optional[Decimal]
     ) -> Generator[Tuple[Optional[Lot], Optional[Lot]], None, None]:
         """
         Args:
@@ -1024,9 +1020,7 @@ def take_lots(
 
 
 def take_basis(
-    lots: List[Lot],
-    criterion: Optional["CriterionType"],
-    fraction: Decimal,
+    lots: List[Lot], criterion: Optional["CriterionType"], fraction: Decimal
 ) -> Tuple[List[Lot], List[Lot]]:
     """Remove a fraction of the cost from each Lot in the Position.
 
@@ -1070,9 +1064,7 @@ def take_basis(
         raise ValueError(msg)
 
     def take(
-        lot: Lot,
-        criterion: CriterionType,
-        fraction: Decimal,
+        lot: Lot, criterion: CriterionType, fraction: Decimal
     ) -> Tuple[Optional[Lot], Lot]:
         """Extract a fraction of a Lot's cost into a new Lot, if the criterion matches.
 
@@ -1107,9 +1099,9 @@ def take_basis(
     )
 
 
-#######################################################################################
-# FILTER CRITERIA
-#######################################################################################
+########################################################################################
+#  FILTER CRITERIA
+########################################################################################
 CriterionType = Callable[[Lot], bool]
 
 
@@ -1171,9 +1163,9 @@ def closableBy(transaction: TransactionType) -> CriterionType:
     return closeMe
 
 
-#######################################################################################
-# SORT FUNCTIONS
-#######################################################################################
+########################################################################################
+#  SORT FUNCTIONS
+########################################################################################
 def sort_oldest(lot: Lot) -> Tuple:
     """Sort by holding period, then by opening Transaction.uniqueid.
 
