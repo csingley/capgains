@@ -541,6 +541,9 @@ def returnofcapital(
         Inconsistent: if no position in the `portfolio` as of `ReturnOfCapital.datetime`
                       is found to receive the distribution.
     """
+    # Ignored parameters
+    del sort
+
     pocket = (transaction.fiaccount, transaction.security)
     position = portfolio.get(pocket, [])
 
@@ -590,6 +593,8 @@ def split(
                       the split ratio, wouldn't cause a share delta that matches
                       `Split.units`.
     """
+    # Ignored parameters
+    del sort
 
     splitRatio = transaction.numerator / transaction.denominator
 
