@@ -356,9 +356,6 @@ SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]
 ########################################################################################
 #  API
 ########################################################################################
-PortfolioType = MutableMapping
-
-
 class Portfolio(defaultdict):
     """Mapping container for securities positions (i.e. sequences of Lot instances).
 
@@ -388,6 +385,9 @@ class Portfolio(defaultdict):
             A sequence of Gain instances, reflecting Lots closed by the transaction.
         """
         return book(transaction, self, sort=sort)
+
+
+PortfolioType = MutableMapping
 
 
 @functools.singledispatch
@@ -471,6 +471,10 @@ def trade(
 ) -> List[Gain]:
     """Apply a Trade to the appropriate position(s) in the Portfolio.
 
+    Note:
+        `opentransaction` and `createtransaction` are only provided as hooks for
+        `_transferBasis()` and should not normally be used.
+
     Args:
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to sequence of Lots.
@@ -522,8 +526,6 @@ def returnofcapital(
     transaction: Union[ReturnOfCapital, models.Transaction],
     portfolio: PortfolioType,
     sort=None,
-    opentransaction: Optional[TransactionType] = None,
-    createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
     """Apply a ReturnOfCapital to the appropriate position(s) in the Portfolio.
 
@@ -531,9 +533,6 @@ def returnofcapital(
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to sequence of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        opentransaction: if present, overrides transaction in any Lots created to
-                         preserve holding period.
-        createtransaction: if present, overrides transaction in any Lots/Gains created.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -574,11 +573,7 @@ def returnofcapital(
 
 @book.register(Split)
 def split(
-    transaction: Union[Split, models.Transaction],
-    portfolio: PortfolioType,
-    sort=None,
-    opentransaction: Optional[TransactionType] = None,
-    createtransaction: Optional[TransactionType] = None,
+    transaction: Union[Split, models.Transaction], portfolio: PortfolioType, sort=None
 ) -> List[Gain]:
     """Apply a Split to the appropriate position(s) in the Portfolio.
 
@@ -586,9 +581,6 @@ def split(
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to sequence of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        opentransaction: if present, overrides transaction in any Lots created to
-                         preserve holding period.
-        createtransaction: if present, overrides transaction in any Lots/Gains created.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -645,8 +637,6 @@ def transfer(
     transaction: Union[Transfer, models.Transaction],
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
-    opentransaction: Optional[TransactionType] = None,
-    createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
     """Apply a Transfer to the appropriate position(s) in the Portfolio.
 
@@ -654,9 +644,6 @@ def transfer(
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to sequence of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        opentransaction: if present, overrides transaction in any Lots created to
-                         preserve holding period.
-        createtransaction: if present, overrides transaction in any Lots/Gains created.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -708,8 +695,6 @@ def spinoff(
     transaction: Union[Spinoff, models.Transaction],
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
-    opentransaction: Optional[TransactionType] = None,
-    createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
     """Apply a Spinoff to the appropriate position(s) in the Portfolio.
 
@@ -717,9 +702,6 @@ def spinoff(
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to sequence of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        opentransaction: if present, overrides transaction in any Lots created to
-                         preserve holding period.
-        createtransaction: if present, overrides transaction in any Lots/Gains created.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -784,8 +766,6 @@ def exercise(
     transaction: Union[Exercise, models.Transaction],
     portfolio: PortfolioType,
     sort: Optional["SortType"] = None,
-    opentransaction: Optional[TransactionType] = None,
-    createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
     """Apply an Exercise transaction to the appropriate position(s) in the Portfolio.
 
@@ -793,9 +773,6 @@ def exercise(
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to sequence of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        opentransaction: if present, overrides transaction in any Lots created to
-                         preserve holding period.
-        createtransaction: if present, overrides transaction in any Lots/Gains created.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -913,13 +890,17 @@ def part_position(
 ) -> Tuple[List[Lot], List[Lot]]:
     """Partition a position according to some predicate.
 
+    Note:
+        If `max_units` is set, then `predicate` must match only Lots where
+        units are the same sign.
+
     Args:
         position: sequence of Lots.  Must be presorted by caller.
         predicate: filter function that accepts a Lot instance and returns bool,
                    e.g. openAsOf(datetime) or closableBy(transaction).
                    By default, matches everything.
         max_units: limit of units matching predicate to take.  Sign convention
-                   is SAME SIGN as position, i.e. units arg must be positive for long,
+                   is SAME SIGN as position, i.e. `max_units` is positive for long,
                    negative for short. By default, take all units that match predicate.
 
     Returns:
@@ -943,33 +924,38 @@ def part_position(
 
     # Lots where the running total is under `max_units` are definitely partitioned out.
     #
-    # Note: it might be better (faster) to use a tee()/dropwhile()/takewhile() pipeline
+    # Note: it might be better to use a tee()/dropwhile()/takewhile() pipeline
     # instead of the tee()/filterfalse()/filter() pipeline used by utils.partition().
     # However, the accumulated_units decoration is strictly monotonically increasing,
     # so the results should be the equivalent.
     decorated_still_maybe, decorated_match = utils.partition(
-        lambda deco: abs(deco[0]) < abs(max_units), decorated_maybe
+        lambda deco: deco[0] / max_units < 1, decorated_maybe
     )
 
     # Determine how many more units we need to fulfill the requested `max_units`.
     decorated_match = tuple(decorated_match)
     if not decorated_match:
-        match = []
+        match: List = []
         units_unfulfilled = max_units
     else:
         accumulated_units, match = zip(*decorated_match)
         match = list(match)
-        units_unfulfilled = max_units - accumulated_units[-1]
+        # mypy doesn't seem to understand that unpacking an unzipped tuple
+        # return tuples instead of iterators.
+        units_unfulfilled = max_units - accumulated_units[-1]  # type: ignore
 
     # The first Lot in the "still maybe" sequence is where the running total of units
     # exceeded `max_units`.  If it exists, take the units we need from the first Lot
     # and partition that out; any excess units of that Lot stay with the position.
     if units_unfulfilled:
         try:
-            _, lot = next(decorated_still_maybe)
+            # mypy doesn't seem to understand that itertools.filterfalse()
+            # returns an iterator instead of an iterable.
+            head = next(decorated_still_maybe)  # type: ignore
         except StopIteration:
             pass
         else:
+            _, lot = head
             assert abs(lot.units) >= abs(units_unfulfilled)
             match.append(lot._replace(units=units_unfulfilled))
             units_leftover = lot.units - units_unfulfilled
@@ -1017,6 +1003,7 @@ def part_position_alt(
             elif units_remain == 0:
                 yield (None, lot)
             else:
+                assert units_remain is not None
                 assert lot.units * units_remain > 0
                 if abs(lot.units) <= abs(units_remain):
                     units_remain -= lot.units
@@ -1090,13 +1077,16 @@ def part_basis(
 
 
 ########################################################################################
-#  FILTER CRITERIA
+#  FILTER PREDICATES
 ########################################################################################
 PredicateType = Callable[[Lot], bool]
 
 
 def openAsOf(datetime: _datetime.datetime) -> PredicateType:
     """Factory for functions that select open Lots created on or before datetime.
+
+    Note:
+        This matches both long and short lots.
 
     Args:
         datetime: a datetime.datetime instance.
