@@ -10,7 +10,7 @@ to its book() method.  Alternatively, you can use any object that implements the
 mapping protocol, and pass it to the module-level book() function.
 
 Each Lot tracks the current state of a particular bunch of securities - (unit, cost).
-Lots are collected in sequences called "positions", which are the values of a
+Lots are collected in lists called "positions", which are the values of a
 Portfolio mapping keyed by a (FI account, security) tuple called a "pocket".
 
 Additionally, each Lot keeps a reference to its opening Transaction, i.e. the
@@ -357,7 +357,7 @@ SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]
 #  API
 ########################################################################################
 class Portfolio(defaultdict):
-    """Mapping container for securities positions (i.e. sequences of Lot instances).
+    """Mapping container for securities positions (i.e. lists of Lot instances).
 
     Keyed by (FI account, security) a/k/a "pocket".
 
@@ -387,31 +387,16 @@ class Portfolio(defaultdict):
         return book(transaction, self, sort=sort)
 
 
-PortfolioType = MutableMapping
+FiAccount = Any
+Security = Any
+PortfolioType = MutableMapping[Tuple[FiAccount, Security], List[Lot]]
 
 
 @functools.singledispatch
-def book(
-    transaction,
-    portfolio: PortfolioType,
-    sort: Optional["SortType"] = None,
-    opentransaction: Optional[TransactionType] = None,
-    createtransaction: Optional[TransactionType] = None,
-) -> List[Gain]:
+def book(transaction, *args, **kwargs) -> List[Gain]:
     """Apply a Transaction to the appropriate position(s) in the Portfolio.
 
     Dispatch to handler function below based on type of transaction.
-
-    Args:
-        transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
-        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        opentransaction: if present, overrides transaction in any Lots created to
-                         preserve holding period.
-        createtransaction: if present, overrides transaction in any Lots/Gains created.
-
-    Returns:
-        A sequence of Gain instances, reflecting Lots closed by the transaction.
 
     Raises:
         ValueError: if functools.singledispatch doesn't have a handler registered
@@ -425,6 +410,7 @@ def book(
 def book_model(
     transaction: models.Transaction,
     portfolio: PortfolioType,
+    *,
     sort: Optional["SortType"] = None,
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
@@ -436,7 +422,7 @@ def book_model(
 
     Args:
         transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
+        portfolio: map of (FI account, security) to list of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
         opentransaction: if present, overrides transaction in any Lots created to
                          preserve holding period.
@@ -465,6 +451,7 @@ def book_model(
 def trade(
     transaction: Union[Trade, models.Transaction],
     portfolio: PortfolioType,
+    *,
     sort: Optional["SortType"] = None,
     opentransaction: Optional[TransactionType] = None,
     createtransaction: Optional[TransactionType] = None,
@@ -477,7 +464,7 @@ def trade(
 
     Args:
         transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
+        portfolio: map of (FI account, security) to list of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
         opentransaction: if present, overrides transaction in any Lots created to
                          preserve holding period.
@@ -525,14 +512,13 @@ def trade(
 def returnofcapital(
     transaction: Union[ReturnOfCapital, models.Transaction],
     portfolio: PortfolioType,
-    sort=None,
+    **_,
 ) -> List[Gain]:
     """Apply a ReturnOfCapital to the appropriate position(s) in the Portfolio.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
-        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        portfolio: map of (FI account, security) to list of Lots.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -541,9 +527,6 @@ def returnofcapital(
         Inconsistent: if no position in the `portfolio` as of `ReturnOfCapital.datetime`
                       is found to receive the distribution.
     """
-    # Ignored parameters
-    del sort
-
     pocket = (transaction.fiaccount, transaction.security)
     position = portfolio.get(pocket, [])
 
@@ -576,14 +559,13 @@ def returnofcapital(
 
 @book.register(Split)
 def split(
-    transaction: Union[Split, models.Transaction], portfolio: PortfolioType, sort=None
+    transaction: Union[Split, models.Transaction], portfolio: PortfolioType, **_
 ) -> List[Gain]:
     """Apply a Split to the appropriate position(s) in the Portfolio.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
-        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        portfolio: map of (FI account, security) to list of Lots.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -593,9 +575,6 @@ def split(
                       the split ratio, wouldn't cause a share delta that matches
                       `Split.units`.
     """
-    # Ignored parameters
-    del sort
-
     splitRatio = transaction.numerator / transaction.denominator
 
     pocket = (transaction.fiaccount, transaction.security)
@@ -641,13 +620,14 @@ def split(
 def transfer(
     transaction: Union[Transfer, models.Transaction],
     portfolio: PortfolioType,
+    *,
     sort: Optional["SortType"] = None,
 ) -> List[Gain]:
     """Apply a Transfer to the appropriate position(s) in the Portfolio.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
+        portfolio: map of (FI account, security) to list of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
 
     Returns:
@@ -699,13 +679,14 @@ def transfer(
 def spinoff(
     transaction: Union[Spinoff, models.Transaction],
     portfolio: PortfolioType,
+    *,
     sort: Optional["SortType"] = None,
 ) -> List[Gain]:
     """Apply a Spinoff to the appropriate position(s) in the Portfolio.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
+        portfolio: map of (FI account, security) to list of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
 
     Returns:
@@ -770,13 +751,14 @@ def spinoff(
 def exercise(
     transaction: Union[Exercise, models.Transaction],
     portfolio: PortfolioType,
+    *,
     sort: Optional["SortType"] = None,
 ) -> List[Gain]:
     """Apply an Exercise transaction to the appropriate position(s) in the Portfolio.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
-        portfolio: map of (FI account, security) to sequence of Lots.
+        portfolio: map of (FI account, security) to list of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
 
     Returns:
@@ -838,7 +820,7 @@ def _transferBasis(
     preserving opentransaction from source Lot to maintain holding period.
 
     Args:
-        portfolio: map of (FI account, security) to sequence of Lots.
+        portfolio: map of (FI account, security) to list of Lots.
         lot: Lot instance recording the extracted cost basis and source units.
         transaction: transaction booking in the new position.
         ratio: # of new position units to create for each unit of source position.
@@ -879,9 +861,9 @@ def _transferBasis(
     return book(
         trade_,
         portfolio,
+        sort=sort,
         opentransaction=opentransaction,
         createtransaction=transaction,
-        sort=sort,
     )
 
 
@@ -900,7 +882,7 @@ def part_position(
         units are the same sign.
 
     Args:
-        position: sequence of Lots.  Must be presorted by caller.
+        position: list of Lots.  Must be presorted by caller.
         predicate: filter function that accepts a Lot instance and returns bool,
                    e.g. openAsOf(datetime) or closableBy(transaction).
                    By default, matches everything.
@@ -1034,7 +1016,7 @@ def part_basis(
     """Remove a fraction of the cost from each Lot in the Position.
 
     Args:
-        position: sequence of Lots.  Must be presorted by caller.
+        position: list of Lots.  Must be presorted by caller.
         predicate: filter function that accepts a Lot instance and returns bool,
                    e.g. openAsOf(datetime) or closableBy(transaction).
                    By default, matches everything.
