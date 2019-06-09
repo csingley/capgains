@@ -7,13 +7,7 @@ import unittest
 
 # local imports
 from capgains.config import CONFIG
-from capgains.models import (
-    Fi,
-    FiAccount,
-    Security,
-    SecurityId,
-    Transaction,
-)
+from capgains.models import Fi, FiAccount, Security, SecurityId, Transaction
 from common import setUpModule, tearDownModule, RollbackMixin
 
 

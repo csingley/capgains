@@ -30,10 +30,10 @@ cost basis.  Return of capital Transactions generally don't provide per-share
 distribution information, so Gains must keep state for the realizing price.
 
 To compute realized capital gains from a Gain instance:
-* Proceeds - gain.lot.units * gain.price
-* Basis - gain.lot.units * gain.lot.price
-* Holding period start - gain.lot.opentransaction.datetime
-* Holding period end - gain.transaction.datetime
+    * Proceeds - gain.lot.units * gain.price
+    * Basis - gain.lot.units * gain.lot.price
+    * Holding period start - gain.lot.opentransaction.datetime
+    * Holding period end - gain.transaction.datetime
 
 Lots and Transactions are immutable, so you can rely on the accuracy of references
 to them (e.g. Gain.lot; Lot.createtransaction).  Everything about a Lot (except
@@ -94,7 +94,7 @@ UNITS_RESOLUTION = Decimal("0.001")
 
 For transactions that involve scaling units by a ratio (i.e. Split & Spinoff), if the
 product of that ratio and the total position Lot.units affected by the transaction
-differs from the reported transaction.units by at least UNITS_RESOLUTION, then
+differs from the reported transaction.units by more than UNITS_RESOLUTION, then
 an Inconsistent error is raised.
 """
 
@@ -493,8 +493,8 @@ def trade(
     position.sort(**(sort or FIFO))
 
     # Remove closed lots from the position
-    lots_closed, position = take_lots(
-        transaction, position, closableBy(transaction), -transaction.units
+    lots_closed, position = part_position(
+        position, closableBy(transaction), -transaction.units
     )
 
     units = transaction.units + sum([lot.units for lot in lots_closed])
@@ -679,11 +679,8 @@ def transfer(
     positionFrom.sort(**(sort or FIFO))
 
     # Remove the Lots from the source position
-    lotsFrom, positionFrom = take_lots(
-        transaction,
-        positionFrom,
-        openAsOf(transaction.datetime),
-        -transaction.unitsFrom,
+    lotsFrom, positionFrom = part_position(
+        positionFrom, openAsOf(transaction.datetime), -transaction.unitsFrom
     )
 
     openUnits = sum([lot.units for lot in lotsFrom])
@@ -757,7 +754,7 @@ def spinoff(
         costFraction = spinoffFMV / (spinoffFMV + spunoffFMV)
 
     # Take the basis from the source Position
-    lotsFrom, positionFrom = take_basis(
+    lotsFrom, positionFrom = part_basis(
         positionFrom, openAsOf(transaction.datetime), costFraction
     )
 
@@ -815,8 +812,8 @@ def exercise(
     positionFrom = portfolio.get(pocketFrom, [])
 
     # Remove lots from the source position
-    takenLots, remainingPosition = take_lots(
-        transaction, positionFrom, openAsOf(transaction.datetime), -unitsFrom
+    takenLots, remainingPosition = part_position(
+        positionFrom, openAsOf(transaction.datetime), -unitsFrom
     )
 
     takenUnits = sum([lot.units for lot in takenLots])
@@ -907,136 +904,156 @@ def _transferBasis(
 
 
 ########################################################################################
-#  FUNCTIONS OPERATING ON LOTS
+#  FUNCTIONS OPERATING ON POSITIONS
 ########################################################################################
-def part_lot(lot: Lot, units: Decimal) -> Tuple[Lot, Lot]:
-    """Partition Lot at specified # of units, adding new Lot of leftover units.
-
-    The partitioned Lots differ only in units; all other attributes are the same.
-
-    Args:
-        lot: a Lot instance.
-        units: # of units to carve out into separate Lot.
-
-    Returns:
-        (Lot matching requested # of units, Lot holding remaining units)
-
-    Raises:
-        ValueError: if `units` magnitude exceeds `lot.units`, or if `units` and
-                    `lot.units` are oppositely signed / zero.
-    """
-
-    if not abs(units) < abs(lot.units):
-        msg = f"units={units} must have smaller magnitude than lot.units={lot.units}"
-        raise ValueError(msg)
-    if not units * lot.units > 0:
-        msg = f"units={units} and lot.units={lot.units} must have same sign (non-zero)"
-        raise ValueError(msg)
-    return (lot._replace(units=units), lot._replace(units=lot.units - units))
-
-
-def take_lots(
-    transaction: TransactionType,
-    lots: List[Lot],
-    criterion: Optional["CriterionType"] = None,
+def part_position(
+    position: List[Lot],
+    predicate: Optional["PredicateType"] = None,
     max_units: Optional[Decimal] = None,
 ) -> Tuple[List[Lot], List[Lot]]:
-    """Remove a selection of Lots from the Position in sequential order.
+    """Partition a position according to some predicate.
 
     Args:
-        transaction: source transaction (only used for error reporting).
-        lots: sequence of Lots.  Must be presorted by caller.
-        criterion: filter function that accepts a Lot instance and returns bool,
+        position: sequence of Lots.  Must be presorted by caller.
+        predicate: filter function that accepts a Lot instance and returns bool,
                    e.g. openAsOf(datetime) or closableBy(transaction).
                    By default, matches everything.
-        max_units: limit of units matching criterion to take.  Sign convention
+        max_units: limit of units matching predicate to take.  Sign convention
                    is SAME SIGN as position, i.e. units arg must be positive for long,
-                   negative for short. By default, take all units that match criterion.
+                   negative for short. By default, take all units that match predicate.
 
     Returns:
-        (Lots matching criterion/max_units, nonmatching Lots)
+        (matching Lots, nonmatching Lots)
+    """
+    if predicate is None:
+        predicate = utils.matchEverything
+
+    # Lots not matching the predicate definitely stay with the position.
+    nonmatch, maybe = utils.partition(predicate, position)
+    nonmatch = list(nonmatch)
+
+    # Lots matching the predicate may be subject to `max_units` limit.
+    if max_units is None:
+        return list(maybe), list(nonmatch)
+
+    # Decorate the sequence of lots matching predicate with the running total of units.
+    maybe, maybe_clone = itertools.tee(maybe)
+    accumulated_units = itertools.accumulate(lot.units for lot in maybe_clone)
+    decorated_maybe = zip(accumulated_units, maybe)
+
+    # Lots where the running total is under `max_units` are definitely partitioned out.
+    #
+    # Note: it might be better (faster) to use a tee()/dropwhile()/takewhile() pipeline
+    # instead of the tee()/filterfalse()/filter() pipeline used by utils.partition().
+    # However, the accumulated_units decoration is strictly monotonically increasing,
+    # so the results should be the equivalent.
+    decorated_still_maybe, decorated_match = utils.partition(
+        lambda deco: abs(deco[0]) < abs(max_units), decorated_maybe
+    )
+
+    # Determine how many more units we need to fulfill the requested `max_units`.
+    decorated_match = tuple(decorated_match)
+    if not decorated_match:
+        match = []
+        units_unfulfilled = max_units
+    else:
+        accumulated_units, match = zip(*decorated_match)
+        match = list(match)
+        units_unfulfilled = max_units - accumulated_units[-1]
+
+    # The first Lot in the "still maybe" sequence is where the running total of units
+    # exceeded `max_units`.  If it exists, take the units we need from the first Lot
+    # and partition that out; any excess units of that Lot stay with the position.
+    if units_unfulfilled:
+        try:
+            _, lot = next(decorated_still_maybe)
+        except StopIteration:
+            pass
+        else:
+            assert abs(lot.units) >= abs(units_unfulfilled)
+            match.append(lot._replace(units=units_unfulfilled))
+            units_leftover = lot.units - units_unfulfilled
+            if units_leftover:
+                nonmatch.append(lot._replace(units=units_leftover))
+
+    # Remaining Lots that matched `predicate` but weren't needed to satsify `max_units`
+    # stay with the position.
+    nonmatch.extend([t[1] for t in decorated_still_maybe])
+
+    return match, nonmatch
+
+
+def part_position_alt(
+    position: List[Lot],
+    predicate: Optional["PredicateType"] = None,
+    max_units: Optional[Decimal] = None,
+) -> Tuple[List[Lot], List[Lot]]:
+    """Partition a position according to some predicate.
+
+    Note:
+        This is an alternative implementation of `part_position()` that uses a
+        generator instead of an itertools pipeline.  It's lazier than the above
+        implementation and it short-circuits faster, but the nested if/else chains
+        are unpleasant.  The logic remains here unused, as a possible basis for
+        future enhancement.
     """
 
-    if not lots:
+    if not position:
         return [], []
 
-    if criterion is None:
-
-        def _criterion(lot):
-            return True
-
-        criterion = _criterion
+    if predicate is None:
+        predicate = utils.matchEverything
 
     def take(
-        lots: Sequence[Lot], criterion: CriterionType, max_units: Optional[Decimal]
+        position: Sequence[Lot], predicate: PredicateType, max_units: Optional[Decimal]
     ) -> Generator[Tuple[Optional[Lot], Optional[Lot]], None, None]:
-        """
-        Args:
-            lots:
-            criterion:
-            max_units:
 
-        Yields:
-            2-tuple of:
-                0) If criterion doesn't match - None.
-                   If criterion matches - newly created Lot (copy of original Lot
-                   with units updated to reflect units removed from original).
-                1) Original Lot, with units reduced by the amount removed.
-
-        Raises:
-            ValueError: if remaining units counter and `lot.units` are differently
-                        signed / zero.
-
-        """
         units_remain = max_units
-        for lot in lots:
-            if not criterion(lot):
+        for lot in position:
+            if not predicate(lot):
                 yield (None, lot)
-            elif units_remain is None:
+            elif max_units is None:
                 yield (lot, None)
             elif units_remain == 0:
                 yield (None, lot)
             else:
-                if lot.units * units_remain <= 0:
-                    msg = (
-                        f"units_remain={units_remain} and Lot.units={lot.units} "
-                        "must have same sign (nonzero)"
-                    )
-                    raise Inconsistent(transaction, msg)
-
+                assert lot.units * units_remain > 0
                 if abs(lot.units) <= abs(units_remain):
                     units_remain -= lot.units
                     yield (lot, None)
                 else:
-                    taken, left = part_lot(lot, units_remain)
+                    taken, left = (
+                        lot._replace(units=units_remain),
+                        lot._replace(units=lot.units - units_remain),
+                    )
                     units_remain -= taken.units
                     yield (taken, left)
 
-    lots_taken, lots_left = zip(*take(lots, criterion, max_units))
+    lots_taken, lots_left = zip(*take(position, predicate, max_units))
     return (
         [lot for lot in lots_taken if lot is not None],
         [lot for lot in lots_left if lot is not None],
     )
 
 
-def take_basis(
-    lots: List[Lot], criterion: Optional["CriterionType"], fraction: Decimal
+def part_basis(
+    position: List[Lot], predicate: Optional["PredicateType"], fraction: Decimal
 ) -> Tuple[List[Lot], List[Lot]]:
     """Remove a fraction of the cost from each Lot in the Position.
 
     Args:
-        lots: sequence of Lots.  Must be presorted by caller.
-        criterion: filter function that accepts a Lot instance and returns bool,
+        position: sequence of Lots.  Must be presorted by caller.
+        predicate: filter function that accepts a Lot instance and returns bool,
                    e.g. openAsOf(datetime) or closableBy(transaction).
                    By default, matches everything.
-        fraction: portion of cost to remove from each Lot matching criterion.
-        max_units: limit of units matching criterion to take.  Sign convention
+        fraction: portion of cost to remove from each Lot matching predicate.
+        max_units: limit of units matching predicate to take.  Sign convention
                    is SAME SIGN as position, i.e. units arg must be positive for long,
-                   negative for short. By default, take all units that match criterion.
+                   negative for short. By default, take all units that match predicate.
 
     Returns:
         2-tuple of:
-            0) list of Lots (copies of Lots meeting criterion, with each
+            0) list of Lots (copies of Lots meeting predicate, with each
                price updated to reflect the basis removed from the original).
             1) list of Lots (original position, less basis removed).
 
@@ -1044,46 +1061,17 @@ def take_basis(
         ValueError: if `fraction` isn't between 0 and 1.
     """
 
-    if criterion is None:
-
-        def _criterion(lot: Lot) -> bool:
-            """Default criterion for take_basis() - matches everything.
-
-            Args:
-                lot - a Lot instance.
-
-            Returns:
-                True!
-            """
-            return True
-
-        criterion = _criterion
+    if predicate is None:
+        predicate = utils.matchEverything
 
     if not (0 <= fraction <= 1):
         msg = f"fraction must be between 0 and 1 (inclusive), not '{fraction}'"
         raise ValueError(msg)
 
-    def take(
-        lot: Lot, criterion: CriterionType, fraction: Decimal
+    def part_lot_basis(
+        lot: Lot, predicate: PredicateType, fraction: Decimal
     ) -> Tuple[Optional[Lot], Lot]:
-        """Extract a fraction of a Lot's cost into a new Lot, if the criterion matches.
-
-        Args:
-            lot: a Lot instance.
-            criterion: filter function that accepts a Lot instance and returns bool,
-                       e.g. openAsOf(datetime) or closableBy(transaction).
-                       By default, matches anything.
-            fraction: portion of cost to remove from the Lot, if it matches criterion.
-
-        Returns:
-            2-tuple of:
-                0) If criterion doesn't match - None.
-                   If criterion matches - newly created Lot (copy of original Lot
-                   with price updated to reflect the basis removed from the original).
-                1) Original Lot, with price reduced by the basis removed.
-        """
-
-        if not criterion(lot):
+        if not predicate(lot):
             return (None, lot)
 
         takenprice = lot.price * fraction
@@ -1092,7 +1080,9 @@ def take_basis(
             lot._replace(price=lot.price - takenprice),
         )
 
-    lots_taken, lots_left = zip(*(take(lot, criterion, fraction) for lot in lots))
+    lots_taken, lots_left = zip(
+        *(part_lot_basis(lot, predicate, fraction) for lot in position)
+    )
     return (
         [lot for lot in lots_taken if lot is not None],
         [lot for lot in lots_left if lot is not None],
@@ -1102,10 +1092,10 @@ def take_basis(
 ########################################################################################
 #  FILTER CRITERIA
 ########################################################################################
-CriterionType = Callable[[Lot], bool]
+PredicateType = Callable[[Lot], bool]
 
 
-def openAsOf(datetime: _datetime.datetime) -> CriterionType:
+def openAsOf(datetime: _datetime.datetime) -> PredicateType:
     """Factory for functions that select open Lots created on or before datetime.
 
     Args:
@@ -1121,7 +1111,7 @@ def openAsOf(datetime: _datetime.datetime) -> CriterionType:
     return isOpen
 
 
-def longAsOf(datetime: _datetime.datetime) -> CriterionType:
+def longAsOf(datetime: _datetime.datetime) -> PredicateType:
     """Factory for functions that select open long Lots created on or before datetime.
 
     Note:
@@ -1142,7 +1132,7 @@ def longAsOf(datetime: _datetime.datetime) -> CriterionType:
     return isOpen
 
 
-def closableBy(transaction: TransactionType) -> CriterionType:
+def closableBy(transaction: TransactionType) -> PredicateType:
     """Factory for functions that select Lots that can be closed by a transaction.
 
     The relevent criteria are an open Lot created on or before the given

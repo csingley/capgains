@@ -201,7 +201,8 @@ class XmlSnippetMixin(RollbackMixin):
                 assert type(extra_securities) in (list, tuple)
                 for extra_security in extra_securities:
                     cls.securities.append(
-                        models.Security.merge(cls.session, **extra_security))
+                        models.Security.merge(cls.session, **extra_security)
+                    )
 
     def testEndToEnd(self):
         main_fn = getattr(self.reader, self.txs_entry_point)

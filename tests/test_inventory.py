@@ -3,7 +3,6 @@
 """
 # stdlib imports
 import unittest
-from collections import namedtuple
 from decimal import Decimal
 from datetime import datetime
 
@@ -22,11 +21,10 @@ from capgains.inventory import (
     Split,
     Transfer,
     Spinoff,
-    Exercise,
+    #  Exercise,
     Inconsistent,
-    part_lot,
-    take_lots,
-    take_basis,
+    part_position,
+    part_basis,
     openAsOf,
 )
 
@@ -330,42 +328,13 @@ class LotsMixin(object):
         self.lots = [self.lot1, self.lot2, self.lot3]
 
 
-class PartLotTestCase(LotsMixin, unittest.TestCase):
-    def testPartLot(self):
-        lot1, lot2 = part_lot(self.lot1, Decimal("20"))
-
-        self.assertEqual(lot1, self.lot1._replace(units=Decimal("20")))
-        self.assertEqual(lot2, self.lot1._replace(units=Decimal("80")))
-
-    #  def testPartLotNonDecimalUnits(self):
-    #  with self.assertRaises(ValueError):
-    #  part_lot(self.lot1, 20)
-
-    def testPartLotUnitsTooBig(self):
-        part_lot(self.lot1, Decimal("99.99"))
-
-        with self.assertRaises(ValueError):
-            part_lot(self.lot1, Decimal("100"))
-
-    def testPartLotZeroUnits(self):
-        with self.assertRaises(ValueError):
-            part_lot(self.lot1, Decimal("0"))
-
-    def testPartLotUnitsWrongSign(self):
-        with self.assertRaises(ValueError):
-            part_lot(self.lot1, Decimal("-20"))
-
-        with self.assertRaises(ValueError):
-            part_lot(self.lot1._replace(units=Decimal("-100")), Decimal("20"))
-
-
-class TakeLotsTestCase(LotsMixin, unittest.TestCase):
-    def testTakeLots(self):
+class PartPositionTestCase(LotsMixin, unittest.TestCase):
+    def testPartPosition(self):
         """
-        take_lots() removes Lots from the beginning, part_lot()ting as needed.
+        part_position() removes Lots from the beginning, partioning Lots as needed.
         """
         self.assertEqual(len(self.lots), 3)
-        taken, left = take_lots(None, self.lots, max_units=Decimal("150"))
+        taken, left = part_position(self.lots, max_units=Decimal("150"))
 
         self.assertEqual(len(taken), 2)
         self.assertEqual(taken[0], self.lot1)
@@ -379,31 +348,24 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
         )
         self.assertEqual(left[1], self.lot3)
 
-    def testTakeLotsMaxUnitsNone(self):
+    def testPartPositionMaxUnitsNone(self):
         """
-        take_lots() takes all matches if max_units is None
+        part_position() takes all matches if max_units is None
         """
         self.assertEqual(len(self.lots), 3)
-        taken, left = take_lots(None, self.lots)
+        taken, left = part_position(self.lots)
 
         self.assertEqual(len(taken), 3)
         self.assertEqual(taken, self.lots)
 
         self.assertEqual(len(left), 0)
 
-    def testTakeLotsSignConvention(self):
+    def testPartPositionPredicate(self):
         """
-        take_lots() units arg must be same sign as Lot.units.
+        part_position() respects lot selection criteria
         """
-        with self.assertRaises(Inconsistent):
-            take_lots(None, self.lots, max_units=Decimal("-1"))
-
-    def testTakeLotsCriterion(self):
-        """
-        take_lots() respects lot selection criteria
-        """
-        criterion = openAsOf(datetime(2016, 1, 2))
-        taken_lots, left_lots = take_lots(None, self.lots, criterion=criterion)
+        predicate = openAsOf(datetime(2016, 1, 2))
+        taken_lots, left_lots = part_position(self.lots, predicate=predicate)
 
         self.assertEqual(len(taken_lots), 2)
         self.assertEqual(len(left_lots), 1)
@@ -411,13 +373,13 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
         self.assertEqual(taken_lots, [self.lot1, self.lot2])
         self.assertEqual(left_lots, [self.lot3])
 
-    def testTakeLotsMaxUnitsCriterion(self):
+    def testPartPositionMaxUnitsPredicate(self):
         """
-        take_lots() respects criterion and max_units args together
+        part_position() respects predicate and max_units args together
         """
-        criterion = openAsOf(datetime(2016, 1, 2))
-        taken_lots, left_lots = take_lots(
-            None, self.lots, max_units=Decimal("150"), criterion=criterion
+        predicate = openAsOf(datetime(2016, 1, 2))
+        taken_lots, left_lots = part_position(
+            self.lots, max_units=Decimal("150"), predicate=predicate
         )
 
         self.assertEqual(len(taken_lots), 2)
@@ -427,18 +389,19 @@ class TakeLotsTestCase(LotsMixin, unittest.TestCase):
             taken_lots, [self.lot1, self.lot2._replace(units=Decimal("50"))]
         )
         self.assertEqual(
-            left_lots, [self.lot2._replace(units=Decimal("150")), self.lot3]
+            sorted(left_lots),
+            sorted([self.lot2._replace(units=Decimal("150")), self.lot3]),
         )
 
 
-class TakeBasisTestCase(LotsMixin, unittest.TestCase):
-    def testTakeBasis(self):
+class PartBasisTestCase(LotsMixin, unittest.TestCase):
+    def testPartBasis(self):
         """
-        Position.take_basis() takes cost from all Lots w/o changing units/date
+        Position.part_basis() takes cost from all Lots w/o changing units/date
         """
         orig_cost = sum([(l.units * l.price) for l in self.lots])
         fraction = Decimal("0.25")
-        taken_lots, left_lots = take_basis(self.lots, criterion=None, fraction=fraction)
+        taken_lots, left_lots = part_basis(self.lots, predicate=None, fraction=fraction)
 
         left_cost = sum([(l.units * l.price) for l in left_lots])
         taken_cost = sum([(l.units * l.price) for l in taken_lots])
@@ -451,25 +414,25 @@ class TakeBasisTestCase(LotsMixin, unittest.TestCase):
             self.assertEqual(lot.createtransaction, takenLot.createtransaction)
             self.assertEqual(lot.units, takenLot.units)
 
-    def testTakeBasisBadFraction(self):
+    def testPartBasisBadFraction(self):
         """
-        take_basis() only accepts fraction between 0 and 1 inclusive
+        part_basis() only accepts fraction between 0 and 1 inclusive
         """
         with self.assertRaises(ValueError):
-            take_basis(self.lots, criterion=None, fraction=Decimal("-0.1"))
+            part_basis(self.lots, predicate=None, fraction=Decimal("-0.1"))
         with self.assertRaises(ValueError):
-            take_basis(self.lots, criterion=None, fraction=Decimal("1.01"))
+            part_basis(self.lots, predicate=None, fraction=Decimal("1.01"))
 
-    def testTakeBasisCriterion(self):
+    def testPartBasisPredicate(self):
         """
-        take_basis() respects lot selection criteria
+        part_basis() respects lot selection criteria
         """
-        criterion = openAsOf(datetime(2016, 1, 2))
+        predicate = openAsOf(datetime(2016, 1, 2))
 
         orig_cost = sum([(l.units * l.price) for l in self.lots])
         fraction = Decimal("0.25")
-        taken_lots, left_lots = take_basis(
-            self.lots, criterion=criterion, fraction=fraction
+        taken_lots, left_lots = part_basis(
+            self.lots, predicate=predicate, fraction=fraction
         )
 
         self.assertEqual(len(taken_lots), 2)
@@ -934,7 +897,7 @@ class TradeTestCase(unittest.TestCase):
                 currency=opentx.currency,
             )
             return Gain(
-                lot=lot, transaction=closetx, price=closetx.cash / closetx.units
+                lot=lot, transaction=closetx, price=abs(closetx.cash / closetx.units)
             )
 
         testGains = [matchTrades(*matchedTrade) for matchedTrade in matchedTrades]

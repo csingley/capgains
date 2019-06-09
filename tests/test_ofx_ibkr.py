@@ -11,10 +11,7 @@ from decimal import Decimal
 
 # local imports
 from capgains.ofx.ibkr import OfxStatementReader
-from capgains.models import (
-    Transaction,
-    TransactionType,
-)
+from capgains.models import Transaction, TransactionType
 from common import setUpModule, tearDownModule, RollbackMixin, OfxSnippetMixin
 
 
