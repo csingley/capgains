@@ -245,7 +245,7 @@ def book_trade(
     position.sort(**(sort or FIFO))
 
     # Remove closed lots from the position
-    lots_closed, position = functions.part_position(
+    lots_closed, position = functions.part_units(
         position, closableBy(transaction), -transaction.units
     )
 
@@ -412,7 +412,7 @@ def book_transfer(
     positionFrom.sort(**(sort or FIFO))
 
     # Remove the Lots from the source position
-    lotsFrom, positionFrom = functions.part_position(
+    lotsFrom, positionFrom = functions.units(
         positionFrom, openAsOf(transaction.datetime), -transaction.unitsFrom
     )
 
@@ -537,7 +537,7 @@ def book_exercise(
     positionFrom = portfolio.get(pocketFrom, [])
 
     # Remove lots from the source position
-    takenLots, remainingPosition = functions.part_position(
+    takenLots, remainingPosition = functions.part_units(
         positionFrom, openAsOf(transaction.datetime), -unitsFrom
     )
 
