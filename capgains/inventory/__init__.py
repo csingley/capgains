@@ -22,7 +22,7 @@ from .api import (
     book_transfer,
     book_spinoff,
 )
-from .predicates import (PredicateType, openAsOf, longAsOf, closableBy)
+from .predicates import PredicateType, openAsOf, longAsOf, closableBy
 from .sortkeys import (
     SortType,
     sort_oldest,

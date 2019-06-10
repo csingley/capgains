@@ -23,6 +23,6 @@ def matchEverything(element: Any) -> bool:
     return True
 
 
-def sign(x: numbers.Real) -> int:
+def sign(x) -> int:
     """Extract the sign of a number (+1, -1, or 0)"""
     return (x != 0) and (1, -1)[x < 0]
