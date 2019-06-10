@@ -2,7 +2,7 @@
 """
 """
 
-__all__ = ["part_position", "part_basis"]
+__all__ = ["part_units", "part_basis"]
 
 
 # stdlib imports
@@ -164,7 +164,4 @@ def _part_lot_basis(
         return (None, lot)
 
     takenprice = lot.price * fraction
-    return (
-        lot._replace(price=takenprice),
-        lot._replace(price=lot.price - takenprice),
-    )
+    return (lot._replace(price=takenprice), lot._replace(price=lot.price - takenprice))
