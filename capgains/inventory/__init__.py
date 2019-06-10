@@ -21,7 +21,6 @@ from .api import (
     book_split,
     book_transfer,
     book_spinoff,
-    book_transfer,
 )
 from .predicates import (PredicateType, openAsOf, longAsOf, closableBy)
 from .sortkeys import (
@@ -34,4 +33,4 @@ from .sortkeys import (
     MINGAIN,
     MAXGAIN,
 )
-from .functions import part_position, part_basis
+from .functions import part_units, part_basis

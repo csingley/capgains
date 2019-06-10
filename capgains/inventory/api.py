@@ -412,7 +412,7 @@ def book_transfer(
     positionFrom.sort(**(sort or FIFO))
 
     # Remove the Lots from the source position
-    lotsFrom, positionFrom = functions.units(
+    lotsFrom, positionFrom = functions.part_units(
         positionFrom, openAsOf(transaction.datetime), -transaction.unitsFrom
     )
 

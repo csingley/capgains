@@ -23,7 +23,7 @@ from capgains.inventory import (
     Spinoff,
     #  Exercise,
     Inconsistent,
-    part_position,
+    part_units,
     part_basis,
     openAsOf,
 )
@@ -328,13 +328,13 @@ class LotsMixin(object):
         self.lots = [self.lot1, self.lot2, self.lot3]
 
 
-class PartPositionTestCase(LotsMixin, unittest.TestCase):
-    def testPartPosition(self):
+class PartUnitsTestCase(LotsMixin, unittest.TestCase):
+    def testPartUnits(self):
         """
-        part_position() removes Lots from the beginning, partioning Lots as needed.
+        part_units() removes Lots from the beginning, partioning Lots as needed.
         """
         self.assertEqual(len(self.lots), 3)
-        taken, left = part_position(self.lots, max_units=Decimal("150"))
+        taken, left = part_units(self.lots, max_units=Decimal("150"))
 
         self.assertEqual(len(taken), 2)
         self.assertEqual(taken[0], self.lot1)
@@ -348,24 +348,24 @@ class PartPositionTestCase(LotsMixin, unittest.TestCase):
         )
         self.assertEqual(left[1], self.lot3)
 
-    def testPartPositionMaxUnitsNone(self):
+    def testPartUnitsMaxUnitsNone(self):
         """
-        part_position() takes all matches if max_units is None
+        part_units() takes all matches if max_units is None
         """
         self.assertEqual(len(self.lots), 3)
-        taken, left = part_position(self.lots)
+        taken, left = part_units(self.lots)
 
         self.assertEqual(len(taken), 3)
         self.assertEqual(taken, self.lots)
 
         self.assertEqual(len(left), 0)
 
-    def testPartPositionPredicate(self):
+    def testPartUnitsPredicate(self):
         """
-        part_position() respects lot selection criteria
+        part_units() respects lot selection criteria
         """
         predicate = openAsOf(datetime(2016, 1, 2))
-        taken_lots, left_lots = part_position(self.lots, predicate=predicate)
+        taken_lots, left_lots = part_units(self.lots, predicate=predicate)
 
         self.assertEqual(len(taken_lots), 2)
         self.assertEqual(len(left_lots), 1)
@@ -373,12 +373,12 @@ class PartPositionTestCase(LotsMixin, unittest.TestCase):
         self.assertEqual(taken_lots, [self.lot1, self.lot2])
         self.assertEqual(left_lots, [self.lot3])
 
-    def testPartPositionMaxUnitsPredicate(self):
+    def testPartUnitsMaxUnitsPredicate(self):
         """
-        part_position() respects predicate and max_units args together
+        part_units() respects predicate and max_units args together
         """
         predicate = openAsOf(datetime(2016, 1, 2))
-        taken_lots, left_lots = part_position(
+        taken_lots, left_lots = part_units(
             self.lots, max_units=Decimal("150"), predicate=predicate
         )
 
