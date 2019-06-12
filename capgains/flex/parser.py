@@ -284,7 +284,7 @@ def parse_optionEAE(report, trades):
                 memo="Exercise " + tx.memo,
                 uniqueidtypeFrom=tx.uniqueidtype,
                 uniqueidFrom=tx.uniqueid,
-                unitsFrom=tx.units,
+                unitsfrom=tx.units,
                 reportdate=tx.reportdate,
             )
         else:
@@ -410,7 +410,7 @@ Exercise = namedtuple(
         "units",
         "uniqueidtypeFrom",
         "uniqueidFrom",
-        "unitsFrom",
+        "unitsfrom",
         "currency",
         "total",
         "reportdate",

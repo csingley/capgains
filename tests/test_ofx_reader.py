@@ -300,8 +300,8 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
         self.assertEqual(trans.fiaccount, acct)
         self.assertEqual(trans.security, security)
         self.assertEqual(trans.units, None)
-        self.assertEqual(trans.securityPrice, None)
-        self.assertEqual(trans.fiaccountFrom, None)
+        self.assertEqual(trans.securityprice, None)
+        self.assertEqual(trans.fiaccountfrom, None)
 
     def testMergeRetOfCap(self):
         self._mergeRetOfCapTest()

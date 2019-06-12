@@ -132,9 +132,9 @@ class Transfer(NamedTuple):
         fiaccount: destination brokerage account.
         security: destination security.
         units: destination security amount.
-        fiaccountFrom: source brokerage account.
-        securityFrom: source security.
-        unitsFrom: source security amount.
+        fiaccountfrom: source brokerage account.
+        securityfrom: source security.
+        unitsfrom: source security amount.
         memo: transaction notes.
     """
 
@@ -144,9 +144,9 @@ class Transfer(NamedTuple):
     fiaccount: Any
     security: Any
     units: Decimal
-    fiaccountFrom: Any
-    securityFrom: Any
-    unitsFrom: Decimal
+    fiaccountfrom: Any
+    securityfrom: Any
+    unitsfrom: Decimal
     memo: Optional[str] = None
 
 
@@ -156,8 +156,8 @@ class Split(NamedTuple):
     Splits are declared in terms of new units : old units (the split ratio).
 
     Note:
-        A Split is essentially a Transfer where fiaccount=fiaccountFrom and
-        security=SecurityFrom, differing only in units/unitsFrom.
+        A Split is essentially a Transfer where fiaccount=fiaccountfrom and
+        security=SecurityFrom, differing only in units/unitsfrom.
 
     Attributes:
         id: database primary key of transaction.
@@ -189,7 +189,7 @@ class Spinoff(NamedTuple):
     Per the US tax code, cost basis must be divided between the two securities
     positions in proportion to their fair market value.  For exchange-traded securities
     this is normally derived from market prices immediately after the spinoff.  This
-    pricing isn't known at the time of the spinoff; securityPrice and securityFromPrice
+    pricing isn't known at the time of the spinoff; securityprice and securityfromprice
     must be edited in after market data becomes available.
 
     Attributes:
@@ -201,10 +201,10 @@ class Spinoff(NamedTuple):
         units: amount of destination security received.
         numerator: normalized units of destination security.
         denominator: normalized units of source security.
-        securityFrom: source security (i.e. security subject to spinoff).
+        securityfrom: source security (i.e. security subject to spinoff).
         memo: transaction notes.
-        securityPrice: unit price used to fair-value source security.
-        securityFromPrice: unit price used to fair-value destination security.
+        securityprice: unit price used to fair-value source security.
+        securityfromprice: unit price used to fair-value destination security.
     """
 
     id: int
@@ -215,10 +215,10 @@ class Spinoff(NamedTuple):
     units: Decimal
     numerator: Decimal
     denominator: Decimal
-    securityFrom: Any
+    securityfrom: Any
     memo: Optional[str] = None
-    securityPrice: Optional[Decimal] = None
-    securityFromPrice: Optional[Decimal] = None
+    securityprice: Optional[Decimal] = None
+    securityfromprice: Optional[Decimal] = None
 
 
 class Exercise(NamedTuple):
@@ -237,8 +237,8 @@ class Exercise(NamedTuple):
         units: change in amount of destination security (i.e. the underlying).
         cash: net exercise payment (+ long put/short call; - long call/short put)
         currency: currency denomination of cash (ISO 4217 code).
-        securityFrom: source security (i.e. the option).
-        unitsFrom: change in mount of source security (i.e. the option).
+        securityfrom: source security (i.e. the option).
+        unitsfrom: change in mount of source security (i.e. the option).
         memo: transaction notes.
     """
 
@@ -250,8 +250,8 @@ class Exercise(NamedTuple):
     units: Decimal
     cash: Decimal
     currency: str
-    securityFrom: Any
-    unitsFrom: Decimal
+    securityfrom: Any
+    unitsfrom: Decimal
     memo: Optional[str] = None
 
 

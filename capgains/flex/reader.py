@@ -392,9 +392,9 @@ class FlexStatementReader(OfxStatementReader):
             memo=transaction.memo,
             security=security,
             units=units,
-            fiaccountFrom=acctFrom,
-            securityFrom=security,
-            unitsFrom=unitsFrom,
+            fiaccountfrom=acctFrom,
+            securityfrom=security,
+            unitsfrom=unitsFrom,
         )
 
         return transaction
@@ -574,7 +574,7 @@ class FlexStatementReader(OfxStatementReader):
         return [
             self.merge_spinoff(
                 transaction=corpAct.raw,
-                securityFrom=self.guess_security(
+                securityfrom=self.guess_security(
                     matchgroups["isinFrom"], matchgroups["tickerFrom"]
                 ),
                 numerator=Decimal(matchgroups["numerator0"]),
@@ -640,7 +640,7 @@ class FlexStatementReader(OfxStatementReader):
             raise ValueError(msg)
         matchgroups = match.groupdict()
         try:
-            securityFrom = self.guess_security(
+            securityfrom = self.guess_security(
                 matchgroups["isinFrom"], matchgroups["tickerFrom"]
             )
         except ValueError as e:
@@ -651,7 +651,7 @@ class FlexStatementReader(OfxStatementReader):
         return [
             self.merge_spinoff(
                 transaction=corpAct.raw,
-                securityFrom=securityFrom,
+                securityfrom=securityfrom,
                 numerator=Decimal(matchgroups["numerator0"]),
                 denominator=Decimal(matchgroups["denominator0"]),
                 memo=memo,
@@ -665,7 +665,7 @@ class FlexStatementReader(OfxStatementReader):
         src, dest, spinoffs = self._group_reorg(corpActs, match)
         src, dest = src.raw, dest.raw
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
-        securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
+        securityfrom = self.securities[(src.uniqueidtype, src.uniqueid)]
         txs = [
             self.merge_transaction(
                 uniqueid=src.fitid,
@@ -677,8 +677,8 @@ class FlexStatementReader(OfxStatementReader):
                 fiaccount=self.account,
                 security=security,
                 units=dest.units,
-                securityFrom=securityFrom,
-                unitsFrom=src.units,
+                securityfrom=securityfrom,
+                unitsfrom=src.units,
             )
         ]
 
@@ -686,7 +686,7 @@ class FlexStatementReader(OfxStatementReader):
             txs.extend(
                 self.merge_spinoff(
                     transaction=spinoff.raw,
-                    securityFrom=securityFrom,
+                    securityfrom=securityfrom,
                     numerator=spinoff.units,
                     denominator=-src.units,
                     memo=memo,
@@ -797,7 +797,7 @@ class FlexStatementReader(OfxStatementReader):
             )
         ]
 
-    def merge_spinoff(self, transaction, securityFrom, numerator, denominator, memo):
+    def merge_spinoff(self, transaction, securityfrom, numerator, denominator, memo):
         security = self.securities[(transaction.uniqueidtype, transaction.uniqueid)]
         return [
             self.merge_transaction(
@@ -810,7 +810,7 @@ class FlexStatementReader(OfxStatementReader):
                 numerator=numerator,
                 denominator=denominator,
                 units=transaction.units,
-                securityFrom=securityFrom,
+                securityfrom=securityfrom,
             )
         ]
 
@@ -876,7 +876,7 @@ class FlexStatementReader(OfxStatementReader):
                 txs.append(
                     self.merge_spinoff(
                         transaction=spinoff,
-                        securityFrom=self.securities[(src.uniqueidtype, src.uniqueid)],
+                        securityfrom=self.securities[(src.uniqueidtype, src.uniqueid)],
                         numerator=spinoff.units,
                         denominator=-src.units,
                         memo=memo,
@@ -891,7 +891,7 @@ class FlexStatementReader(OfxStatementReader):
         fiaccount.
         """
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
-        securityFrom = self.securities[(src.uniqueidtype, src.uniqueid)]
+        securityfrom = self.securities[(src.uniqueidtype, src.uniqueid)]
         return [
             self.merge_transaction(
                 type=models.TransactionType.TRANSFER,
@@ -901,9 +901,9 @@ class FlexStatementReader(OfxStatementReader):
                 memo=memo,
                 security=security,
                 units=dest.units,
-                fiaccountFrom=self.account,
-                securityFrom=securityFrom,
-                unitsFrom=src.units,
+                fiaccountfrom=self.account,
+                securityfrom=securityfrom,
+                unitsfrom=src.units,
             )
         ]
 
@@ -1035,7 +1035,7 @@ class FlexStatementReader(OfxStatementReader):
     def doOptionsExercises(self, transactions):
         for tx in transactions:
             security = self.securities[(tx.uniqueidtype, tx.uniqueid)]
-            securityFrom = self.securities[(tx.uniqueidtypeFrom, tx.uniqueidFrom)]
+            securityfrom = self.securities[(tx.uniqueidtypeFrom, tx.uniqueidFrom)]
             self.merge_transaction(
                 uniqueid=tx.fitid,
                 datetime=tx.dttrade,
@@ -1046,8 +1046,8 @@ class FlexStatementReader(OfxStatementReader):
                 fiaccount=self.account,
                 security=security,
                 units=tx.units,
-                securityFrom=securityFrom,
-                unitsFrom=tx.unitsFrom,
+                securityfrom=securityfrom,
+                unitsfrom=tx.unitsfrom,
                 sort=self.sortForTrade(tx.notes),
             )
 

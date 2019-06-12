@@ -221,7 +221,7 @@ class Transaction(Base, Mergeable):
     fiaccount_id = Column(
         Integer, ForeignKey("fiaccount.id", onupdate="CASCADE"), nullable=False
     )
-    # Multiple join paths from Transaction to FiAccount (fiaccount; fiaccountFrom)
+    # Multiple join paths from Transaction to FiAccount (fiaccount; fiaccountfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
     # must use relationship(backref) on the ForeignKey side.
     fiaccount = relationship(
@@ -231,7 +231,7 @@ class Transaction(Base, Mergeable):
     security_id = Column(
         Integer, ForeignKey("security.id", onupdate="CASCADE"), nullable=False
     )
-    # Multiple join paths from Transaction to Security (security; securityFrom)
+    # Multiple join paths from Transaction to Security (security; securityfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
     # must use relationship(backref) on the ForeignKey side.
     security = relationship(
@@ -240,29 +240,29 @@ class Transaction(Base, Mergeable):
     # Change in Security quantity caused by Transaction
     units = Column(Numeric)
     # For spinoffs: FMV of source security post-spin
-    securityPrice = Column(Numeric)
+    securityprice = Column("securityprice", Numeric)
     # For transfers: source FI acount
-    fiaccountFrom_id = Column(Integer, ForeignKey("fiaccount.id", onupdate="CASCADE"))
+    fiaccountfrom_id = Column("fiaccountfrom_id", Integer, ForeignKey("fiaccount.id", onupdate="CASCADE"))
     # Multiple join paths from Transaction to FiAccount(
-    # fiaccount; fiaccountFromFrom)  so can't use relationship(back_populates)
+    # fiaccount; fiaccountfrom)  so can't use relationship(back_populates)
     # on both sides of the the join; must use relationship(backref) on the
     # ForeignKey side.
-    fiaccountFrom = relationship(
-        "FiAccount", foreign_keys=[fiaccountFrom_id], backref="transactionsFrom"
+    fiaccountfrom = relationship(
+        "FiAccount", foreign_keys=[fiaccountfrom_id], backref="transactionsFrom"
     )
     # For transfers, spinoffs, exercise: source Security
-    securityFrom_id = Column(Integer, ForeignKey("security.id", onupdate="CASCADE"))
-    # Multiple join paths from Transaction to Security (security; securityFrom)
+    securityfrom_id = Column(Integer, ForeignKey("security.id", onupdate="CASCADE"))
+    # Multiple join paths from Transaction to Security (security; securityfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
     # must use relationship(backref) on the ForeignKey side.
-    securityFrom = relationship(
-        "Security", foreign_keys=[securityFrom_id], backref="transactionsFrom"
+    securityfrom = relationship(
+        "Security", foreign_keys=[securityfrom_id], backref="transactionsFrom"
     )
     # For splits, transfers, exercise: change in quantity of source Security
     # caused by Transaction
-    unitsFrom = Column(Numeric)
+    unitsfrom = Column("unitsfrom", Numeric)
     # For spinoffs: FMV of destination Security post-spin
-    securityFromPrice = Column(Numeric)
+    securityfromprice = Column("securityfromprice", Numeric)
     # For splits, spinoffs: normalized units of destination Security
     numerator = Column(Numeric)
     # For splits, spinoff: normalized units of source Security
@@ -366,11 +366,11 @@ def enforce_constraints(instance, isNone=(), notNone=(), isPositive=(), nonZero=
 enforce_trade_constraints = functools.partial(
     enforce_constraints,
     isNone=(
-        "securityPrice",
-        "fiaccountFrom",
-        "securityFrom",
-        "unitsFrom",
-        "securityFromPrice",
+        "securityprice",
+        "fiaccountfrom",
+        "securityfrom",
+        "unitsfrom",
+        "securityfromprice",
         "numerator",
         "denominator",
     ),
@@ -383,11 +383,11 @@ enforce_returnofcapital_constraints = functools.partial(
     enforce_constraints,
     isNone=(
         "units",
-        "securityPrice",
-        "fiaccountFrom",
-        "securityFrom",
-        "unitsFrom",
-        "securityFromPrice",
+        "securityprice",
+        "fiaccountfrom",
+        "securityfrom",
+        "unitsfrom",
+        "securityfromprice",
         "numerator",
         "denominator",
     ),
@@ -397,8 +397,8 @@ enforce_returnofcapital_constraints = functools.partial(
 
 enforce_transfer_constraints = functools.partial(
     enforce_constraints,
-    isNone=("cash", "securityPrice", "securityFromPrice", "numerator", "denominator"),
-    notNone=("units", "fiaccountFrom", "securityFrom", "unitsFrom"),
+    isNone=("cash", "securityprice", "securityfromprice", "numerator", "denominator"),
+    notNone=("units", "fiaccountfrom", "securityfrom", "unitsfrom"),
 )
 
 
@@ -406,11 +406,11 @@ enforce_split_constraints = functools.partial(
     enforce_constraints,
     isNone=(
         "cash",
-        "securityPrice",
-        "securityFromPrice",
-        "fiaccountFrom",
-        "securityFrom",
-        "unitsFrom",
+        "securityprice",
+        "securityfromprice",
+        "fiaccountfrom",
+        "securityfrom",
+        "unitsfrom",
     ),
     notNone=("units", "numerator", "denominator"),
     isPositive=("numerator", "denominator"),
@@ -419,14 +419,14 @@ enforce_split_constraints = functools.partial(
 
 enforce_spinoff_constraints = functools.partial(
     enforce_constraints,
-    isNone=("cash", "fiaccountFrom", "unitsFrom"),
-    notNone=("units", "securityFrom", "numerator", "denominator"),
+    isNone=("cash", "fiaccountfrom", "unitsfrom"),
+    notNone=("units", "securityfrom", "numerator", "denominator"),
     isPositive=("numerator", "denominator"),
 )
 
 
 enforce_exercise_constraints = functools.partial(
     enforce_constraints,
-    isNone=("numerator", "denominator", "fiaccountFrom"),
-    notNone=("units", "security", "unitsFrom", "securityFrom", "cash"),
+    isNone=("numerator", "denominator", "fiaccountfrom"),
+    notNone=("units", "security", "unitsfrom", "securityfrom", "cash"),
 )

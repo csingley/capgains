@@ -1161,9 +1161,9 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
                     memo=sentinel.memo,
                     security=sentinel.security1,
                     units=sentinel.units1,
-                    fiaccountFrom=self.reader.account,
-                    securityFrom=sentinel.security0,
-                    unitsFrom=sentinel.units0,
+                    fiaccountfrom=self.reader.account,
+                    securityfrom=sentinel.security0,
+                    unitsfrom=sentinel.units0,
                 )
             ],
         )
@@ -1290,7 +1290,7 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         output = self.reader.merge_spinoff(
             corpAct,
-            securityFrom=sentinel.securityFrom,
+            securityfrom=sentinel.securityfrom,
             numerator=sentinel.numerator,
             denominator=sentinel.denominator,
             memo=None,
@@ -1308,7 +1308,7 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
                     numerator=sentinel.numerator,
                     denominator=sentinel.denominator,
                     units=sentinel.units,
-                    securityFrom=sentinel.securityFrom,
+                    securityfrom=sentinel.securityfrom,
                 )
             ],
         )

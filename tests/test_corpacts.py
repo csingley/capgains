@@ -193,9 +193,9 @@ class CorpActCancelTestCase(
                 fiaccount=self.account,
                 security=self.securities[2],
                 units=Decimal("557915"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[0],
-                unitsFrom=Decimal("-557915"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[0],
+                unitsfrom=Decimal("-557915"),
             ),
             Transfer(
                 id=1,
@@ -205,9 +205,9 @@ class CorpActCancelTestCase(
                 fiaccount=self.account,
                 security=self.securities[1],
                 units=Decimal("56"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[2],
-                unitsFrom=Decimal("-557915"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[2],
+                unitsfrom=Decimal("-557915"),
             ),
         ]
 
@@ -327,9 +327,9 @@ class SubscriptionSpanningMultipleDatesTestCase(
                 fiaccount=self.account,
                 security=self.securities[1],
                 units=Decimal("34000"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[0],
-                unitsFrom=Decimal("-34000"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[0],
+                unitsfrom=Decimal("-34000"),
             ),
             Transfer(
                 id=1,
@@ -339,9 +339,9 @@ class SubscriptionSpanningMultipleDatesTestCase(
                 fiaccount=self.account,
                 security=self.securities[3],
                 units=Decimal("34000"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[1],
-                unitsFrom=Decimal("-34000"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[1],
+                unitsfrom=Decimal("-34000"),
             ),
         ]
 
@@ -416,9 +416,9 @@ class ChangeSecurityTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[1],
                 units=Decimal("112833"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[0],
-                unitsFrom=Decimal("-112833"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[0],
+                unitsfrom=Decimal("-112833"),
             )
         ]
 
@@ -476,7 +476,7 @@ class RightsIssueTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[0],
                 units=Decimal("70576"),
-                securityFrom=self.securities[1],
+                securityfrom=self.securities[1],
                 numerator=Decimal("1"),
                 denominator=Decimal("1"),
             )
@@ -503,9 +503,9 @@ class SplitWithCusipChangeTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[0],
                 units=Decimal("-4250"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[1],
-                unitsFrom=Decimal("17000"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[1],
+                unitsfrom=Decimal("17000"),
             )
         ]
 
@@ -562,7 +562,7 @@ class SpinoffTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[0],
                 units=Decimal("1837.125"),
-                securityFrom=self.securities[1],
+                securityfrom=self.securities[1],
                 numerator=Decimal("1"),
                 denominator=Decimal("40"),
             )
@@ -591,8 +591,8 @@ class SubscribeRightsBadIsinToTestCase(CorpActXmlSnippetMixin, unittest.TestCase
                 fiaccount=self.account,
                 security=self.securities[0],
                 units=Decimal("3839"),
-                securityFrom=self.securities[1],
-                unitsFrom=Decimal("-3839"),
+                securityfrom=self.securities[1],
+                unitsfrom=Decimal("-3839"),
             )
         ]
 
@@ -620,9 +620,9 @@ class MergerBadIsinFromTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[0],
                 units=Decimal("70576"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[1],
-                unitsFrom=Decimal("-70576"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[1],
+                unitsfrom=Decimal("-70576"),
             )
         ]
 
@@ -672,9 +672,9 @@ class KindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[0],
                 units=Decimal("2575"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[1],
-                unitsFrom=Decimal("-2575"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[1],
+                unitsfrom=Decimal("-2575"),
             )
         ]
 
@@ -722,9 +722,9 @@ class CashKindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[1],
                 units=Decimal("17200.005"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[0],
-                unitsFrom=Decimal("-150000"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[0],
+                unitsfrom=Decimal("-150000"),
             ),
             Spinoff(
                 id=1,
@@ -734,7 +734,7 @@ class CashKindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[2],
                 units=Decimal("150000"),
-                securityFrom=self.securities[0],
+                securityfrom=self.securities[0],
                 numerator=Decimal("150000"),
                 denominator=Decimal("150000"),
             ),
@@ -761,9 +761,9 @@ class TenderTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 fiaccount=self.account,
                 security=self.securities[1],
                 units=Decimal("60996"),
-                fiaccountFrom=self.account,
-                securityFrom=self.securities[0],
-                unitsFrom=Decimal("-60996"),
+                fiaccountfrom=self.account,
+                securityfrom=self.securities[0],
+                unitsfrom=Decimal("-60996"),
             )
         ]
 

@@ -938,12 +938,12 @@ class TransferTestCase(unittest.TestCase):
             id=4,
             uniqueid="",
             fiaccount=None,
-            fiaccountFrom=None,
+            fiaccountfrom=None,
             datetime=datetime(2016, 1, 4),
             security=3,
             units=Decimal("100"),
-            securityFrom=1,
-            unitsFrom=Decimal("-50"),
+            securityfrom=1,
+            unitsfrom=Decimal("-50"),
         )
         gains = self.portfolio.book(transfer)
         self.assertEqual(len(gains), 0)
@@ -961,7 +961,7 @@ class TransferTestCase(unittest.TestCase):
         self.assertEqual(lot.createtransaction, transfer)
         self.assertEqual(lot.units, transfer.units)
         self.assertEqual(
-            lot.price, self.lot1.price * -transfer.unitsFrom / transfer.units
+            lot.price, self.lot1.price * -transfer.unitsfrom / transfer.units
         )
         self.assertEqual(lot.currency, self.lot1.currency)
 
@@ -974,11 +974,11 @@ class TransferTestCase(unittest.TestCase):
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
-            fiaccountFrom=None,
+            fiaccountfrom=None,
             security=2,
             units=Decimal("100"),
-            securityFrom=1,
-            unitsFrom=Decimal("-50"),
+            securityfrom=1,
+            unitsfrom=Decimal("-50"),
         )
         gains = self.portfolio.book(transfer)
 
@@ -999,47 +999,47 @@ class TransferTestCase(unittest.TestCase):
         """
         Transactions that can't be satisfied raise errors.
         """
-        # unitsFrom and units must have opposite signs
+        # unitsfrom and units must have opposite signs
         transfer = Transfer(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
-            fiaccountFrom=None,
+            fiaccountfrom=None,
             security=2,
             units=Decimal("100"),
-            securityFrom=1,
-            unitsFrom=Decimal("50"),
+            securityfrom=1,
+            unitsfrom=Decimal("50"),
         )
         with self.assertRaises(ValueError):
             self.portfolio.book(transfer)
 
-        # Must have an existing position in (accountFrom, securityFrom)
+        # Must have an existing position in (accountfrom, securityfrom)
         transfer = Transfer(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
-            fiaccountFrom=None,
+            fiaccountfrom=None,
             security=2,
             units=Decimal("100"),
-            securityFrom=3,
-            unitsFrom=Decimal("-50"),
+            securityfrom=3,
+            unitsfrom=Decimal("-50"),
         )
         with self.assertRaises(Inconsistent):
             self.portfolio.book(transfer)
 
-        # Existing position must have enough units to satisfy unitsFrom
+        # Existing position must have enough units to satisfy unitsfrom
         transfer = Transfer(
             id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
-            fiaccountFrom=None,
+            fiaccountfrom=None,
             security=2,
             units=Decimal("100"),
-            securityFrom=1,
-            unitsFrom=Decimal("-150"),
+            securityfrom=1,
+            unitsfrom=Decimal("-150"),
         )
         with self.assertRaises(Inconsistent):
             self.portfolio.book(transfer)
@@ -1099,9 +1099,9 @@ class SpinoffTestCase(unittest.TestCase):
             numerator=Decimal("1"),
             denominator=Decimal("5"),
             units=Decimal("20"),
-            securityFrom=1,
-            securityPrice=Decimal("5"),
-            securityFromPrice=Decimal("1"),
+            securityfrom=1,
+            securityprice=Decimal("5"),
+            securityfromprice=Decimal("1"),
         )
         gains = self.portfolio.book(spinoff)
         self.assertEqual(len(gains), 0)
@@ -1143,9 +1143,9 @@ class SpinoffTestCase(unittest.TestCase):
             numerator=Decimal("1"),
             denominator=Decimal("5"),
             units=Decimal("20"),
-            securityFrom=1,
-            securityPrice=Decimal("5"),
-            securityFromPrice=Decimal("1"),
+            securityfrom=1,
+            securityprice=Decimal("5"),
+            securityfromprice=Decimal("1"),
         )
         gains = self.portfolio.book(spinoff)
         self.assertEqual(len(gains), 1)

@@ -474,9 +474,9 @@ class OfxStatementReader(object):
         units=None,
         currency=None,
         cash=None,
-        fiaccountFrom=None,
-        securityFrom=None,
-        unitsFrom=None,
+        fiaccountfrom=None,
+        securityfrom=None,
+        unitsfrom=None,
         numerator=None,
         denominator=None,
         **kwargs
@@ -500,7 +500,7 @@ class OfxStatementReader(object):
         dateTime = datetime.isoformat()
         msg = (
             "{} {}, fiaccount={}, security={}, units={}, currency={},  "
-            "cash={}, fiaccountFrom={}, securityFrom={}, unitsFrom={}, "
+            "cash={}, fiaccountfrom={}, securityfrom={}, unitsfrom={}, "
             "numerator={}, denominator={}"
         ).format(
             dateTime,
@@ -510,9 +510,9 @@ class OfxStatementReader(object):
             units,
             currency,
             cash,
-            getattr(fiaccountFrom, "id", None),
-            getattr(securityFrom, "id", None),
-            unitsFrom,
+            getattr(fiaccountfrom, "id", None),
+            getattr(securityfrom, "id", None),
+            unitsfrom,
             numerator,
             denominator,
         )
