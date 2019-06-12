@@ -7,23 +7,22 @@ with open(os.path.join(__here__, 'README.rst'), 'r') as f:
     long_description = f.read()
 
 setup(
-    name = 'capgains',
-    version = '0.0.1dev',
+    name='capgains',
+    version='0.0.1dev',
     # Note: change 'master' to the tag name when release a new verison
-    download_url = 'https://github.com/csingley/capgains/tarball/master',
+    download_url='https://github.com/csingley/capgains/tarball/master',
 
-    description = ('Calculate capital gains from investment transactions '
-                   ''),
-    long_description = long_description,
+    description='Calculate capital gains from investment transactions',
+    long_description=long_description,
 
-    url = 'https://github.com/csingley/capgains',
+    url='https://github.com/csingley/capgains',
 
-    author = 'Christopher Singley',
-    author_email = 'csingley@gmail.com',
+    author='Christopher Singley',
+    author_email='csingley@gmail.com',
 
-    license = 'MIT',
+    license='MIT',
 
-    classifiers = [
+    classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
         'Intended Audience :: Financial and Insurance Industry',
@@ -43,17 +42,18 @@ setup(
         'Programming Language :: Python :: 3.6',
     ],
 
-    keywords = ['tax', 'investment', 'ofx', 'Open Financial Exchange'],
+    keywords=['tax', 'investment', 'ofx', 'Open Financial Exchange'],
 
-    packages = find_packages(),
+    packages=find_packages(),
 
-    install_requires = [
-        'ofxtools >= 0.3.13',
+    install_requires=[
+        'ofxtools >= 0.8.20',
         'sqlalchemy >= 1.0.0',
+        'alembic >= 1.0.0',
         'ibflex',
     ],
 
-    package_data = {
+    package_data={
         'capgains': ['README.rst', 'tests/*'],
     },
 
