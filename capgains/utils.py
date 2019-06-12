@@ -2,8 +2,7 @@
 Utility functions used by capgains modules
 """
 import itertools
-import numbers
-from typing import Any, Tuple, Iterable, Callable, Optional
+from typing import Any, Tuple, Iterable, Callable
 
 
 def partition(

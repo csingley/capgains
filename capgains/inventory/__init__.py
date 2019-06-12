@@ -1,5 +1,5 @@
 # coding: utf-8
-from .models import (
+from .types import (
     Trade,
     ReturnOfCapital,
     Transfer,

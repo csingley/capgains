@@ -12,7 +12,7 @@ from typing import Callable
 
 
 # local imports
-from .models import Lot, TransactionType
+from .types import Lot, TransactionType
 
 
 PredicateType = Callable[[Lot], bool]

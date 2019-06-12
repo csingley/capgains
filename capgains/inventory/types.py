@@ -50,6 +50,7 @@ __all__ = [
 
 
 # stdlib imports
+import operator
 from decimal import Decimal
 import datetime as _datetime
 from typing import NamedTuple, Tuple, Mapping, Callable, Any, Optional, Union
@@ -303,3 +304,80 @@ class Gain(NamedTuple):
     lot: Lot
     transaction: Any
     price: Decimal
+
+
+# Money type to replace (cash, currency) - currently unused
+NumberType = Union[float, Decimal]
+
+
+def bind_amount(func, cash: "Money"):
+    return Money(amount=func(cash.amount), currency=cash.currency)
+
+
+def bind_amount_scalar(func, cash: "Money", scalar: NumberType):
+    return Money(amount=func(cash.amount, scalar), currency=cash.currency)
+
+
+def bind_amounts(func, cash0: "Money", cash1: "Money"):
+    if cash0.currency != cash1.currency:
+        raise ValueError(f"{cash0} and {cash1} have different currencies")
+    return func(cash0.amount, cash1.amount)
+
+
+class Money(NamedTuple):
+    amount: Decimal
+    currency: str
+
+    def __neg__(self) -> "Money":
+        return bind_amount(operator.neg, self)
+
+    def __pos__(self) -> "Money":
+        return bind_amount(operator.pos, self)
+
+    def __abs__(self) -> "Money":
+        return bind_amount(operator.abs, self)
+
+    # Comparison requires identical currencies
+    def __lt__(self, other) -> bool:
+        return bind_amounts(operator.lt, self, other)
+
+    def __le__(self, other) -> bool:
+        return bind_amounts(operator.le, self, other)
+
+    def __eq__(self, other) -> bool:
+        return bind_amounts(operator.eq, self, other)
+
+    def __ne__(self, other) -> bool:
+        return bind_amounts(operator.ne, self, other)
+
+    def __ge__(self, other) -> bool:
+        return bind_amounts(operator.ge, self, other)
+
+    def __gt__(self, other) -> bool:
+        return bind_amounts(operator.gt, self, other)
+
+    # Addition requires identical currencies
+    def __add__(self, other) -> "Money":
+        return bind_amounts(operator.add, self, other)
+
+    def __iadd__(self, other) -> "Money":
+        return bind_amounts(operator.iadd, self, other)
+
+    def __sub__(self, other) -> "Money":
+        return bind_amounts(operator.sub, self, other)
+
+    def __isub__(self, other) -> "Money":
+        return bind_amounts(operator.isub, self, other)
+
+    # Multiplication is scalar; multiplier must be unitless number
+    def __mul__(self, other) -> "Money":
+        return bind_amount_scalar(operator.mul, self, other)
+
+    def __imul__(self, other) -> "Money":
+        return bind_amount_scalar(operator.imul, self, other)
+
+    def __truediv__(self, other) -> "Money":
+        return bind_amount_scalar(operator.truediv, self, other)
+
+    def __itruediv__(self, other) -> "Money":
+        return bind_amount_scalar(operator.itruediv, self, other)

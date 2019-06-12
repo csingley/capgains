@@ -11,7 +11,7 @@ from typing import Tuple, List, Sequence, Generator, Optional
 
 
 # local imports
-from .models import Lot
+from .types import Lot
 from .predicates import PredicateType
 from capgains import utils
 

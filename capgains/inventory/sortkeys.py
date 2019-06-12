@@ -20,7 +20,7 @@ from typing import Tuple, Mapping, Callable, Union
 
 
 # local imports
-from .models import Lot
+from .types import Lot
 
 
 SortType = Mapping[str, Union[bool, Callable[[Lot], Tuple]]]

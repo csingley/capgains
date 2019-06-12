@@ -70,7 +70,7 @@ from typing import Tuple, List, MutableMapping, Any, Optional, Union
 # local imports
 from capgains import models, utils
 from capgains.inventory import functions
-from .models import (
+from .types import (
     Lot,
     Gain,
     TransactionType,
