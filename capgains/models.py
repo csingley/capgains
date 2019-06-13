@@ -57,7 +57,8 @@ class TransactionSort(enum.Enum):
 
 
 class Mergeable(object):
-    """ Mixin implementing merge() classmethod """
+    """Mixin implementing merge() classmethod.
+    """
 
     signature = NotImplemented
 
@@ -82,26 +83,37 @@ class Mergeable(object):
 
 
 class Fi(Base, Mergeable):
-    """ A financial institution """
+    """A financial institution (e.g. brokerage).
+    """
 
     id = Column(Integer, primary_key=True)
-    brokerid = Column(String, nullable=False, unique=True)
+    brokerid = Column(
+        String, nullable=False, unique=True, comment="OFX <INVACCTFROM><BROKERID> value"
+    )
     name = Column(String)
 
-    fiaccounts = relationship("FiAccount", back_populates="fi")
+    accounts = relationship("FiAccount", back_populates="fi")
+
+    __table_args__ = ({"comment": "Financial Institution (e.g. Brokerage)"}, )
 
     signature = ("brokerid",)
 
 
 class FiAccount(Base, Mergeable):
-    """ A financial institution account """
+    """A financial institution (e.g. brokerage) account.
+    """
 
     id = Column(Integer, primary_key=True)
-    fi_id = Column(ForeignKey("fi.id"), nullable=False)
-    number = Column(String, nullable=False)
+    fi_id = Column(
+        ForeignKey("fi.id"), nullable=False, comment="Financial institution (FK fi.id)"
+    )
+    fi = relationship("Fi", back_populates="accounts")
+    number = Column(
+        String, nullable=False, comment="account# (OFX <INVACCTFROM><ACCTID> value"
+    )
     name = Column(String)
 
-    fi = relationship("Fi", back_populates="fiaccounts")
+    __table_args__ = {"comment": "Financial Institution (e.g. Brokerage) Account"}
 
     signature = ("fi", "number")
 
@@ -115,6 +127,9 @@ class FiAccount(Base, Mergeable):
 
 
 class Security(Base):
+    """Market-traded security.
+    """
+
     id = Column(Integer, primary_key=True)
     name = Column(String)
     ticker = Column(String)
@@ -184,16 +199,25 @@ class Security(Base):
 
 
 class SecurityId(Base):
+    """Unique identifier for security.
+    """
+
     id = Column(Integer, primary_key=True)
     security_id = Column(
-        Integer, ForeignKey("security.id", onupdate="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("security.id", onupdate="CASCADE"),
+        nullable=False,
+        comment="FK security.id",
     )
-    uniqueidtype = Column(String, nullable=False)
-    uniqueid = Column(String, nullable=False)
+    uniqueidtype = Column(String, nullable=False, comment="CUSIP, ISIN, etc.")
+    uniqueid = Column(String, nullable=False, comment="CUSIP, ISIN, etc.")
 
     security = relationship("Security", back_populates="ids")
 
-    __table_args__ = (UniqueConstraint("uniqueidtype", "uniqueid"),)
+    __table_args__ = (
+        UniqueConstraint("uniqueidtype", "uniqueid"),
+        {"comment": "Unique Identifiers for Securities"},
+    )
 
     def __repr__(self):
         rp = "SecurityId(id={}, uniqueidtype='{}', uniqueid='{}', security={})"
@@ -201,25 +225,39 @@ class SecurityId(Base):
 
 
 class Transaction(Base, Mergeable):
-    """
+    """Securities transaction.
     """
 
     id = Column(Integer, primary_key=True)
-    # FI transaction unique identifier
-    uniqueid = Column(String, nullable=False, unique=True)
-    # Effective date/time
-    datetime = Column(DateTime, nullable=False)
-    # The payment for cash distributions (datetime field records the ex-date)
-    dtsettle = Column(DateTime)
-    type = Column(Enum(TransactionType, name="transaction_type"), nullable=False)
+    uniqueid = Column(
+        String, nullable=False, unique=True, comment="FI transaction unique identifier"
+    )
+    datetime = Column(
+        DateTime,
+        nullable=False,
+        comment="Effective date/time: ex-date for reorgs, return of capital",
+    )
+    dtsettle = Column(
+        DateTime, comment="Settlement date: pay date for return of capital"
+    )
+    type = Column(
+        Enum(TransactionType, name="transaction_type"),
+        nullable=False,
+        comment=f"One of {tuple(TransactionType.__members__.keys())}",
+    )
     memo = Column(Text)
     # Currency denomination of Transaction.cash
     currency = Column(Enum(*CURRENCY_CODES, name="transaction_currency"))
     # Change in money amount caused by Transaction
     cash = Column(Numeric)
-    # Financial institution account
     fiaccount_id = Column(
-        Integer, ForeignKey("fiaccount.id", onupdate="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("fiaccount.id", onupdate="CASCADE"),
+        nullable=False,
+        comment=(
+            "Financial institution account (for transfers, destination FI account)"
+            " - FK fiaccount.id"
+        ),
     )
     # Multiple join paths from Transaction to FiAccount (fiaccount; fiaccountfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
@@ -227,9 +265,11 @@ class Transaction(Base, Mergeable):
     fiaccount = relationship(
         "FiAccount", foreign_keys=[fiaccount_id], backref="transactions"
     )
-    # Security or other asset
     security_id = Column(
-        Integer, ForeignKey("security.id", onupdate="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("security.id", onupdate="CASCADE"),
+        nullable=False,
+        comment="FK security.id",
     )
     # Multiple join paths from Transaction to Security (security; securityfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
@@ -237,53 +277,95 @@ class Transaction(Base, Mergeable):
     security = relationship(
         "Security", foreign_keys=[security_id], backref="transactions"
     )
-    # Change in Security quantity caused by Transaction
-    units = Column(Numeric)
-    # For spinoffs: FMV of source security post-spin
-    securityprice = Column("securityprice", Numeric)
-    # For transfers: source FI acount
-    fiaccountfrom_id = Column("fiaccountfrom_id", Integer, ForeignKey("fiaccount.id", onupdate="CASCADE"))
-    # Multiple join paths from Transaction to FiAccount(
-    # fiaccount; fiaccountfrom)  so can't use relationship(back_populates)
-    # on both sides of the the join; must use relationship(backref) on the
-    # ForeignKey side.
+    units = Column(
+        Numeric,
+        comment=(
+            "Change in shares, contracts, etc. caused by Transaction "
+            "(for splits, transfers, exercise: destination security "
+            "change in units)"
+        ),
+    )
+    securityprice = Column(
+        "securityprice",
+        Numeric,
+        comment="For spinoffs: unit price used to fair-value destination security",
+    )
+    fiaccountfrom_id = Column(
+        "fiaccountfrom_id",
+        Integer,
+        ForeignKey("fiaccount.id", onupdate="CASCADE"),
+        comment="For transfers: source FI account (FK fiaccount.id)",
+    )
+    # Multiple join paths from Transaction to FiAccount (fiaccount; fiaccountfrom)
+    # so can't use relationship(back_populates) on both sides of the the join;
+    # must use relationship(backref) on the ForeignKey side.
     fiaccountfrom = relationship(
         "FiAccount", foreign_keys=[fiaccountfrom_id], backref="transactionsFrom"
     )
-    # For transfers, spinoffs, exercise: source Security
-    securityfrom_id = Column(Integer, ForeignKey("security.id", onupdate="CASCADE"))
+    securityfrom_id = Column(
+        Integer,
+        ForeignKey("security.id", onupdate="CASCADE"),
+        comment="For transfers, spinoffs, exercise: source security (FK security.id)",
+    )
     # Multiple join paths from Transaction to Security (security; securityfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
     # must use relationship(backref) on the ForeignKey side.
     securityfrom = relationship(
         "Security", foreign_keys=[securityfrom_id], backref="transactionsFrom"
     )
-    # For splits, transfers, exercise: change in quantity of source Security
-    # caused by Transaction
-    unitsfrom = Column("unitsfrom", Numeric)
-    # For spinoffs: FMV of destination Security post-spin
-    securityfromprice = Column("securityfromprice", Numeric)
-    # For splits, spinoffs: normalized units of destination Security
-    numerator = Column(Numeric)
-    # For splits, spinoff: normalized units of source Security
-    denominator = Column(Numeric)
-    # Sort algorithm for gain recognition
-    sort = Column(Enum(TransactionSort, name="transaction_sort"))
+    unitsfrom = Column(
+        "unitsfrom",
+        Numeric,
+        comment="For splits, transfers, exercise: source security change in units",
+    )
+    securityfromprice = Column(
+        "securityfromprice",
+        Numeric,
+        comment="For spinoffs: unit price used to fair-value source security",
+    )
+    numerator = Column(
+        Numeric,
+        comment="For splits, spinoffs: normalized units of destination security",
+    )
+    denominator = Column(
+        Numeric, comment="For splits, spinoffs: normalized units of source security"
+    )
+    sort = Column(
+        Enum(TransactionSort, name="transaction_sort"),
+        comment="Sort algorithm for gain recognition",
+    )
+
+    __table_args__ = {"comment": "Securities Transactions"}
 
     signature = ("fiaccount", "uniqueid")
 
 
 class CurrencyRate(Base, Mergeable):
-    """
+    """Exchange rate for currency pair.
     """
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
-    fromcurrency = Column(Enum(*CURRENCY_CODES, name="fromcurrency"), nullable=False)
-    tocurrency = Column(Enum(*CURRENCY_CODES, name="tocurrency"), nullable=False)
-    rate = Column(Numeric, nullable=False)
+    fromcurrency = Column(
+        Enum(*CURRENCY_CODES, name="fromcurrency"),
+        nullable=False,
+        comment="Currency of exchange rate denominator (ISO4217)",
+    )
+    tocurrency = Column(
+        Enum(*CURRENCY_CODES, name="tocurrency"),
+        nullable=False,
+        comment="Currency of exchange rate numerator (ISO417)",
+    )
+    rate = Column(
+        Numeric,
+        nullable=False,
+        comment="Multiply this rate by fromcurrency amount to yield tocurrency amount",
+    )
 
-    __table_args__ = (UniqueConstraint("date", "fromcurrency", "tocurrency"),)
+    __table_args__ = (
+        UniqueConstraint("date", "fromcurrency", "tocurrency"),
+        {"comment": "Exchange Rates for Currency Pairs"},
+    )
 
     signature = ("date", "fromcurrency", "tocurrency")
 
