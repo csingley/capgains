@@ -33,7 +33,6 @@ class TradeTestCase(unittest.TestCase):
     def setUp(self):
         self.trades = [
             Trade(
-                id=0,
                 uniqueid="20160104.U99.e.USD.1468544894",
                 datetime=datetime(2016, 1, 4, 14, 57, 40),
                 fiaccount=None,
@@ -44,7 +43,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=1,
                 uniqueid="20160104.U99.e.USD.1468552856",
                 datetime=datetime(2016, 1, 4, 14, 59, 51),
                 fiaccount=None,
@@ -55,7 +53,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=2,
                 uniqueid="20160104.U99.e.USD.1468552920",
                 datetime=datetime(2016, 1, 4, 14, 59, 53),
                 fiaccount=None,
@@ -66,7 +63,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=3,
                 uniqueid="20160104.U99.e.USD.1468942125",
                 datetime=datetime(2016, 1, 4, 17, 33, 15),
                 fiaccount=None,
@@ -77,7 +73,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=4,
                 uniqueid="20160105.U99.e.USD.1469598029",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
                 fiaccount=None,
@@ -88,7 +83,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=5,
                 uniqueid="20160105.U99.e.USD.1469598030",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
                 fiaccount=None,
@@ -99,7 +93,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=6,
                 uniqueid="20160105.U99.e.USD.1469598191",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
                 fiaccount=None,
@@ -110,7 +103,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=7,
                 uniqueid="20160105.U99.e.USD.1469598198",
                 datetime=datetime(2016, 1, 5, 14, 49, 36),
                 fiaccount=None,
@@ -121,7 +113,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=8,
                 uniqueid="20160105.U99.e.USD.1469598231",
                 datetime=datetime(2016, 1, 5, 14, 49, 39),
                 fiaccount=None,
@@ -132,7 +123,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=9,
                 uniqueid="20160105.U99.e.USD.1469598296",
                 datetime=datetime(2016, 1, 5, 14, 49, 39),
                 fiaccount=None,
@@ -143,7 +133,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=10,
                 uniqueid="20160105.U99.e.USD.1469598410",
                 datetime=datetime(2016, 1, 5, 14, 49, 42),
                 fiaccount=None,
@@ -154,7 +143,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=11,
                 uniqueid="20160105.U99.e.USD.1469598426",
                 datetime=datetime(2016, 1, 5, 14, 49, 43),
                 fiaccount=None,
@@ -165,7 +153,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=12,
                 uniqueid="20160105.U99.e.USD.1469770926",
                 datetime=datetime(2016, 1, 5, 15, 58, 28),
                 fiaccount=None,
@@ -176,7 +163,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=13,
                 uniqueid="20160105.U99.e.USD.1469801076",
                 datetime=datetime(2016, 1, 5, 16, 14, 53),
                 fiaccount=None,
@@ -187,7 +173,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=14,
                 uniqueid="20160105.U99.e.USD.1469807788",
                 datetime=datetime(2016, 1, 5, 16, 18, 29),
                 fiaccount=None,
@@ -198,7 +183,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=15,
                 uniqueid="20160113.U99.e.USD.1476575799",
                 datetime=datetime(2016, 1, 13, 14, 41, 14),
                 fiaccount=None,
@@ -209,7 +193,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=16,
                 uniqueid="20160113.U99.e.USD.1476579053",
                 datetime=datetime(2016, 1, 13, 14, 42, 15),
                 fiaccount=None,
@@ -220,7 +203,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=17,
                 uniqueid="20160113.U99.e.USD.1476579068",
                 datetime=datetime(2016, 1, 13, 14, 42, 15),
                 fiaccount=None,
@@ -231,7 +213,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=18,
                 uniqueid="20160113.U99.e.USD.1476579070",
                 datetime=datetime(2016, 1, 13, 14, 42, 15),
                 fiaccount=None,
@@ -242,7 +223,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=19,
                 uniqueid="20160113.U99.e.USD.1476581751",
                 datetime=datetime(2016, 1, 13, 14, 42, 58),
                 fiaccount=None,
@@ -253,7 +233,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=20,
                 uniqueid="20160113.U99.e.USD.1476581755",
                 datetime=datetime(2016, 1, 13, 14, 42, 58),
                 fiaccount=None,
@@ -264,7 +243,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=21,
                 uniqueid="20160113.U99.e.USD.1476581819",
                 datetime=datetime(2016, 1, 13, 14, 42, 58),
                 fiaccount=None,
@@ -275,7 +253,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=22,
                 uniqueid="20160126.U99.e.USD.1487338567",
                 datetime=datetime(2016, 1, 26, 17, 52, 17),
                 fiaccount=None,
@@ -286,7 +263,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=23,
                 uniqueid="20160126.U99.e.USD.1487338568",
                 datetime=datetime(2016, 1, 26, 17, 52, 17),
                 fiaccount=None,
@@ -297,7 +273,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=24,
                 uniqueid="20160126.U99.e.USD.1487338788",
                 datetime=datetime(2016, 1, 26, 17, 52, 25),
                 fiaccount=None,
@@ -308,7 +283,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=25,
                 uniqueid="20160126.U99.e.USD.1487346935",
                 datetime=datetime(2016, 1, 26, 17, 58, 18),
                 fiaccount=None,
@@ -319,7 +293,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=26,
                 uniqueid="20160126.U99.e.USD.1487346940",
                 datetime=datetime(2016, 1, 26, 17, 58, 18),
                 fiaccount=None,
@@ -330,7 +303,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=27,
                 uniqueid="20160126.U99.e.USD.1487504352",
                 datetime=datetime(2016, 1, 26, 19, 45, 40),
                 fiaccount=None,
@@ -341,7 +313,6 @@ class TradeTestCase(unittest.TestCase):
                 currency="USD",
             ),
             Trade(
-                id=28,
                 uniqueid="20160126.U99.e.USD.1487510413",
                 datetime=datetime(2016, 1, 26, 19, 50, 19),
                 fiaccount=None,
@@ -476,9 +447,9 @@ class TradeTestCase(unittest.TestCase):
             gains.extend(g)
 
         testGains.sort(
-            key=lambda x: str(x.lot.opentransaction.id) + str(x.transaction.id)
+            key=lambda x: str(x.lot.opentransaction.uniqueid)
         )
-        gains.sort(key=lambda x: str(x.lot.opentransaction.id) + str(x.transaction.id))
+        gains.sort(key=lambda x: str(x.lot.opentransaction.uniqueid) + str(x.transaction.uniqueid))
 
         # Generated Gains should match prediction
         self.assertEqual(len(gains), len(testGains))
@@ -534,7 +505,6 @@ class TradeTestCase(unittest.TestCase):
 class ReturnOfCapitalTestCase(unittest.TestCase):
     def setUp(self):
         tx1 = Trade(
-            id=1,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
             fiaccount="",
@@ -552,7 +522,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         )
 
         tx2 = Trade(
-            id=2,
             uniqueid="",
             datetime=datetime(2016, 1, 2),
             fiaccount="",
@@ -570,7 +539,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         )
 
         tx3 = Trade(
-            id=3,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
             fiaccount="",
@@ -580,7 +548,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
             currency="USD",
         )
         tx3c = Trade(
-            id=5,
             uniqueid="",
             datetime=datetime(2016, 1, 3),
             fiaccount="",
@@ -602,7 +569,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
     def testRetOfCapBasic(self):
         """ Test ReturnOfCapital less than basis reduces cost without gain """
         transaction = ReturnOfCapital(
-            id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -620,7 +586,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
     def testRetOfCapDatetime(self):
         """ Test ReturnOfCapital respects Lot.createdt """
         transaction = ReturnOfCapital(
-            id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 2, 1),
             fiaccount=None,
@@ -640,7 +605,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
     def testRetOfCapZero(self):
         """ Test ReturnOfCapital reduce basis to zero """
         transaction = ReturnOfCapital(
-            id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -659,7 +623,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
     def testRetOfCapLessThanZero(self):
         """ Test ReturnOfCapital in excess of cost basis """
         transaction = ReturnOfCapital(
-            id=1,
             uniqueid="a",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -693,7 +656,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         Test Portfolio route ReturnOfCapital to correct (account, security)
         """
         tx4 = Trade(
-            id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
             fiaccount="",
@@ -711,7 +673,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         )
 
         tx5 = Trade(
-            id=5,
             uniqueid="",
             datetime=datetime(2016, 1, 2),
             fiaccount="",
@@ -729,7 +690,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         )
 
         tx6 = Trade(
-            id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 2),
             fiaccount="",
@@ -752,7 +712,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
 
         # This routes to (None, None) - [self.lot1, self.lot2, self.lot3]; 600sh
         retofcap1 = ReturnOfCapital(
-            id=10,
             uniqueid="",
             fiaccount=None,
             security=None,
@@ -762,7 +721,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         )
         # This routes to ('acct6', None) - lot6; 300sh
         retofcap2 = ReturnOfCapital(
-            id=11,
             uniqueid="",
             fiaccount="acct6",
             security=None,
@@ -772,7 +730,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         )
         # This routes to (None, 'sec4') - lot4; 100sh
         retofcap3 = ReturnOfCapital(
-            id=12,
             uniqueid="",
             fiaccount=None,
             security="sec4",
@@ -782,7 +739,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
         )
         # This routes to ('acct5', 'sec5') - lot5; 200sh
         retofcap4 = ReturnOfCapital(
-            id=13,
             uniqueid="",
             fiaccount="acct5",
             security="sec5",
@@ -815,7 +771,6 @@ class ReturnOfCapitalTestCase(unittest.TestCase):
 class SplitTestCase(unittest.TestCase):
     def setUp(self):
         tx0 = Trade(
-            id=1,
             datetime=datetime(2016, 1, 1),
             uniqueid="",
             fiaccount=None,
@@ -833,7 +788,6 @@ class SplitTestCase(unittest.TestCase):
         )
 
         tx1 = Trade(
-            id=3,
             datetime=datetime(2016, 1, 3),
             uniqueid="",
             fiaccount=None,
@@ -855,7 +809,6 @@ class SplitTestCase(unittest.TestCase):
     def testSplitDatetime(self):
         """ Splits respect Lot.createdt not Lot.opendt """
         split = Split(
-            id=4,
             datetime=datetime(2016, 1, 2),
             uniqueid=None,
             fiaccount=None,
@@ -878,7 +831,6 @@ class SplitTestCase(unittest.TestCase):
         Split.datetime
         """
         split = Split(
-            id=1,
             datetime=datetime(2016, 1, 2),
             uniqueid="",
             fiaccount=None,
@@ -894,7 +846,6 @@ class SplitTestCase(unittest.TestCase):
 class TransferTestCase(unittest.TestCase):
     def setUp(self):
         tx1 = Trade(
-            id=1,
             uniqueid="",
             fiaccount=None,
             datetime=datetime(2016, 1, 1),
@@ -911,7 +862,6 @@ class TransferTestCase(unittest.TestCase):
             currency=tx1.currency,
         )
         tx2 = Trade(
-            id=2,
             uniqueid="",
             fiaccount=None,
             datetime=datetime(2016, 1, 1),
@@ -935,7 +885,6 @@ class TransferTestCase(unittest.TestCase):
         Transfer divides cost and preserves holding period
         """
         transfer = Transfer(
-            id=4,
             uniqueid="",
             fiaccount=None,
             fiaccountfrom=None,
@@ -970,7 +919,6 @@ class TransferTestCase(unittest.TestCase):
         Transfer correctly closes oppositely-signed Lots of transfer Security
         """
         transfer = Transfer(
-            id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -1001,7 +949,6 @@ class TransferTestCase(unittest.TestCase):
         """
         # unitsfrom and units must have opposite signs
         transfer = Transfer(
-            id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -1016,7 +963,6 @@ class TransferTestCase(unittest.TestCase):
 
         # Must have an existing position in (accountfrom, securityfrom)
         transfer = Transfer(
-            id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -1031,7 +977,6 @@ class TransferTestCase(unittest.TestCase):
 
         # Existing position must have enough units to satisfy unitsfrom
         transfer = Transfer(
-            id=4,
             uniqueid="",
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -1048,7 +993,6 @@ class TransferTestCase(unittest.TestCase):
 class SpinoffTestCase(unittest.TestCase):
     def setUp(self):
         tx1 = Trade(
-            id=1,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
             fiaccount=None,
@@ -1066,7 +1010,6 @@ class SpinoffTestCase(unittest.TestCase):
         )
 
         tx2 = Trade(
-            id=2,
             uniqueid="",
             datetime=datetime(2016, 1, 1),
             fiaccount=None,
@@ -1091,7 +1034,6 @@ class SpinoffTestCase(unittest.TestCase):
         """
         # 1 for 5 on 100sh: spin 20sh@5; retain 100sh@1
         spinoff = Spinoff(
-            id=4,
             uniqueid=None,
             datetime=datetime(2016, 1, 4),
             fiaccount=None,
@@ -1135,7 +1077,6 @@ class SpinoffTestCase(unittest.TestCase):
         """
         # 1 for 5 on 100sh: spin 20sh@5; retain 100sh@1
         spinoff = Spinoff(
-            id=4,
             datetime=datetime(2016, 1, 4),
             uniqueid=None,
             fiaccount=None,

@@ -228,9 +228,8 @@ class XmlSnippetMixin(RollbackMixin):
 
     def _testTransaction(self, predicted, actual):
         fields = list(type(predicted)._fields)
-        # Don't test `id`, `uniqueid`
-        for unwanted in ["id", "uniqueid"]:
-            fields.remove(unwanted)
+        # Don't test uniqueid`
+        fields.remove("uniqueid")
 
         for field in fields:
             pred_field = getattr(predicted, field)

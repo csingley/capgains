@@ -26,7 +26,6 @@ class SortTestCase(unittest.TestCase):
         then by Lot.opentransaction.uniqueid
         """
         tx1 = Trade(
-            id=1,
             uniqueid="b",
             datetime=datetime(2005, 10, 3),
             fiaccount="",
@@ -43,7 +42,6 @@ class SortTestCase(unittest.TestCase):
             currency=None,
         )
         tx2 = Trade(
-            id=2,
             uniqueid="c",
             datetime=datetime(2005, 10, 4),
             fiaccount="",
@@ -60,7 +58,6 @@ class SortTestCase(unittest.TestCase):
             currency=None,
         )
         tx3 = Trade(
-            id=3,
             uniqueid="a",
             datetime=datetime(2005, 10, 3),
             fiaccount="",
@@ -86,7 +83,6 @@ class SortTestCase(unittest.TestCase):
         then by Lot.opentransaction.uniqueid
         """
         tx1 = Trade(
-            id=1,
             uniqueid="b",
             datetime=datetime(2005, 10, 3),
             fiaccount="",
@@ -103,7 +99,6 @@ class SortTestCase(unittest.TestCase):
             currency=None,
         )
         tx2 = Trade(
-            id=2,
             uniqueid="c",
             datetime=datetime(2005, 10, 4),
             fiaccount="",
@@ -120,7 +115,6 @@ class SortTestCase(unittest.TestCase):
             currency=None,
         )
         tx3 = Trade(
-            id=3,
             uniqueid="a",
             datetime=datetime(2005, 10, 3),
             fiaccount="",
@@ -145,7 +139,6 @@ class SortTestCase(unittest.TestCase):
         MINGAIN sorts first by Lot.price, then by Lot.opentransaction.uniqueid
         """
         tx1 = Trade(
-            id=1,
             uniqueid="b",
             datetime=datetime(2005, 10, 3),
             fiaccount="",
@@ -162,7 +155,6 @@ class SortTestCase(unittest.TestCase):
             currency="USD",
         )
         tx2 = Trade(
-            id=1,
             uniqueid="c",
             datetime=datetime(2005, 10, 3),
             fiaccount="",
@@ -179,7 +171,6 @@ class SortTestCase(unittest.TestCase):
             currency="USD",
         )
         tx3 = Trade(
-            id=1,
             uniqueid="a",
             datetime=datetime(2005, 10, 3),
             fiaccount="",
@@ -204,7 +195,6 @@ class SortTestCase(unittest.TestCase):
         MAXGAIN sorts first by Lot.price, then by Lot.opentransaction.uniqueid
         """
         tx1 = Trade(
-            id=1,
             uniqueid="b",
             datetime=datetime(2001, 1, 1),
             fiaccount="",
@@ -221,7 +211,6 @@ class SortTestCase(unittest.TestCase):
             currency="USD",
         )
         tx2 = Trade(
-            id=1,
             uniqueid="c",
             datetime=datetime(2001, 1, 1),
             fiaccount="",
@@ -238,7 +227,6 @@ class SortTestCase(unittest.TestCase):
             currency="USD",
         )
         tx3 = Trade(
-            id=1,
             uniqueid="a",
             datetime=datetime(2001, 1, 2),
             fiaccount="",

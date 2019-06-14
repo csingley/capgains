@@ -94,7 +94,7 @@ class Fi(Base, Mergeable):
 
     accounts = relationship("FiAccount", back_populates="fi")
 
-    __table_args__ = ({"comment": "Financial Institution (e.g. Brokerage)"}, )
+    __table_args__ = ({"comment": "Financial Institution (e.g. Brokerage)"},)
 
     signature = ("brokerid",)
 

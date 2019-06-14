@@ -64,7 +64,6 @@ class Trade(NamedTuple):
     """Buy/sell a security, creating basis (if opening) or realizing gain (if closing).
 
     Attributes:
-        id: database primary key of transaction.
         uniqueid: transaction unique identifier (e.g. FITID).
         datetime: trade date/time.
         fiaccount: brokerage account where the trade is executed.
@@ -77,7 +76,6 @@ class Trade(NamedTuple):
         sort: sort algorithm for gain recognition.
     """
 
-    id: int
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any
@@ -106,7 +104,6 @@ class ReturnOfCapital(NamedTuple):
         memo: transaction notes.
     """
 
-    id: int
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any
@@ -124,7 +121,6 @@ class Transfer(NamedTuple):
     reorganizations (mergers, etc.)
 
     Attributes:
-        id: database primary key of transaction.
         uniqueid: transaction unique identifier (e.g. FITID).
         datetime: transfer date/time.
         fiaccount: destination brokerage account.
@@ -138,7 +134,6 @@ class Transfer(NamedTuple):
         memo: transaction notes.
     """
 
-    id: int
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any
@@ -160,7 +155,6 @@ class Split(NamedTuple):
         security=SecurityFrom, differing only in units/unitsfrom.
 
     Attributes:
-        id: database primary key of transaction.
         uniqueid: transaction unique identifier (e.g. FITID).
         datetime: effective date/time of split (ex-date).
         fiaccount: brokerage account where the split happens.
@@ -171,7 +165,6 @@ class Split(NamedTuple):
         memo: transaction notes.
     """
 
-    id: int
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any
@@ -193,7 +186,6 @@ class Spinoff(NamedTuple):
     must be edited in after market data becomes available.
 
     Attributes:
-        id: database primary key of transaction.
         uniqueid: transaction unique identifier (e.g. FITID).
         datetime: effective date/time of spinoff (ex-date).
         fiaccount: brokerage account where the spinoff happens.
@@ -207,7 +199,6 @@ class Spinoff(NamedTuple):
         securityfromprice: unit price used to fair-value destination security.
     """
 
-    id: int
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any
@@ -229,7 +220,6 @@ class Exercise(NamedTuple):
     underlying begins at exercise, not at purchase of the option.
 
     Attributes:
-        id: database primary key of transaction.
         uniqueid: transaction unique identifier (e.g. FITID).
         datetime: date/time of option exercise.
         fiaccount: brokerage account where the option is exercised.
@@ -242,7 +232,6 @@ class Exercise(NamedTuple):
         memo: transaction notes.
     """
 
-    id: int
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any

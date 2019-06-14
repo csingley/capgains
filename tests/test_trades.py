@@ -35,7 +35,6 @@ class TradesWithCancelTestCase(TradeXmlSnippetMixin, unittest.TestCase):
         # Leaving the last trade as the only one
         return [
             Trade(
-                id=1,
                 uniqueid="DEADBEEF",
                 datetime=datetime(2011, 5, 9),
                 memo="CONVERA CORPORATION - SPINOFF",
@@ -70,7 +69,6 @@ class TradesIgnoreTestCase(TradeXmlSnippetMixin, unittest.TestCase):
         # Leaving 3rd & 4th XML transactions parsed as trades
         return [
             Trade(
-                id=1,
                 uniqueid="DEADBEEF",
                 datetime=datetime(2015, 9, 10, 15, 51, 34),
                 memo="SATURNS SEARS ROEBUCK ACCEPTANCE CO",
@@ -81,7 +79,6 @@ class TradesIgnoreTestCase(TradeXmlSnippetMixin, unittest.TestCase):
                 units=Decimal("-1000"),
             ),
             Trade(
-                id=1,
                 uniqueid="DEADBEEF",
                 datetime=datetime(2015, 9, 10, 15, 52, 20),
                 memo="SATURNS SEARS ROEBUCK ACCEPTANCE CO",
@@ -105,7 +102,6 @@ class TradesWithSortFieldTestCase(TradeXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         return [
             Trade(
-                id=1,
                 uniqueid="DEADBEEF",
                 datetime=datetime(2010, 10, 29, 14, 38, 9),
                 memo="PILGRIMS PRIDE CORP-NEW",

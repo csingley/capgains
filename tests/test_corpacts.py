@@ -186,7 +186,6 @@ class CorpActCancelTestCase(
         return [
             # Synthetic trade created by voluntary subscription (backdated)
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2012, 5, 14, 19, 45),
                 memo="ELAN(US28413U2042) TENDERED TO US28413TEMP2 1 FOR 1",
@@ -198,7 +197,6 @@ class CorpActCancelTestCase(
                 unitsfrom=Decimal("-557915"),
             ),
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2012, 5, 15, 20, 25),
                 memo="ELAN.TEMP(US28413TEMP2) MERGED(Acquisition)  WITH US284CNT9952 1 FOR 10000",
@@ -309,7 +307,6 @@ class SubscriptionSpanningMultipleDatesTestCase(
         return [
             # Synthetic trade created by voluntary subscription (backdated)
             Trade(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 2, 19, 19, 45),
                 memo="SGGHU.EX(US8269922402) MERGED(Voluntary Offer Allocation)  WITH SGRH 1 FOR 1,US8269922576 562 FOR 10",
@@ -320,7 +317,6 @@ class SubscriptionSpanningMultipleDatesTestCase(
                 units=Decimal("19108"),
             ),
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 2, 19, 19, 45),
                 memo="SGGHU(US82670K1280) TENDERED TO US8269922402 1 FOR 1",
@@ -332,7 +328,6 @@ class SubscriptionSpanningMultipleDatesTestCase(
                 unitsfrom=Decimal("-34000"),
             ),
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 2, 25, 20, 25),
                 memo="SGGHU.EX(US8269922402) MERGED(Voluntary Offer Allocation)  WITH SGRH 1 FOR 1,US8269922576 562 FOR 10",
@@ -358,7 +353,6 @@ class BondMaturityTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Bond maturity processed as a trade
         return [
             Trade(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2016, 6, 30, 20, 25),
                 memo="(US929CALLB67) BOND MATURITY FOR USD 1.00000000 PER BOND",
@@ -383,7 +377,6 @@ class DelistTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Delisting processed as a trade with zero proceeds
         return [
             Trade(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2013, 10, 3, 20, 25),
                 memo="(US284CNT9952) DELISTED",
@@ -409,7 +402,6 @@ class ChangeSecurityTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # CUSIP change processed as transfer
         return [
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2010, 11, 30, 20, 25),
                 memo="EDCI(US2683151086) CUSIP/ISIN CHANGE TO (US2683152076)",
@@ -435,7 +427,6 @@ class OversubscribeTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Oversubscription processed as trade
         return [
             Trade(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 11, 30, 19, 45),
                 memo="OVER SUBSCRIBE TPHS.OS (US89656D10OS) AT 6.00 USD",
@@ -469,7 +460,6 @@ class RightsIssueTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Rights issue processed as spinoff
         return [
             Spinoff(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 5, 13, 20, 25),
                 memo="AMP(ES0109260531) SUBSCRIBABLE RIGHTS ISSUE  1 FOR 1",
@@ -496,7 +486,6 @@ class SplitWithCusipChangeTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Stock split with CUSIP change processed as transfer
         return [
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2016, 8, 8, 20, 25),
                 memo="VXX(US06742E7114) SPLIT 1 FOR 4",
@@ -522,7 +511,6 @@ class StockDividendTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Stock dividend processed as split (with numerator adjusted)
         return [
             Split(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2009, 12, 23, 20, 25),
                 memo="MFCAF(P64605101) STOCK DIVIDEND 1 FOR 11",
@@ -555,7 +543,6 @@ class SpinoffTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         return [
             Spinoff(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 6, 12, 20, 25),
                 memo="GYRO.NOTE(US403NOTE034) SPINOFF  1 FOR 40",
@@ -582,7 +569,6 @@ class SubscribeRightsBadIsinToTestCase(CorpActXmlSnippetMixin, unittest.TestCase
         # Subscribe to rights treated as option exercise
         return [
             Exercise(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 11, 30, 19, 45),
                 memo="TPHS.RTS (US8969940274) SUBSCRIBES TO ()",
@@ -613,7 +599,6 @@ class MergerBadIsinFromTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
     def persisted_txs(self):
         return [
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2013, 10, 4, 20, 25),
                 memo="AMP.RSTD(135893865) MERGED(Acquisition)  WITH AMP.REST 1 FOR 1",
@@ -639,7 +624,6 @@ class CashMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # All-cash merger processed as trade
         return [
             Trade(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2017, 3, 30, 20, 25),
                 memo="92CALLAB6(US92CALLAB67) MERGED(Partial Call)  FOR USD 1.00000000 PER SHARE",
@@ -665,7 +649,6 @@ class KindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Merger in kind processed as transfer
         return [
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2017, 4, 12, 20, 25),
                 memo="TPHS.EX(US89656R10EX) MERGED(Voluntary Offer Allocation)  WITH US89656D1019 1 FOR 1",
@@ -704,7 +687,6 @@ class CashKindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
             #
             # Synthetic return of capital
             ReturnOfCapital(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2012, 4, 16, 20, 25),
                 dtsettle=datetime(2012, 4, 16, 20, 25),
@@ -715,7 +697,6 @@ class CashKindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 security=self.securities[0],
             ),
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2012, 4, 16, 20, 25),
                 memo="DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000",
@@ -727,7 +708,6 @@ class CashKindMergerTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
                 unitsfrom=Decimal("-150000"),
             ),
             Spinoff(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2012, 4, 16, 20, 25),
                 memo="DIMEQ.TMP(US254TMP9913) CASH and STOCK MERGER (Voluntary Offer Allocation) WMIH 1146667 FOR 10000000",
@@ -754,7 +734,6 @@ class TenderTestCase(CorpActXmlSnippetMixin, unittest.TestCase):
         # Tender processed as transfer
         return [
             Transfer(
-                id=1,
                 uniqueid="",
                 datetime=datetime(2015, 9, 4, 19, 45),
                 memo="NTP(G63907102) TENDERED TO G63990272 1 FOR 1",

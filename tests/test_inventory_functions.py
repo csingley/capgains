@@ -21,7 +21,6 @@ from capgains.inventory import (
 class LotsMixin(object):
     def setUp(self):
         tx1 = Trade(
-            id=1,
             datetime=datetime(2016, 1, 1),
             uniqueid="",
             fiaccount="",
@@ -39,7 +38,6 @@ class LotsMixin(object):
         )
 
         tx2 = Trade(
-            id=2,
             datetime=datetime(2016, 1, 2),
             uniqueid="",
             fiaccount="",
@@ -57,7 +55,6 @@ class LotsMixin(object):
         )
 
         tx3 = Trade(
-            id=3,
             datetime=datetime(2016, 1, 3),
             uniqueid="",
             fiaccount="",

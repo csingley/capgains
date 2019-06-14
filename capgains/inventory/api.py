@@ -606,10 +606,7 @@ def _transferBasis(
     else:
         opentransaction = transaction
 
-    # FIXME - We need a Transaction.id for book_trade() to set
-    # Lot.createtxid, but "id=transaction.id" is problematic.
     trade_ = Trade(
-        id=transaction.id,
         uniqueid=transaction.uniqueid,
         datetime=transaction.datetime,
         memo=transaction.memo,

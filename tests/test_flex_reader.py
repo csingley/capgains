@@ -544,7 +544,6 @@ class CashTransactionWithFilterCancelTestCase(
         # CashTransaction to be persisted.
         return [
             ReturnOfCapital(
-                id=None,
                 uniqueid=None,
                 datetime=datetime(2016, 4, 13),
                 dtsettle=datetime(2016, 4, 13),
