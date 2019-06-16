@@ -48,7 +48,7 @@ class TradeTestCase(OfxSnippetMixin, unittest.TestCase):
         self.assertEqual(sum([t.units for t in trans]), Decimal("149999"))
         self.assertEqual(sum([t.cash for t in trans]), Decimal("-91499.39"))
 
-        UTC = ofxtools.utils._UTC()
+        UTC = ofxtools.utils.UTC
         for index, (day, units, cash) in enumerate(
             [
                 (22, 450, Decimal("-274.5")),
