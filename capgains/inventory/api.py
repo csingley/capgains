@@ -414,6 +414,7 @@ def book_transfer(
     return list(itertools.chain.from_iterable(gains))
 
 
+#  FIXME - account for the sometimes-lengthy gap between `datetime` and `dtsettle`
 @book.register(Spinoff)
 def book_spinoff(
     transaction: Union[Spinoff, models.Transaction],

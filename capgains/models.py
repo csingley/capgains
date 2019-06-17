@@ -1,7 +1,6 @@
 # coding: utf-8
 """ """
 # stdlib imports
-import functools
 import enum
 import logging
 
@@ -17,11 +16,10 @@ from sqlalchemy import (
     Numeric,
     ForeignKey,
     Enum,
-    event,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import NoResultFound
-from sqlalchemy.sql.schema import UniqueConstraint
+from sqlalchemy.sql.schema import UniqueConstraint, CheckConstraint
 from ofxtools.models.i18n import CURRENCY_CODES
 
 
@@ -224,11 +222,106 @@ class SecurityId(Base):
         return rp.format(self.id, self.uniqueidtype, self.uniqueid, self.security)
 
 
+#  This unholy mess of a check constraint mimics the API of invventory.types.
+#  The several securities transaction subtypes don't cleanly map even to SQLAlchemy
+#  single-table inheritance scheme, as far as I can tell.  Instead we encode the
+#  transaction type in the `type` column (an enum), and enforce a constraint that
+#  values (i.e. columns/attributes) required for the type must be non-null, while
+#  values not applicable to the type must be null.
+TRADE_CONSTRAINT = (
+    "type='TRADE' "
+    "AND currency IS NOT NULL "
+    "AND cash IS NOT NULL "
+    "AND units IS NOT NULL "
+    "AND securityprice IS NULL "
+    "AND fiaccountfrom_id IS NULL "
+    "AND securityfrom_id IS NULL "
+    "AND unitsfrom IS NULL "
+    "AND securityfromprice IS NULL "
+    "AND numerator IS NULL "
+    "AND denominator IS NULL"
+)
+ROC_CONSTRAINT = (
+    "type='RETURNCAP' "
+    "AND currency is NOT NULL "
+    "AND cash IS NOT NULL "
+    "AND units IS NULL "
+    "AND securityprice IS NULL "
+    "AND fiaccountfrom_id IS NULL "
+    "AND securityfrom_id IS NULL "
+    "AND unitsfrom IS NULL "
+    "AND unitsfrom IS NULL "
+    "AND securityfromprice IS NULL "
+    "AND numerator IS NULL "
+    "AND denominator IS NULL"
+)
+TRANSFER_CONSTRAINT = (
+    "type='TRANSFER' "
+    "AND units IS NOT NULL "
+    "AND fiaccountfrom_id IS NOT NULL "
+    "AND securityfrom_id IS NOT NULL "
+    "AND unitsfrom IS NOT NULL "
+    "AND currency IS NULL "
+    "AND cash IS NULL "
+    "AND securityprice IS NULL "
+    "AND securityfromprice IS NULL "
+    "AND numerator IS NULL "
+    "AND denominator IS NULL"
+)
+SPLIT_CONSTRAINT = (
+    "type='SPLIT' "
+    "AND units IS NOT NULL "
+    "AND numerator IS NOT NULL "
+    "AND denominator IS NOT NULL "
+    "AND currency IS NULL "
+    "AND cash is NULL "
+    "AND securityprice IS NULL "
+    "AND securityfromprice IS NULL "
+    "AND fiaccountfrom_id IS NULL "
+    "AND securityfrom_id IS NULL "
+    "AND unitsfrom IS NULL"
+)
+SPINOFF_CONSTRAINT = (
+    "type='SPINOFF' "
+    "AND units IS NOT NULL "
+    "AND securityfrom_id IS NOT NULL "
+    "AND numerator IS NOT NULL "
+    "AND denominator IS NOT NULL "
+    "AND currency IS NULL "
+    "AND cash IS NULL "
+    "AND fiaccountfrom_id IS NULL "
+    "AND unitsfrom IS NULL"
+)
+EXERCISE_CONSTRAINT = (
+    "type='EXERCISE' "
+    "AND units IS NOT NULL "
+    "AND security_id IS NOT NULL "
+    "AND unitsfrom IS NOT NULL "
+    "AND securityfrom_id IS NOT NULL "
+    "AND currency IS NOT NULL "
+    "AND cash IS NOT NULL "
+    "AND numerator IS NULL "
+    "AND denominator IS NULL "
+    "AND fiaccountfrom_id IS NULL"
+)
+#  N.B. boolean OR operator has lower precedence than boolean AND
+#  https://www.postgresql.org/docs/11/sql-syntax-lexical.html#SQL-PRECEDENCE
+TRANSACTION_CONSTRAINT = (
+    f"{TRADE_CONSTRAINT} OR {ROC_CONSTRAINT} OR {TRANSFER_CONSTRAINT} OR "
+    f"{SPLIT_CONSTRAINT} OR {SPINOFF_CONSTRAINT} OR {EXERCISE_CONSTRAINT}"
+)
+
+
 class Transaction(Base, Mergeable):
     """Securities transaction.
     """
 
     id = Column(Integer, primary_key=True)
+    type = Column(
+        Enum(TransactionType, name="transaction_type"),
+        nullable=False,
+        comment=f"One of {tuple(TransactionType.__members__.keys())}",
+    )
     uniqueid = Column(
         String, nullable=False, unique=True, comment="FI transaction unique identifier"
     )
@@ -237,19 +330,6 @@ class Transaction(Base, Mergeable):
         nullable=False,
         comment="Effective date/time: ex-date for reorgs, return of capital",
     )
-    dtsettle = Column(
-        DateTime, comment="Settlement date: pay date for return of capital"
-    )
-    type = Column(
-        Enum(TransactionType, name="transaction_type"),
-        nullable=False,
-        comment=f"One of {tuple(TransactionType.__members__.keys())}",
-    )
-    memo = Column(Text)
-    # Currency denomination of Transaction.cash
-    currency = Column(Enum(*CURRENCY_CODES, name="transaction_currency"))
-    # Change in money amount caused by Transaction
-    cash = Column(Numeric)
     fiaccount_id = Column(
         Integer,
         ForeignKey("fiaccount.id", onupdate="CASCADE"),
@@ -277,17 +357,27 @@ class Transaction(Base, Mergeable):
     security = relationship(
         "Security", foreign_keys=[security_id], backref="transactions"
     )
+    # Currency denomination of Transaction.cash
+    currency = Column(Enum(*CURRENCY_CODES, name="transaction_currency"))
+    # Change in money amount caused by Transaction
+    cash = Column(Numeric)
     units = Column(
         Numeric,
+        CheckConstraint("units <> 0", name="units_nonzero"),
         comment=(
             "Change in shares, contracts, etc. caused by Transaction "
             "(for splits, transfers, exercise: destination security "
             "change in units)"
         ),
     )
+    dtsettle = Column(
+        DateTime, comment="Settlement date: pay date for return of capital"
+    )
+    memo = Column(Text)
     securityprice = Column(
         "securityprice",
         Numeric,
+        CheckConstraint("securityprice >= 0", name="securityprice_not_negative"),
         comment="For spinoffs: unit price used to fair-value destination security",
     )
     fiaccountfrom_id = Column(
@@ -318,24 +408,36 @@ class Transaction(Base, Mergeable):
         Numeric,
         comment="For splits, transfers, exercise: source security change in units",
     )
+    #  "It should be noted that a check constraint is satisfied if the check expression
+    #  evaluates to true or the null value. Since most expressions will evaluate to the
+    #  null value if any operand is null, they will not prevent null values in the
+    #  constrained columns."
+    #  https://www.postgresql.org/docs/11/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS
     securityfromprice = Column(
         "securityfromprice",
         Numeric,
+        CheckConstraint("securityfromprice >= 0", name="securityfromprice_not_negative"),
         comment="For spinoffs: unit price used to fair-value source security",
     )
     numerator = Column(
         Numeric,
+        CheckConstraint("numerator > 0", name="numerator_positive"),
         comment="For splits, spinoffs: normalized units of destination security",
     )
     denominator = Column(
-        Numeric, comment="For splits, spinoffs: normalized units of source security"
+        Numeric,
+        CheckConstraint("denominator > 0", name="denominator_positive"),
+        comment="For splits, spinoffs: normalized units of source security",
     )
     sort = Column(
         Enum(TransactionSort, name="transaction_sort"),
         comment="Sort algorithm for gain recognition",
     )
 
-    __table_args__ = {"comment": "Securities Transactions"}
+    __table_args__ = (
+        CheckConstraint(TRANSACTION_CONSTRAINT, name="transaction_constraint"),
+        {"comment": "Securities Transactions"}
+    )
 
     signature = ("fiaccount", "uniqueid")
 
@@ -406,109 +508,3 @@ class CurrencyRate(Base, Mergeable):
             rate = 1 / instance.rate
 
         return rate
-
-
-class ModelConstraintError(ModelError):
-    """
-    Exception raised upon violation of a model constraint (outside sqlalchemy)
-    """
-
-    pass
-
-
-@event.listens_for(Transaction, "before_insert")
-@event.listens_for(Transaction, "before_update")
-def enforce_type_constraints(mapper, connection, instance):
-    enforcers = {
-        TransactionType.TRADE: enforce_trade_constraints,
-        TransactionType.RETURNCAP: enforce_returnofcapital_constraints,
-        TransactionType.TRANSFER: enforce_transfer_constraints,
-        TransactionType.SPLIT: enforce_split_constraints,
-        TransactionType.SPINOFF: enforce_spinoff_constraints,
-        TransactionType.EXERCISE: enforce_exercise_constraints,
-    }
-    enforcers[instance.type](instance)
-
-
-def enforce_constraints(instance, isNone=(), notNone=(), isPositive=(), nonZero=()):
-    for seq, predicate, err_msg in (
-        (isNone, lambda x: x is None, "None"),
-        (notNone, lambda x: x is not None, "not None"),
-        (isPositive, lambda x: x > 0, "positive"),
-        (nonZero, lambda x: x != 0, "nonzero"),
-    ):
-        for attr in seq:
-            if not predicate(getattr(instance, attr)):
-                msg = "Transaction.{} must be {} if type='{}': {}"
-                raise ModelConstraintError(
-                    msg.format(attr, err_msg, instance.type, instance)
-                )
-
-
-enforce_trade_constraints = functools.partial(
-    enforce_constraints,
-    isNone=(
-        "securityprice",
-        "fiaccountfrom",
-        "securityfrom",
-        "unitsfrom",
-        "securityfromprice",
-        "numerator",
-        "denominator",
-    ),
-    notNone=("cash", "units"),
-    nonZero=("units",),
-)
-
-
-enforce_returnofcapital_constraints = functools.partial(
-    enforce_constraints,
-    isNone=(
-        "units",
-        "securityprice",
-        "fiaccountfrom",
-        "securityfrom",
-        "unitsfrom",
-        "securityfromprice",
-        "numerator",
-        "denominator",
-    ),
-    notNone=("cash",),
-)
-
-
-enforce_transfer_constraints = functools.partial(
-    enforce_constraints,
-    isNone=("cash", "securityprice", "securityfromprice", "numerator", "denominator"),
-    notNone=("units", "fiaccountfrom", "securityfrom", "unitsfrom"),
-)
-
-
-enforce_split_constraints = functools.partial(
-    enforce_constraints,
-    isNone=(
-        "cash",
-        "securityprice",
-        "securityfromprice",
-        "fiaccountfrom",
-        "securityfrom",
-        "unitsfrom",
-    ),
-    notNone=("units", "numerator", "denominator"),
-    isPositive=("numerator", "denominator"),
-)
-
-
-enforce_spinoff_constraints = functools.partial(
-    enforce_constraints,
-    isNone=("cash", "fiaccountfrom", "unitsfrom"),
-    notNone=("units", "securityfrom", "numerator", "denominator"),
-    isPositive=("numerator", "denominator"),
-)
-
-
-enforce_exercise_constraints = functools.partial(
-    enforce_constraints,
-    isNone=("numerator", "denominator", "fiaccountfrom"),
-    notNone=("units", "security", "unitsfrom", "securityfrom", "cash"),
-)

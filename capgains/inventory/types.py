@@ -79,12 +79,12 @@ class Trade(NamedTuple):
     datetime: _datetime.datetime
     fiaccount: Any
     security: Any
-    cash: Decimal
     currency: str
+    cash: Decimal
     units: Decimal
     dtsettle: Optional[_datetime.datetime] = None
     memo: Optional[str] = None
-    # sort's type is actually Optional[SortType], but mypy chokes on recursion
+    # sort's type is Optional[SortType], but mypy chokes on recursion - redefine here.
     sort: Optional[Mapping[str, Union[bool, Callable[[Any], Tuple]]]] = None
 
 
@@ -107,8 +107,8 @@ class ReturnOfCapital(NamedTuple):
     datetime: _datetime.datetime
     fiaccount: Any
     security: Any
-    cash: Decimal
     currency: str
+    cash: Decimal
     dtsettle: Optional[_datetime.datetime] = None
     memo: Optional[str] = None
 
@@ -168,12 +168,13 @@ class Split(NamedTuple):
     datetime: _datetime.datetime
     fiaccount: Any
     security: Any
+    units: Decimal
     numerator: Decimal
     denominator: Decimal
-    units: Decimal
     memo: Optional[str] = None
 
 
+#  FIXME - spinoff really should have `dtsettle` attribute
 class Spinoff(NamedTuple):
     """Turn one security into two, partitioning cost basis between them.
 
@@ -236,8 +237,8 @@ class Exercise(NamedTuple):
     fiaccount: Any
     security: Any
     units: Decimal
-    cash: Decimal
     currency: str
+    cash: Decimal
     securityfrom: Any
     unitsfrom: Decimal
     memo: Optional[str] = None

@@ -12,7 +12,7 @@ from .types import (
 )
 from .api import (
     Inconsistent,
-    UNITS_RESOLUTION,
+    UNITS_TOLERANCE,
     Portfolio,
     book,
     book_model,

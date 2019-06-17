@@ -6,7 +6,6 @@ Create Date: 2019-06-12 13:13:03.778612
 
 """
 from alembic import op
-import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
@@ -25,8 +24,8 @@ def upgrade():
 
     op.drop_constraint('transaction_securityFrom_id_fkey', 'transaction', type_='foreignkey')
     op.drop_constraint('transaction_fiaccountFrom_id_fkey', 'transaction', type_='foreignkey')
-    op.create_foreign_key(None, 'transaction', 'security', ['securityfrom_id'], ['id'], onupdate='CASCADE')
-    op.create_foreign_key(None, 'transaction', 'fiaccount', ['fiaccountfrom_id'], ['id'], onupdate='CASCADE')
+    op.create_foreign_key('transaction_securityfrom_id_fkey', 'transaction', 'security', ['securityfrom_id'], ['id'], onupdate='CASCADE')
+    op.create_foreign_key('transaction_fiaccountfrom_id_fkey', 'transaction', 'fiaccount', ['fiaccountfrom_id'], ['id'], onupdate='CASCADE')
 
 
 def downgrade():
@@ -36,7 +35,7 @@ def downgrade():
     op.alter_column("transaction", "unitsfrom", new_column_name="unitsFrom")
     op.alter_column("transaction", "securityfromprice", new_column_name="securityFromPrice")
 
-    op.drop_constraint(None, 'transaction', type_='foreignkey')
-    op.drop_constraint(None, 'transaction', type_='foreignkey')
+    op.drop_constraint('transaction_fiaccountfrom_id_fkey', 'transaction', type_='foreignkey')
+    op.drop_constraint('transaction_securityfrom_id_fkey', 'transaction', type_='foreignkey')
     op.create_foreign_key('transaction_fiaccountFrom_id_fkey', 'transaction', 'fiaccount', ['fiaccountFrom_id'], ['id'], onupdate='CASCADE')
     op.create_foreign_key('transaction_securityFrom_id_fkey', 'transaction', 'security', ['securityFrom_id'], ['id'], onupdate='CASCADE')
