@@ -171,8 +171,8 @@ def _book_inventory(
         units: amount of security to add to/subtract from position.
         cash: money amount (basis/proceeds) attributable to the units.
         currency: currency denomination of basis/proceeds
-        opentransaction: if present, overrides treansaction in any Lots created to
-                         preserve holding period.
+        opentransaction: opening transaction of record (establishing holding period)
+                         for any Lots created by applying the transaction.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
 
     Returns:
@@ -229,8 +229,6 @@ def book_model(
     portfolio: PortfolioType,
     *,
     sort: Optional[SortType] = None,
-    opentransaction: Optional[TransactionType] = None,
-    createtransaction: Optional[TransactionType] = None,
 ) -> List[Gain]:
     """Apply a models.Transaction to the appropriate position(s) in the Portfolio.
 
@@ -241,9 +239,6 @@ def book_model(
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to list of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        opentransaction: if present, overrides transaction in any Lots created to
-                         preserve holding period.
-        createtransaction: if present, overrides transaction in any Lots/Gains created.
 
     Returns:
         A sequence of Gain instances, reflecting Lots closed by the transaction.
@@ -258,9 +253,7 @@ def book_model(
         models.TransactionType.EXERCISE: book_exercise,
     }
     handler = handlers[transaction.type]
-    gains = handler(  # type: ignore
-        transaction, portfolio, sort, opentransaction, createtransaction
-    )
+    gains = handler(transaction, portfolio, sort=sort)  # type: ignore
     return gains  # type: ignore
 
 
@@ -305,6 +298,9 @@ def book_returnofcapital(
     **_,
 ) -> List[Gain]:
     """Apply a ReturnOfCapital to the appropriate position(s) in the Portfolio.
+
+    Note:
+        Sort algorithm is irrelevant for ReturnOfCapital, which closes no Lots.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
@@ -352,6 +348,9 @@ def book_split(
     transaction: Union[Split, models.Transaction], portfolio: PortfolioType, **_
 ) -> List[Gain]:
     """Apply a Split to the appropriate position(s) in the Portfolio.
+
+    Note:
+        Sort algorithm is irrelevant for Splits, which close no Lots.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
@@ -438,7 +437,6 @@ def book_transfer(
     positionFrom = portfolio.get(pocketFrom, [])
     if not positionFrom:
         raise Inconsistent(transaction, f"No position in {pocketFrom}")
-    positionFrom.sort(**(sort or FIFO))
 
     # Remove the Lots from the source position
     lotsFrom, positionFrom = functions.part_units(
