@@ -254,7 +254,7 @@ def book_model(
     }
     handler = handlers[transaction.type]
     gains = handler(transaction, portfolio, sort=sort)  # type: ignore
-    return gains  # type: ignore
+    return gains
 
 
 @book.register(Trade)
