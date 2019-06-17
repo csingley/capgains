@@ -7,6 +7,7 @@ __all__ = ["PredicateType", "openAsOf", "longAsOf", "closableBy"]
 
 
 # stdlib imports
+from decimal import Decimal
 import datetime as _datetime
 from typing import Callable
 
@@ -58,22 +59,23 @@ def longAsOf(datetime: _datetime.datetime) -> PredicateType:
     return isOpen
 
 
-def closableBy(transaction: TransactionType) -> PredicateType:
-    """Factory for functions that select Lots that can be closed by a transaction.
+def closable(units: Decimal, datetime: _datetime.datetime) -> PredicateType:
+    """Factory for functions selecting Lots that can be closed by a transaction's units.
 
     The relevent criteria are an open Lot created on or before the given
-    transaction.datetime, with sign opposite to the given transaction.units
+    datetime, with sign opposite to the given units.
 
     Args:
-        transaction: a Transaction instance.
+        units: security amount being booked to inventory (i.e. transaction.units).
+        datetime: moment to determine impacted position (i.e. transaction.datetime).
 
     Returns:
-        Filter function accepting a transaction and returning bool.
+        Filter function accepting a Lot instance and returning bool.
     """
 
     def closeMe(lot):
-        lot_open = lot.createtransaction.datetime <= transaction.datetime
-        opposite_sign = lot.units * transaction.units < 0
+        lot_open = lot.createtransaction.datetime <= datetime
+        opposite_sign = lot.units * units < 0
         return lot_open and opposite_sign
 
     return closeMe

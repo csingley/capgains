@@ -50,7 +50,6 @@ __all__ = [
 
 
 # stdlib imports
-import operator
 from decimal import Decimal
 import datetime as _datetime
 from typing import NamedTuple, Tuple, Mapping, Callable, Any, Optional, Union
