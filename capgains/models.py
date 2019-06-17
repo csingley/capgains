@@ -54,6 +54,9 @@ class TransactionSort(enum.Enum):
     MINGAIN = 4
 
 
+CurrencyType = Enum(*CURRENCY_CODES, name="currency_type")
+
+
 class Mergeable(object):
     """Mixin implementing merge() classmethod.
     """
@@ -449,12 +452,12 @@ class CurrencyRate(Base, Mergeable):
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     fromcurrency = Column(
-        Enum(*CURRENCY_CODES, name="fromcurrency"),
+        CurrencyType,
         nullable=False,
         comment="Currency of exchange rate denominator (ISO4217)",
     )
     tocurrency = Column(
-        Enum(*CURRENCY_CODES, name="tocurrency"),
+        CurrencyType,
         nullable=False,
         comment="Currency of exchange rate numerator (ISO417)",
     )
