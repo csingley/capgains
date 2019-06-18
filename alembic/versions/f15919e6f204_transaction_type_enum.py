@@ -15,6 +15,10 @@ branch_labels = None
 depends_on = None
 
 
+OLD_ENUM = ('returnofcapital', 'split', 'spinoff', 'transfer', 'trade', 'exercise')
+NEW_ENUM = ('RETURNCAP', 'SPLIT', 'SPINOFF', 'TRANSFER', 'TRADE', 'EXERCISE')
+
+
 ENUM_UPGRADE = """
 CREATE OR REPLACE FUNCTION enum_upgrade(current_enum character varying)
 RETURNS character varying AS
@@ -46,23 +50,24 @@ LANGUAGE sql IMMUTABLE;
 
 
 def upgrade():
-
     # Rename current transaction.type enum
     op.execute("ALTER TYPE transaction_type RENAME TO tmp_transaction_type")
     # Create desired transaction.type enum
-    desired_enum_type = postgresql.ENUM('RETURNCAP', 'SPLIT', 'SPINOFF', 'TRANSFER', 'TRADE', 'EXERCISE', name='transaction_type')
+    desired_enum_type = postgresql.ENUM(*NEW_ENUM, name='transaction_type')
     connection = op.get_bind()
     desired_enum_type.create(connection, checkfirst=False)
     op.execute(ENUM_UPGRADE)
     # Alter transaction.type to use desired enum
+    unwanted_enum_type = postgresql.ENUM(*OLD_ENUM, name='tmp_transaction_type')
     op.alter_column(
         'transaction', 'type',
-        existing_type=postgresql.ENUM('returnofcapital', 'split', 'spinoff', 'transfer', 'trade', 'exercise', name='tmp_transaction_type'),
+        existing_type=unwanted_enum_type,
         type_=desired_enum_type,
         postgresql_using="enum_upgrade(type::varchar)::transaction_type",
-        comment="One of ('RETURNCAP', 'SPLIT', 'SPINOFF', 'TRANSFER', 'TRADE', 'EXERCISE')")
+        comment="One of ('RETURNCAP', 'SPLIT', 'SPINOFF', 'TRANSFER', 'TRADE', 'EXERCISE')"
+    )
     # Clean up after ourselves
-    op.execute("DROP TYPE tmp_transaction_type")
+    unwanted_enum_type.drop(connection)
     op.execute("DROP FUNCTION enum_upgrade")
 
     op.alter_column('transaction', 'datetime',
@@ -90,7 +95,7 @@ def upgrade():
     op.alter_column('transaction', 'uniqueid',
                     comment='FI transaction unique identifier')
     op.alter_column('transaction', 'units',
-        comment='Change in shares, contracts, etc. caused by Transaction (for splits, transfers, exercise: destination security change in units)')
+                    comment='Change in shares, contracts, etc. caused by Transaction (for splits, transfers, exercise: destination security change in units)')
     op.alter_column('transaction', 'unitsfrom',
                     comment='For splits, transfers, exercise: source security change in units')
     op.create_table_comment('transaction', 'Securities Transactions')
@@ -126,19 +131,20 @@ def downgrade():
     # Rename current transaction.type enum
     op.execute("ALTER TYPE transaction_type RENAME TO tmp_transaction_type")
     # Create desired transaction.type enum
-    desired_enum_type = postgresql.ENUM('returnofcapital', 'split', 'spinoff', 'transfer', 'trade', 'exercise', name='transaction_type')
+    desired_enum_type = postgresql.ENUM(*OLD_ENUM, name='transaction_type')
     connection = op.get_bind()
     desired_enum_type.create(connection, checkfirst=False)
     op.execute(ENUM_DOWNGRADE)
     # Alter transaction.type to use desired enum
+    unwanted_enum_type = postgresql.ENUM(*NEW_ENUM, name='tmp_transaction_type')
     op.alter_column(
         'transaction', 'type',
-        existing_type=postgresql.ENUM('RETURNCAP', 'SPLIT', 'SPINOFF', 'TRANSFER', 'TRADE', 'EXERCISE', name='tmp_transaction_type'),
+        existing_type=unwanted_enum_type,
         type_=desired_enum_type,
         postgresql_using="enum_downgrade(type::varchar)::transaction_type",
         comment=None)
     # Clean up after ourselves
-    op.execute("DROP TYPE tmp_transaction_type")
+    unwanted_enum_type.drop(connection)
     op.execute("DROP FUNCTION enum_downgrade")
 
     op.drop_table_comment('transaction')
