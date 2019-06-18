@@ -99,41 +99,65 @@ TRANSACTION_CONSTRAINT = (
 
 def upgrade():
     op.create_check_constraint(
-        "transaction_constraint",
+        op.f("transaction_constraint"),
         "transaction",
         TRANSACTION_CONSTRAINT,
     )
     op.create_check_constraint(
-        "units_nonzero",
+        op.f("units_nonzero"),
         "transaction",
         "units <> 0",
     )
     op.create_check_constraint(
-        "securityprice_not_negative",
+        op.f("securityprice_not_negative"),
         "transaction",
         "securityprice >= 0",
     )
     op.create_check_constraint(
-        "securityfromprice_not_negative",
+        op.f("securityfromprice_not_negative"),
         "transaction",
         "securityfromprice >= 0",
     )
     op.create_check_constraint(
-        "numerator_positive",
+        op.f("numerator_positive"),
         "transaction",
         "numerator > 0",
     )
     op.create_check_constraint(
-        "denominator_positive",
+        op.f("denominator_positive"),
         "transaction",
         "denominator > 0",
     )
 
 
 def downgrade():
-    op.drop_constraint("transaction_constraint", "transaction", type_="check")
-    op.drop_constraint("units_nonzero", "transaction", type_="check")
-    op.drop_constraint("securityprice_not_negative", "transaction", type_="check")
-    op.drop_constraint("securityfromprice_not_negative", "transaction", type_="check")
-    op.drop_constraint("numerator_positive", "transaction", type_="check")
-    op.drop_constraint("denominator_positive", "transaction", type_="check")
+    op.drop_constraint(
+        op.f("transaction_constraint"),
+        "transaction",
+        type_="check",
+    )
+    op.drop_constraint(
+        op.f("units_nonzero"),
+        "transaction",
+        type_="check",
+    )
+    op.drop_constraint(
+        op.f("securityprice_not_negative"),
+        "transaction",
+        type_="check",
+    )
+    op.drop_constraint(
+        op.f("securityfromprice_not_negative"),
+        "transaction",
+        type_="check",
+    )
+    op.drop_constraint(
+        op.f("numerator_positive"),
+        "transaction",
+        type_="check",
+    )
+    op.drop_constraint(
+        op.f("denominator_positive"),
+        "transaction",
+        type_="check",
+    )
