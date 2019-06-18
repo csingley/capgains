@@ -23,9 +23,9 @@ def read(session, source):
         # We only want INVSTMTRS
         if not isinstance(stmt, ofxtools.models.INVSTMTRS):
             continue
-        acctfrom = stmt.account
+        fromacct = stmt.account
         # Look up OfxReader subclass by brokerid
-        Reader = dispatcher.get(acctfrom.brokerid, OfxStatementReader)
+        Reader = dispatcher.get(fromacct.brokerid, OfxStatementReader)
         # Initialize reader instance with INVSTMTRS, SECLIST
         reader = Reader(session, stmt, ofx.securities)
         reader.read()

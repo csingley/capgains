@@ -474,9 +474,9 @@ class OfxStatementReader(object):
         units=None,
         currency=None,
         cash=None,
-        fiaccountfrom=None,
-        securityfrom=None,
-        unitsfrom=None,
+        fromfiaccount=None,
+        fromsecurity=None,
+        fromunits=None,
         numerator=None,
         denominator=None,
         **kwargs
@@ -499,24 +499,12 @@ class OfxStatementReader(object):
         """
         dateTime = datetime.isoformat()
         msg = (
-            "{} {}, fiaccount={}, security={}, units={}, currency={},  "
-            "cash={}, fiaccountfrom={}, securityfrom={}, unitsfrom={}, "
-            "numerator={}, denominator={}"
-        ).format(
-            dateTime,
-            type,
-            fiaccount.id,
-            security.id,
-            units,
-            currency,
-            cash,
-            getattr(fiaccountfrom, "id", None),
-            getattr(securityfrom, "id", None),
-            unitsfrom,
-            numerator,
-            denominator,
+            f"{dateTime} {type}, fiaccount={fiaccount.id}, security={security.id}, "
+            f"units={units}, currency={currency}, cash={cash}, "
+            f"fromfiaccount={getattr(fromfiaccount, 'id', None)}, "
+            f"fromsecurity={getattr(fromsecurity, 'id', None)}, fromunits={fromunits}, "
+            f"numerator={numerator}, denominator={denominator}"
         )
-
         uid = hashlib.sha256(msg.encode("utf-8")).hexdigest()
         return uid
 

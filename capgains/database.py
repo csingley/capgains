@@ -10,9 +10,9 @@ import itertools
 
 # 3rd party imports
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import as_declarative, declared_attr
+from sqlalchemy.sql.schema import MetaData
 
 
 def init_db(db_uri, **kwargs):
@@ -32,14 +32,26 @@ def sessionmanager(**kwargs):
         session = Session(**kwargs)
         yield session
         session.commit()
-    except:
+    except Exception:
         session.rollback()
         raise
     finally:
         session.close()
 
 
-@as_declarative()
+#  Naming convention for constraints - important for database migrations
+#  https://docs.sqlalchemy.org/en/13/core/constraints.html#configuring-constraint-naming-conventions
+convention = {
+  "ix": 'ix_%(column_0_label)s',
+  "uq": "uq_%(table_name)s_%(column_0_name)s",
+  "ck": "ck_%(table_name)s_%(constraint_name)s",
+  "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+  "pk": "pk_%(table_name)s"
+}
+metadata = MetaData(naming_convention=convention)
+
+
+@as_declarative(metadata=metadata)
 class Base(object):
     """
     SQLAlchemy declarative base for model classes in this package.

@@ -91,7 +91,7 @@ class OfxStatementReader(reader.OfxStatementReader):
         assert src.tferaction == "OUT"
 
         security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
-        securityfrom = self.securities[(src.uniqueidtype, src.uniqueid)]
+        fromsecurity = self.securities[(src.uniqueidtype, src.uniqueid)]
 
         # FIXME - exercise cash is sent as INVBANKTRAN; can't get it from
         # just the TRANSFERS which are dispatched to here.
@@ -104,11 +104,10 @@ class OfxStatementReader(reader.OfxStatementReader):
             security=security,
             units=dest.units,
             cash=0,
-            fiaccountfrom=None,
-            securityfrom=securityfrom,
-            unitsfrom=src.units,
+            fromfiaccount=None,
+            fromsecurity=fromsecurity,
+            fromunits=src.units,
         )
-        # print(tx)
         return tx
 
     @staticmethod

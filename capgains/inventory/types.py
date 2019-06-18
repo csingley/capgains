@@ -127,9 +127,9 @@ class Transfer(NamedTuple):
         fiaccount: destination brokerage account.
         security: destination security.
         units: destination security amount.
-        fiaccountfrom: source brokerage account.
-        securityfrom: source security.
-        unitsfrom: source security amount.
+        fromfiaccount: source brokerage account.
+        fromsecurity: source security.
+        fromunits: source security amount.
         memo: transaction notes.
     """
 
@@ -138,9 +138,9 @@ class Transfer(NamedTuple):
     fiaccount: Any
     security: Any
     units: Decimal
-    fiaccountfrom: Any
-    securityfrom: Any
-    unitsfrom: Decimal
+    fromfiaccount: Any
+    fromsecurity: Any
+    fromunits: Decimal
     memo: Optional[str] = None
 
 
@@ -193,10 +193,10 @@ class Spinoff(NamedTuple):
         units: amount of destination security received.
         numerator: normalized units of destination security.
         denominator: normalized units of source security.
-        securityfrom: source security (i.e. security subject to spinoff).
+        fromsecurity: source security (i.e. security subject to spinoff).
         memo: transaction notes.
         securityprice: unit price used to fair-value source security.
-        securityfromprice: unit price used to fair-value destination security.
+        fromsecurityprice: unit price used to fair-value destination security.
     """
 
     uniqueid: str
@@ -206,10 +206,10 @@ class Spinoff(NamedTuple):
     units: Decimal
     numerator: Decimal
     denominator: Decimal
-    securityfrom: Any
+    fromsecurity: Any
     memo: Optional[str] = None
     securityprice: Optional[Decimal] = None
-    securityfromprice: Optional[Decimal] = None
+    fromsecurityprice: Optional[Decimal] = None
 
 
 class Exercise(NamedTuple):
@@ -227,8 +227,8 @@ class Exercise(NamedTuple):
         units: change in amount of destination security (i.e. the underlying).
         cash: net exercise payment (+ long put/short call; - long call/short put)
         currency: currency denomination of cash (ISO 4217 code).
-        securityfrom: source security (i.e. the option).
-        unitsfrom: change in mount of source security (i.e. the option).
+        fromsecurity: source security (i.e. the option).
+        fromunits: change in mount of source security (i.e. the option).
         memo: transaction notes.
     """
 
@@ -239,8 +239,8 @@ class Exercise(NamedTuple):
     units: Decimal
     currency: str
     cash: Decimal
-    securityfrom: Any
-    unitsfrom: Decimal
+    fromsecurity: Any
+    fromunits: Decimal
     memo: Optional[str] = None
 
 

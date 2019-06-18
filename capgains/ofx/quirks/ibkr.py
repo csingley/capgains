@@ -9,9 +9,6 @@ import re
 import ofxtools
 
 
-# Local imports
-
-
 transferMemoRE = re.compile(
     r"""
     (?P<memo>.+)

@@ -99,10 +99,10 @@ class CsvTransactionReader(csv.DictReader):
         "security": convertSecurity,
         "units": convertDecimal,
         "securityprice": convertDecimal,
-        "fiaccountfrom": convertAccount,
+        "fromfiaccount": convertAccount,
         "securityFrom": convertSecurity,
-        "unitsfrom": convertDecimal,
-        "securityfromprice": convertDecimal,
+        "fromunits": convertDecimal,
+        "fromsecurityprice": convertDecimal,
         "numerator": convertDecimal,
         "denominator": convertDecimal,
         "sort": convertSort,
@@ -126,14 +126,14 @@ class CsvTransactionWriter(csv.DictWriter):
         "security_name",
         "units",
         "securityprice",
-        "fiaccountfrom_brokerid",
-        "fiaccountfrom_number",
-        "securityfrom_uniqueidtype",
-        "securityfrom_uniqueid",
-        "securityfrom_ticker",
-        "securityfrom_name",
-        "unitsfrom",
-        "securityfromprice",
+        "fromfiaccount_brokerid",
+        "fromfiaccount_number",
+        "fromsecurity_uniqueidtype",
+        "fromsecurity_uniqueid",
+        "fromsecurity_ticker",
+        "fromsecurity_name",
+        "fromunits",
+        "fromsecurityprice",
         "numerator",
         "denominator",
         "sort",
@@ -166,14 +166,14 @@ class CsvTransactionWriter(csv.DictWriter):
             "cash": transaction.cash,
             "units": transaction.units,
             "securityprice": transaction.securityprice,
-            "unitsfrom": transaction.unitsfrom,
-            "securityfromprice": transaction.securityfromprice,
+            "fromunits": transaction.fromunits,
+            "fromsecurityprice": transaction.fromsecurityprice,
             "numerator": transaction.numerator,
             "denominator": transaction.denominator,
         }
         row.update(self.unconvert_account(transaction, "fiaccount", required=True))
         row.update(self.unconvert_security(transaction, "security", required=True))
-        row.update(self.unconvert_account(transaction, "fiaccountfrom"))
+        row.update(self.unconvert_account(transaction, "fromfiaccount"))
         row.update(self.unconvert_security(transaction, "securityFrom"))
 
         sort = transaction.sort
@@ -515,10 +515,10 @@ class Transaction(NamedTuple):
     currency: Optional[str] = None
     units: Optional[Decimal] = None
     securityprice: Optional[Decimal] = None
-    fiaccountfrom: Any = None
+    fromfiaccount: Any = None
     securityFrom: Any = None
-    unitsfrom: Optional[Decimal] = None
-    securityfromprice: Optional[Decimal] = None
+    fromunits: Optional[Decimal] = None
+    fromsecurityprice: Optional[Decimal] = None
     numerator: Optional[Decimal] = None
     denominator: Optional[Decimal] = None
     memo: Optional[str] = None
@@ -649,7 +649,7 @@ def translate_security_pricing(
 
     return transaction._replace(
         securityprice=_scaleAttr(transaction, "securityprice", rate),
-        securityfromprice=_scaleAttr(transaction, "securityfromprice", rate),
+        fromsecurityprice=_scaleAttr(transaction, "fromsecurityprice", rate),
     )
 
 
@@ -672,9 +672,9 @@ def translate_model(transaction: models.Transaction, currency: str, rate: Decima
         security=transaction.security,
         units=transaction.units,
         securityprice=_scaleAttr(transaction, "securityprice", rate),
-        fiaccountfrom=transaction.fiaccountfrom,
-        unitsfrom=transaction.unitsfrom,
-        securityfromprice=_scaleAttr(transaction, "securityfromprice", rate),
+        fromfiaccount=transaction.fromfiaccount,
+        fromunits=transaction.fromunits,
+        fromsecurityprice=_scaleAttr(transaction, "fromsecurityprice", rate),
         numerator=transaction.numerator,
         denominator=transaction.denominator,
         sort=transaction.sort,

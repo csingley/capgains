@@ -210,10 +210,9 @@ class SecurityId(Base):
         nullable=False,
         comment="FK security.id",
     )
+    security = relationship("Security", back_populates="ids")
     uniqueidtype = Column(String, nullable=False, comment="CUSIP, ISIN, etc.")
     uniqueid = Column(String, nullable=False, comment="CUSIP, ISIN, etc.")
-
-    security = relationship("Security", back_populates="ids")
 
     __table_args__ = (
         UniqueConstraint("uniqueidtype", "uniqueid"),
@@ -237,10 +236,10 @@ TRADE_CONSTRAINT = (
     "AND cash IS NOT NULL "
     "AND units IS NOT NULL "
     "AND securityprice IS NULL "
-    "AND fiaccountfrom_id IS NULL "
-    "AND securityfrom_id IS NULL "
-    "AND unitsfrom IS NULL "
-    "AND securityfromprice IS NULL "
+    "AND fromfiaccount_id IS NULL "
+    "AND fromsecurity_id IS NULL "
+    "AND fromunits IS NULL "
+    "AND fromsecurityprice IS NULL "
     "AND numerator IS NULL "
     "AND denominator IS NULL"
 )
@@ -250,24 +249,24 @@ ROC_CONSTRAINT = (
     "AND cash IS NOT NULL "
     "AND units IS NULL "
     "AND securityprice IS NULL "
-    "AND fiaccountfrom_id IS NULL "
-    "AND securityfrom_id IS NULL "
-    "AND unitsfrom IS NULL "
-    "AND unitsfrom IS NULL "
-    "AND securityfromprice IS NULL "
+    "AND fromfiaccount_id IS NULL "
+    "AND fromsecurity_id IS NULL "
+    "AND fromunits IS NULL "
+    "AND fromunits IS NULL "
+    "AND fromsecurityprice IS NULL "
     "AND numerator IS NULL "
     "AND denominator IS NULL"
 )
 TRANSFER_CONSTRAINT = (
     "type='TRANSFER' "
     "AND units IS NOT NULL "
-    "AND fiaccountfrom_id IS NOT NULL "
-    "AND securityfrom_id IS NOT NULL "
-    "AND unitsfrom IS NOT NULL "
+    "AND fromfiaccount_id IS NOT NULL "
+    "AND fromsecurity_id IS NOT NULL "
+    "AND fromunits IS NOT NULL "
     "AND currency IS NULL "
     "AND cash IS NULL "
     "AND securityprice IS NULL "
-    "AND securityfromprice IS NULL "
+    "AND fromsecurityprice IS NULL "
     "AND numerator IS NULL "
     "AND denominator IS NULL"
 )
@@ -279,33 +278,33 @@ SPLIT_CONSTRAINT = (
     "AND currency IS NULL "
     "AND cash is NULL "
     "AND securityprice IS NULL "
-    "AND securityfromprice IS NULL "
-    "AND fiaccountfrom_id IS NULL "
-    "AND securityfrom_id IS NULL "
-    "AND unitsfrom IS NULL"
+    "AND fromsecurityprice IS NULL "
+    "AND fromfiaccount_id IS NULL "
+    "AND fromsecurity_id IS NULL "
+    "AND fromunits IS NULL"
 )
 SPINOFF_CONSTRAINT = (
     "type='SPINOFF' "
     "AND units IS NOT NULL "
-    "AND securityfrom_id IS NOT NULL "
+    "AND fromsecurity_id IS NOT NULL "
     "AND numerator IS NOT NULL "
     "AND denominator IS NOT NULL "
     "AND currency IS NULL "
     "AND cash IS NULL "
-    "AND fiaccountfrom_id IS NULL "
-    "AND unitsfrom IS NULL"
+    "AND fromfiaccount_id IS NULL "
+    "AND fromunits IS NULL"
 )
 EXERCISE_CONSTRAINT = (
     "type='EXERCISE' "
     "AND units IS NOT NULL "
     "AND security_id IS NOT NULL "
-    "AND unitsfrom IS NOT NULL "
-    "AND securityfrom_id IS NOT NULL "
+    "AND fromunits IS NOT NULL "
+    "AND fromsecurity_id IS NOT NULL "
     "AND currency IS NOT NULL "
     "AND cash IS NOT NULL "
     "AND numerator IS NULL "
     "AND denominator IS NULL "
-    "AND fiaccountfrom_id IS NULL"
+    "AND fromfiaccount_id IS NULL"
 )
 #  N.B. boolean OR operator has lower precedence than boolean AND
 #  https://www.postgresql.org/docs/11/sql-syntax-lexical.html#SQL-PRECEDENCE
@@ -383,8 +382,8 @@ class Transaction(Base, Mergeable):
         CheckConstraint("securityprice >= 0", name="securityprice_not_negative"),
         comment="For spinoffs: unit price used to fair-value destination security",
     )
-    fiaccountfrom_id = Column(
-        "fiaccountfrom_id",
+    fromfiaccount_id = Column(
+        "fromfiaccount_id",
         Integer,
         ForeignKey("fiaccount.id", onupdate="CASCADE"),
         comment="For transfers: source FI account (FK fiaccount.id)",
@@ -392,10 +391,10 @@ class Transaction(Base, Mergeable):
     # Multiple join paths from Transaction to FiAccount (fiaccount; fiaccountfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
     # must use relationship(backref) on the ForeignKey side.
-    fiaccountfrom = relationship(
-        "FiAccount", foreign_keys=[fiaccountfrom_id], backref="transactionsFrom"
+    fromfiaccount = relationship(
+        "FiAccount", foreign_keys=[fromfiaccount_id], backref="fromtransactions"
     )
-    securityfrom_id = Column(
+    fromsecurity_id = Column(
         Integer,
         ForeignKey("security.id", onupdate="CASCADE"),
         comment="For transfers, spinoffs, exercise: source security (FK security.id)",
@@ -403,11 +402,11 @@ class Transaction(Base, Mergeable):
     # Multiple join paths from Transaction to Security (security; securityfrom)
     # so can't use relationship(back_populates) on both sides of the the join;
     # must use relationship(backref) on the ForeignKey side.
-    securityfrom = relationship(
-        "Security", foreign_keys=[securityfrom_id], backref="transactionsFrom"
+    fromsecurity = relationship(
+        "Security", foreign_keys=[fromsecurity_id], backref="transactionsFrom"
     )
-    unitsfrom = Column(
-        "unitsfrom",
+    fromunits = Column(
+        "fromunits",
         Numeric,
         comment="For splits, transfers, exercise: source security change in units",
     )
@@ -416,10 +415,10 @@ class Transaction(Base, Mergeable):
     #  null value if any operand is null, they will not prevent null values in the
     #  constrained columns."
     #  https://www.postgresql.org/docs/11/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS
-    securityfromprice = Column(
-        "securityfromprice",
+    fromsecurityprice = Column(
+        "fromsecurityprice",
         Numeric,
-        CheckConstraint("securityfromprice >= 0", name="securityfromprice_not_negative"),
+        CheckConstraint("fromsecurityprice >= 0", name="fromsecurityprice_not_negative"),
         comment="For spinoffs: unit price used to fair-value source security",
     )
     numerator = Column(
@@ -438,7 +437,7 @@ class Transaction(Base, Mergeable):
     )
 
     __table_args__ = (
-        CheckConstraint(TRANSACTION_CONSTRAINT, name="transaction_constraint"),
+        CheckConstraint(TRANSACTION_CONSTRAINT, name="enforce_subtype_nulls"),
         {"comment": "Securities Transactions"}
     )
 

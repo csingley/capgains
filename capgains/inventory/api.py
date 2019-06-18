@@ -112,7 +112,7 @@ UNITS_TOLERANCE = Decimal("0.001")
 
 For transactions that involve scaling units by a ratio (i.e. Split & Spinoff), if the
 product of that ratio and the total position Lot.units affected by the transaction
-differs from the reported transaction.units/unitsFrom by more than UNITS_TOLERANCE, then
+differs from the reported transaction.units/fromunits by more than UNITS_TOLERANCE, then
 an Inconsistent error is raised.
 """
 
@@ -366,28 +366,28 @@ def book_transfer(
         A sequence of Gain instances, reflecting Lots closed by the transaction.
 
     Raises:
-        ValueError: if `Transfer.units` and `Transfer.unitsfrom` aren't
+        ValueError: if `Transfer.units` and `Transfer.fromunits` aren't
                     oppositely signed.
         Inconsistent: if the relevant position in `portfolio` is insufficient to
-                      satisfy `Transfer.unitsfrom`.
+                      satisfy `Transfer.fromunits`.
     """
 
-    if transaction.units * transaction.unitsfrom >= 0:
-        msg = f"units and unitsfrom aren't oppositely signed in {transaction}"
+    if transaction.units * transaction.fromunits >= 0:
+        msg = f"units and fromunits aren't oppositely signed in {transaction}"
         raise ValueError(msg)
 
-    pocketFrom = (transaction.fiaccountfrom, transaction.securityfrom)
+    pocketFrom = (transaction.fromfiaccount, transaction.fromsecurity)
     positionFrom = portfolio.get(pocketFrom, [])
     if not positionFrom:
         raise Inconsistent(transaction, f"No position in {pocketFrom}")
 
     # Remove the Lots from the source position
     lotsFrom, positionFrom = functions.part_units(
-        positionFrom, openAsOf(transaction.datetime), -transaction.unitsfrom
+        positionFrom, openAsOf(transaction.datetime), -transaction.fromunits
     )
 
     openUnits = sum([lot.units for lot in lotsFrom])
-    if abs(openUnits + transaction.unitsfrom) > UNITS_TOLERANCE:
+    if abs(openUnits + transaction.fromunits) > UNITS_TOLERANCE:
         msg = (
             f"Position in {transaction.security} for FI account "
             f"{transaction.fiaccount} on {transaction.datetime} is only "
@@ -397,7 +397,7 @@ def book_transfer(
 
     portfolio[pocketFrom] = positionFrom
 
-    transferRatio = -transaction.units / transaction.unitsfrom
+    transferRatio = -transaction.units / transaction.fromunits
 
     gains = (
         _pop_push_lots(
@@ -444,7 +444,7 @@ def book_spinoff(
         msg = f"numerator & denominator must be positive Decimals in {transaction}"
         raise ValueError(msg)
 
-    pocketFrom = (transaction.fiaccount, transaction.securityfrom)
+    pocketFrom = (transaction.fiaccount, transaction.fromsecurity)
     positionFrom = portfolio.get(pocketFrom, [])
     if not positionFrom:
         raise Inconsistent(transaction, f"No position in {pocketFrom}")
@@ -454,11 +454,11 @@ def book_spinoff(
 
     # costFraction is the fraction of original cost allocated to the spinoff,
     # with the balance allocated to the source position.
-    if transaction.securityprice is None or transaction.securityfromprice is None:
+    if transaction.securityprice is None or transaction.fromsecurityprice is None:
         costFraction = Decimal("0")
     else:
         spinoffFMV = transaction.securityprice * transaction.units
-        spunoffFMV = transaction.securityfromprice * transaction.units / spinRatio
+        spunoffFMV = transaction.fromsecurityprice * transaction.units / spinRatio
         costFraction = spinoffFMV / (spinoffFMV + spunoffFMV)
 
     # Take the basis from the source Position
@@ -470,10 +470,10 @@ def book_spinoff(
     if abs(openUnits * spinRatio - transaction.units) > UNITS_TOLERANCE:
         msg = (
             f"Spinoff {transaction.numerator} units {transaction.security} "
-            f"for {transaction.denominator} units {transaction.securityfrom}:\n"
+            f"for {transaction.denominator} units {transaction.fromsecurity}:\n"
             f"To receive {transaction.units} units {transaction.security} "
             f"requires a position of {transaction.units / spinRatio} units of "
-            f"{transaction.securityfrom} in FI account {transaction.fiaccount} "
+            f"{transaction.fromsecurity} in FI account {transaction.fiaccount} "
             f"on {transaction.datetime}, not units={openUnits}"
         )
         raise Inconsistent(transaction, msg)
@@ -518,24 +518,24 @@ def book_exercise(
                       `Exercise.units`.
     """
 
-    unitsfrom = transaction.unitsfrom
+    fromunits = transaction.fromunits
 
-    pocketFrom = (transaction.fiaccount, transaction.securityfrom)
+    pocketFrom = (transaction.fiaccount, transaction.fromsecurity)
     positionFrom = portfolio.get(pocketFrom, [])
 
     # Remove lots from the source position
     takenLots, remainingPosition = functions.part_units(
-        positionFrom, openAsOf(transaction.datetime), -unitsfrom
+        positionFrom, openAsOf(transaction.datetime), -fromunits
     )
 
     takenUnits = sum([lot.units for lot in takenLots])
-    if abs(takenUnits) - abs(unitsfrom) > UNITS_TOLERANCE:
-        msg = f"Exercise Lot.units={takenUnits} (not {unitsfrom})"
+    if abs(takenUnits) - abs(fromunits) > UNITS_TOLERANCE:
+        msg = f"Exercise Lot.units={takenUnits} (not {fromunits})"
         raise Inconsistent(transaction, msg)
 
     portfolio[pocketFrom] = remainingPosition
 
-    multiplier = abs(transaction.units / transaction.unitsfrom)
+    multiplier = abs(transaction.units / transaction.fromunits)
     strikePrice = abs(transaction.cash / transaction.units)
 
     gains = (
@@ -569,7 +569,7 @@ def _pop_push_lots(
 
     Note:
         Transactions which transform basis (Transfer, Spinoff, Exercise) must first take
-        basis from the "source pocket", i.e. (accountFrom, securityFrom, unitsFrom)
+        basis from the "source pocket", i.e. (fromfiaccount, fromsecurity, fromunits)
         before calling this function to apply basis/proceeds to the transaction's
         "destination pocket", i.e. (account, security, units).
 
