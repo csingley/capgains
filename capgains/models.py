@@ -361,7 +361,7 @@ class Transaction(Base, Mergeable):
         "Security", foreign_keys=[security_id], backref="transactions"
     )
     # Currency denomination of Transaction.cash
-    currency = Column(Enum(*CURRENCY_CODES, name="transaction_currency"))
+    currency = Column(CurrencyType)
     # Change in money amount caused by Transaction
     cash = Column(Numeric)
     units = Column(
