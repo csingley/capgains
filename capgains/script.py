@@ -145,7 +145,7 @@ def _process_transactions(session, dtstart=None, dtend=None, begin=None, loadfil
         )
     )
 
-    gains = [portfolio.applyTransaction(tx) for tx in transactions]
+    gains = [portfolio.book(tx) for tx in transactions]
     # Flatten nested list; filter for gains during reporting period
     #  gains = [gain for gs in gains for gain in gs]
     gains = [gain for gs in gains for gain in gs if gain.transaction.datetime >= begin]

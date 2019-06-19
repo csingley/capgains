@@ -230,15 +230,20 @@ class CsvLotReader(csv.DictReader):
     def __next__(self):
         row = super(CsvLotReader, self).__next__()
 
-        self.transaction_id += 1
         acct_attrs = {attr: row.pop(attr) for attr in ("brokerid", "acctid")}
         sec_attrs = {attr: row.pop(attr) for attr in ("ticker", "secname")}
         lot_attrs = {attr: row.pop(attr) for attr in ("units", "cost", "currency")}
         # Create mock opentransaction
         opendt = datetime.strptime(row.pop("opendt"), "%Y-%m-%d %H:%M:%S")
         opentxid = row.pop("opentxid")
-        opentransaction = inventory.Transaction(
-            id=self.transaction_id, uniqueid=opentxid, datetime=opendt
+        opentransaction = inventory.Trade(
+            uniqueid=opentxid,
+            datetime=opendt,
+            fiaccount=None,
+            security=None,
+            currency=None,
+            cash=None,
+            units=None,
         )
 
         # Leftovers in row are SecurityId
@@ -296,7 +301,11 @@ class CsvLotWriter(csv.DictWriter):
         ]
         fieldnames = self.csvFields + uniqueidtypes
         super(CsvLotWriter, self).__init__(
-            csvfile, fieldnames, delimiter=",", quoting=csv.QUOTE_NONNUMERIC
+            csvfile,
+            fieldnames,
+            delimiter=",",
+            quoting=csv.QUOTE_NONNUMERIC,
+            extrasaction="ignore",
         )
 
     def writerows(  # type: ignore
@@ -309,6 +318,7 @@ class CsvLotWriter(csv.DictWriter):
             self.session.add_all([account, security])
 
             rows = [self.row_for_lot(account, security, lot) for lot in position]
+
             if consolidate:
                 rows = [functools.reduce(self.consolidate_lots, rows)]
 
@@ -355,11 +365,22 @@ class CsvLotWriter(csv.DictWriter):
 
         assert lot0["currency"] == lot1["currency"]  # FIXME
 
-        return {
-            "units": lot0["units"] + lot1["units"],
-            "cost": lot0["cost"] + lot1["cost"],
-            "currency": lot0["currency"],
-        }
+        consolidated_lot = lot0.copy()
+        consolidated_lot.update(
+            {
+                "brokerid": "",
+                "acctid": "",
+                "ticker": lot0["ticker"],
+                "secname": lot0["secname"],
+                "units": lot0["units"] + lot1["units"],
+                "cost": lot0["cost"] + lot1["cost"],
+                "currency": lot0["currency"],
+                "opendt": "",
+                "opentxid": "",
+            }
+        )
+
+        return consolidated_lot
 
 
 class CsvGainWriter(csv.DictWriter):
@@ -624,7 +645,9 @@ def translate_transaction(transaction, currency: str, rate: Decimal):
     return transaction
 
 
-@translate_transaction.register
+@translate_transaction.register(inventory.Trade)
+@translate_transaction.register(inventory.ReturnOfCapital)
+@translate_transaction.register(inventory.Exercise)
 def translate_cash_currency(
     transaction: Union[inventory.Trade, inventory.ReturnOfCapital, inventory.Exercise],
     currency: str,

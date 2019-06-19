@@ -54,7 +54,8 @@ class TransactionSort(enum.Enum):
     MINGAIN = 4
 
 
-CurrencyType = Enum(*CURRENCY_CODES, name="currency_type")
+Currency = enum.Enum("Currency", CURRENCY_CODES)
+CurrencyType = Enum(Currency, name="currency_type")
 
 
 class Mergeable(object):
