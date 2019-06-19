@@ -79,7 +79,7 @@ class Trade(NamedTuple):
     datetime: _datetime.datetime
     fiaccount: Any
     security: Any
-    currency: str
+    currency: models.Currency
     cash: Decimal
     units: Decimal
     dtsettle: Optional[_datetime.datetime] = None
@@ -107,7 +107,7 @@ class ReturnOfCapital(NamedTuple):
     datetime: _datetime.datetime
     fiaccount: Any
     security: Any
-    currency: str
+    currency: models.Currency
     cash: Decimal
     dtsettle: Optional[_datetime.datetime] = None
     memo: Optional[str] = None
@@ -237,7 +237,7 @@ class Exercise(NamedTuple):
     fiaccount: Any
     security: Any
     units: Decimal
-    currency: str
+    currency: models.Currency
     cash: Decimal
     fromsecurity: Any
     fromunits: Decimal
@@ -272,7 +272,7 @@ class Lot(NamedTuple):
     createtransaction: TransactionType
     units: Decimal
     price: Decimal
-    currency: str
+    currency: models.Currency
 
 
 class Gain(NamedTuple):

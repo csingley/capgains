@@ -558,7 +558,7 @@ def _pop_push_lots(
     transaction: TransactionType,
     units: Decimal,
     cash: Decimal,
-    currency: str,
+    currency: models.Currency,
     *,
     opentransaction: Optional[TransactionType] = None,
     sort: Optional[SortType] = None,

@@ -10,9 +10,20 @@ import csv
 from decimal import Decimal, ROUND_HALF_UP
 import datetime as _datetime
 from datetime import datetime, date, timedelta
+from copy import copy
 import functools
 import itertools
-from typing import Tuple, NamedTuple, Sequence, Mapping, Callable, Any, Union, Optional
+from typing import (
+    Tuple,
+    NamedTuple,
+    Sequence,
+    Mapping,
+    MutableMapping,
+    Callable,
+    Any,
+    Union,
+    Optional,
+)
 
 
 # local imports
@@ -23,7 +34,12 @@ PocketType = Tuple[models.FiAccount, models.Security]
 PositionType = Sequence[inventory.Lot]
 PortfolioType = Mapping[PocketType, PositionType]
 CsvDictRowRead = Mapping[str, Optional[str]]
-CsvDictRowWrite = Mapping[str, Union[None, str, Decimal, datetime, bool]]
+CsvDictRowWrite = MutableMapping[
+    str, Union[None, str, Decimal, datetime, bool, models.Currency]
+]
+
+
+FUNCTIONAL_CURRENCY = getattr(models.Currency, CONFIG["books"]["functional_currency"])
 
 
 class CsvTransactionReader(csv.DictReader):
@@ -236,14 +252,12 @@ class CsvLotReader(csv.DictReader):
         # Create mock opentransaction
         opendt = datetime.strptime(row.pop("opendt"), "%Y-%m-%d %H:%M:%S")
         opentxid = row.pop("opentxid")
-        opentransaction = inventory.Trade(
+        opentransaction = Transaction(
             uniqueid=opentxid,
             datetime=opendt,
             fiaccount=None,
             security=None,
-            currency=None,
-            cash=None,
-            units=None,
+            type=models.TransactionType.TRADE,
         )
 
         # Leftovers in row are SecurityId
@@ -263,6 +277,7 @@ class CsvLotReader(csv.DictReader):
         lot_attrs["price"] = Decimal(lot_attrs.pop("cost")) / lot_attrs["units"]
         lot_attrs["opentransaction"] = opentransaction
         lot_attrs["createtransaction"] = opentransaction
+        lot_attrs["currency"] = getattr(models.Currency, lot_attrs["currency"])
 
         # `yield` returns a generator object; if you want to use it directly
         # instead of iterating over it, you need to call list() or tuple()
@@ -365,7 +380,7 @@ class CsvLotWriter(csv.DictWriter):
 
         assert lot0["currency"] == lot1["currency"]  # FIXME
 
-        consolidated_lot = lot0.copy()
+        consolidated_lot = copy(lot0)
         consolidated_lot.update(
             {
                 "brokerid": "",
@@ -427,7 +442,7 @@ class CsvGainWriter(csv.DictWriter):
                 row = self._gain2row(gain)
                 self.writerow(row)
 
-    def _gain2row(self, gain: inventory.Gain) -> CsvDictRowRead:
+    def _gain2row(self, gain: inventory.Gain) -> CsvDictRowWrite:
         """
         Transform a single Gain into a dict suitable to hand to self.writerow()
         """
@@ -515,7 +530,7 @@ class GainReport(NamedTuple):
     opentx: Any
     gaintx: Any
     units: Decimal
-    currency: str
+    currency: models.Currency
     cost: Decimal
     proceeds: Decimal
     longterm: bool
@@ -525,7 +540,6 @@ class Transaction(NamedTuple):
     """Nonpersistent implementation of the models.Transaction interface.
     """
 
-    id: int
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any
@@ -533,11 +547,11 @@ class Transaction(NamedTuple):
     type: models.TransactionType
     dtsettle: Optional[_datetime.datetime] = None
     cash: Optional[Decimal] = None
-    currency: Optional[str] = None
+    currency: Optional[models.Currency] = None
     units: Optional[Decimal] = None
     securityprice: Optional[Decimal] = None
     fromfiaccount: Any = None
-    securityFrom: Any = None
+    fromsecurity: Any = None
     fromunits: Optional[Decimal] = None
     fromsecurityprice: Optional[Decimal] = None
     numerator: Optional[Decimal] = None
@@ -592,12 +606,18 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
     # purchase.
     lot, gaintx, gainprice = gain.lot, gain.transaction, gain.price
 
-    functional_currency = CONFIG["books"]["functional_currency"]
+    #  functional_currency = CONFIG["books"]["functional_currency"]
 
-    if lot.currency != functional_currency:
+    if lot.currency != FUNCTIONAL_CURRENCY:
         opentx = lot.opentransaction
         if isinstance(
-            opentx, (models.Transaction, inventory.Trade, inventory.ReturnOfCapital)
+            opentx,
+            (
+                models.Transaction,
+                Transaction,
+                inventory.Trade,
+                inventory.ReturnOfCapital,
+            ),
         ):
             dtsettle = opentx.dtsettle or opentx.datetime
         else:
@@ -606,37 +626,37 @@ def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
         exchange_rate = models.CurrencyRate.get_rate(
             session,
             fromcurrency=lot.currency,
-            tocurrency=functional_currency,
+            tocurrency=FUNCTIONAL_CURRENCY,
             date=date_settle,
         )
         opentx_translated = translate_transaction(
-            opentx, functional_currency, exchange_rate
+            opentx, FUNCTIONAL_CURRENCY, exchange_rate
         )
         lot = lot._replace(
             opentransaction=opentx_translated,
             price=lot.price * exchange_rate,
-            currency=functional_currency,
+            currency=FUNCTIONAL_CURRENCY,
         )
 
     gaintx_currency = gaintx.currency or lot.currency
-    if gaintx_currency != functional_currency:
+    if gaintx_currency != FUNCTIONAL_CURRENCY:
         dtsettle = gaintx.dtsettle or gaintx.datetime
         date_settle = date(dtsettle.year, dtsettle.month, dtsettle.day)
         exchange_rate = models.CurrencyRate.get_rate(
             session,
             fromcurrency=gaintx_currency,
-            tocurrency=functional_currency,
+            tocurrency=FUNCTIONAL_CURRENCY,
             date=date_settle,
         )
 
-        gaintx = translate_transaction(gaintx, functional_currency, exchange_rate)
+        gaintx = translate_transaction(gaintx, FUNCTIONAL_CURRENCY, exchange_rate)
         gainprice = gainprice * exchange_rate
 
     return inventory.Gain(lot, gaintx, gainprice)
 
 
 @functools.singledispatch
-def translate_transaction(transaction, currency: str, rate: Decimal):
+def translate_transaction(transaction, currency: models.Currency, rate: Decimal):
     """
     Translate a transaction into a different currency for reporting purposes.
 
@@ -650,7 +670,7 @@ def translate_transaction(transaction, currency: str, rate: Decimal):
 @translate_transaction.register(inventory.Exercise)
 def translate_cash_currency(
     transaction: Union[inventory.Trade, inventory.ReturnOfCapital, inventory.Exercise],
-    currency: str,
+    currency: models.Currency,
     rate: Decimal,
 ):
     """
@@ -664,7 +684,7 @@ def translate_cash_currency(
 
 @translate_transaction.register
 def translate_security_pricing(
-    transaction: inventory.Spinoff, currency: str, rate: Decimal
+    transaction: inventory.Spinoff, currency: models.Currency, rate: Decimal
 ):
     """
     Translate a transaction into a different currency for reporting purposes.
@@ -677,13 +697,14 @@ def translate_security_pricing(
 
 
 @translate_transaction.register
-def translate_model(transaction: models.Transaction, currency: str, rate: Decimal):
+def translate_model(
+    transaction: models.Transaction, currency: models.Currency, rate: Decimal
+):
     """
     Translate a transaction into a different currency for reporting purposes.
     """
 
     return Transaction(
-        id=transaction.id,
         uniqueid=transaction.uniqueid,
         datetime=transaction.datetime,
         dtsettle=transaction.dtsettle,

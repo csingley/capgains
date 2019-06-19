@@ -27,12 +27,6 @@ from ofxtools.models.i18n import CURRENCY_CODES
 from capgains.database import Base
 
 
-class ModelError(Exception):
-    """ Base class for exceptions raised by this module.  """
-
-    pass
-
-
 @enum.unique
 class TransactionType(enum.Enum):
     # Postgres sorts Enums by listed order of type definition
@@ -54,7 +48,7 @@ class TransactionSort(enum.Enum):
     MINGAIN = 4
 
 
-Currency = enum.Enum("Currency", CURRENCY_CODES)
+Currency = enum.Enum("Currency", CURRENCY_CODES)  # type: ignore
 CurrencyType = Enum(Currency, name="currency_type")
 
 
