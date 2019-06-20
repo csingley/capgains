@@ -23,17 +23,19 @@ WORKFLOW
 # stdlib imports
 from argparse import ArgumentParser
 from datetime import datetime
+from typing import Tuple, MutableMapping
 
 # 3rd party imports
 import sqlalchemy
-from sqlalchemy import and_
+import tablib
 
 
 # Local imports
-from capgains import models, flex, ofx, CSV, CONFIG
+from capgains import models, utils, flex, ofx, CSV, CONFIG
+from capgains.inventory import report
+from capgains.inventory.types import Lot, DummyTransaction
+from capgains.inventory.api import Portfolio
 from capgains.database import Base, sessionmanager
-from capgains.inventory import Portfolio
-from capgains.CSV.local import CsvLotReader, CsvLotWriter, CsvGainWriter
 
 
 def create_engine():
@@ -50,17 +52,13 @@ def drop_all_tables(args):
     print("finished.")
 
 
-def wrapImport(args):
+def import_transactions(args):
     engine = create_engine()
-    paths = args.file
-    import_transactions(engine, paths)
 
-
-def import_transactions(engine, paths):
     output = []
     EXTMAP = {"ofx": ofx.read, "qfx": ofx.read, "xml": flex.read, "csv": CSV.read}
     with sessionmanager(bind=engine) as session:
-        for path in paths:
+        for path in args.file:
             # Dispatch file according to file extension
             ext = path.split(".")[-1].lower()
             readfn = EXTMAP.get(ext, None)
@@ -74,100 +72,139 @@ def import_transactions(engine, paths):
     return output
 
 
-def wrapLots(args):
+def dump_lots(args):
     engine = create_engine()
-    dump_positions(
-        engine, args.loadcsv, args.file, args.dtstart, args.dtend, args.consolidate
-    )
-
-
-def dump_positions(engine, infile, outfile, dtstart, dtend, consolidate):
-    with sessionmanager(bind=engine) as session:
-        portfolio, gains = _process_transactions(
-            session, dtstart=dtstart, dtend=dtend, begin=None, loadfile=infile
-        )
-
-        with open(outfile, "w") as csvfile:
-            writer = CsvLotWriter(session, csvfile)
-            if consolidate:
-                fieldnames = writer.fieldnames
-                fieldnames.remove("opendt")
-                fieldnames.remove("opentxid")
-                writer.fieldnames = fieldnames
-            writer.writeheader()
-            writer.writerows(portfolio, consolidate=consolidate)
-
-
-def wrapGains(args):
-    engine = create_engine()
-    dump_gains(
+    dump_csv(
         engine,
-        args.loadcsv,
-        args.file,
-        args.dtstart,
-        args.dtend,
-        args.begin,
-        args.consolidate,
+        dtstart=args.dtstart,
+        dtend=args.dtend,
+        dtstart_gains=datetime.max,
+        consolidate=args.consolidate,
+        lotloadfile=args.loadcsv,
+        lotdumpfile=args.file,
     )
 
 
-def dump_gains(engine, infile, outfile, dtstart, dtend, begin, consolidate):
+def dump_gains(args):
+    engine = create_engine()
+    dump_csv(
+        engine,
+        dtstart=args.dtstart,
+        dtend=args.dtend,
+        dtstart_gains=args.begin,
+        consolidate=args.consolidate,
+        lotloadfile=args.loadcsv,
+        gaindumpfile=args.file,
+    )
+
+
+def dump_csv(
+    engine,
+    dtstart,
+    dtend,
+    dtstart_gains=None,
+    consolidate=False,
+    lotloadfile=None,
+    lotdumpfile=None,
+    gaindumpfile=None,
+):
+    dtstart_gains = dtstart_gains or datetime.min
+
     with sessionmanager(bind=engine) as session:
-        portfolio, gains = _process_transactions(session, dtstart, dtend, begin, infile)
-        with open(outfile, "w") as csvfile:
-            writer = CsvGainWriter(session, csvfile)
-            writer.writeheader()
-            writer.writerows(gains, consolidate=consolidate)
+        portfolio = load_portfolio(session, lotloadfile)
 
-
-def _process_transactions(session, dtstart=None, dtend=None, begin=None, loadfile=None):
-    dtstart = dtstart or datetime.min
-    dtend = dtend or datetime.max
-    begin = begin or datetime.min
-
-    if loadfile:
-        portfolio = load_portfolio(session, loadfile)
-    else:
-        portfolio = Portfolio()
-
-    transactions = (
-        session.query(models.Transaction)
-        .filter(
-            and_(
-                models.Transaction.datetime >= dtstart,
-                models.Transaction.datetime < dtend,
-            )
+        transactions = models.Transaction.between(
+            session,
+            dtstart=dtstart or datetime.min,
+            dtend=dtend or datetime.max,
         )
-        .order_by(
-            models.Transaction.datetime,
-            models.Transaction.type,
-            models.Transaction.uniqueid,
-        )
-    )
 
-    gains = [portfolio.book(tx) for tx in transactions]
-    # Flatten nested list; filter for gains during reporting period
-    #  gains = [gain for gs in gains for gain in gs]
-    gains = [gain for gs in gains for gain in gs if gain.transaction.datetime >= begin]
+        gains = [portfolio.book(tx) for tx in transactions]
+        # Flatten nested list; filter for gains during reporting period
+        gains = [
+            gain
+            for gs in gains
+            for gain in gs
+            if gain.transaction.datetime >= dtstart_gains
+        ]
 
-    return portfolio, gains
+        if gaindumpfile:
+            gains_table = report.flatten_gains(session, gains, consolidate=consolidate)
+            with open(gaindumpfile, "w") as csvfile:
+                csvfile.write(gains_table.csv)
+
+        if lotdumpfile:
+            portfolio_table = report.flatten_portfolio(portfolio, consolidate=consolidate)
+            with open(lotdumpfile, "w") as csvfile:
+                csvfile.write(portfolio_table.csv)
 
 
 def load_portfolio(session, path):
     portfolio = Portfolio()
-    with open(path, "r") as csvfile:
-        for row in CsvLotReader(session, csvfile):
-            # `row` is a generator yielded by CsvLotReader.__next__(),
-            # and needs to be evaluated as a tuple.  In Python 3.7+,
-            # raising StopIteration here will be reraised as RuntimeError.
-            try:
-                row = tuple(row)
-            except RuntimeError:
-                break
+    if not path:
+        return portfolio
 
-            account, security, lot = row
-            portfolio[(account, security)].append(lot)
+    with open(path, "r") as csvfile:
+        data = tablib.Dataset().load(csvfile.read())
+
+    reports = (load_lot_report(row) for row in data.dict)
+    for rept in reports:
+        account, security, lot = load_lot(session, rept)
+        portfolio[(account, security)].append(lot)
+
     return portfolio
+
+
+def load_lot_report(row: MutableMapping) -> report.FlatLot:
+    row.update(
+        {
+            "opendt": datetime.strptime(row["opendt"], "%Y-%m-%d %H:%M:%S"),
+            "units": utils.round_decimal(row["units"]),
+            "cost": utils.round_decimal(row["cost"]),
+            "currency": getattr(models.Currency, row["currency"]),
+        }
+    )
+    return report.FlatLot(**row)
+
+
+def load_lot(
+    session, lotreport: report.FlatLot
+) -> Tuple[models.FiAccount, models.Security, Lot]:
+    account = models.FiAccount.merge(
+        session, brokerid=lotreport.brokerid, number=lotreport.acctid
+    )
+    assert lotreport.opentxid is not None
+    assert lotreport.opendt is not None
+
+    # Create mock opentransaction
+    opentransaction = DummyTransaction(
+        uniqueid=lotreport.opentxid,
+        datetime=lotreport.opendt,
+        fiaccount=None,
+        security=None,
+        type=models.TransactionType.TRADE,
+    )
+
+    for uniqueidtype in ("CUSIP", "ISIN", "CONID", "TICKER"):
+        uniqueid = getattr(lotreport, uniqueidtype)
+        if uniqueid:
+            security = models.Security.merge(
+                session,
+                uniqueidtype=uniqueidtype,
+                uniqueid=uniqueid,
+                ticker=lotreport.ticker,
+                name=lotreport.secname,
+            )
+
+    lot = Lot(
+        units=lotreport.units,
+        price=lotreport.cost / lotreport.units,
+        opentransaction=opentransaction,
+        createtransaction=opentransaction,
+        currency=lotreport.currency,
+    )
+
+    return account, security, lot
 
 
 def make_argparser():
@@ -187,7 +224,7 @@ def make_argparser():
 
     import_parser = subparsers.add_parser("import", help="Import OFX/Flex/CSV data")
     import_parser.add_argument("file", nargs="+", help="Broker data file(s)")
-    import_parser.set_defaults(func=wrapImport)
+    import_parser.set_defaults(func=import_transactions)
 
     dump_parser = subparsers.add_parser(
         "lots", aliases=["dump"], help="Dump Lots to CSV file"
@@ -209,7 +246,7 @@ def make_argparser():
         "-l", "--loadcsv", default=None, help="CSV dump file of Lots to load"
     )
     dump_parser.add_argument("-c", "--consolidate", action="store_true")
-    dump_parser.set_defaults(func=wrapLots, loadcsv=None)
+    dump_parser.set_defaults(func=dump_lots, loadcsv=None)
 
     gain_parser = subparsers.add_parser("gains", help="Dump Gains to CSV file")
     gain_parser.add_argument("file", help="CSV file")
@@ -235,7 +272,7 @@ def make_argparser():
         "-l", "--loadcsv", default=None, help="CSV dump file of Lots to load"
     )
     gain_parser.add_argument("-c", "--consolidate", action="store_true")
-    gain_parser.set_defaults(func=wrapGains)
+    gain_parser.set_defaults(func=dump_gains)
 
     return argparser, subparsers
 

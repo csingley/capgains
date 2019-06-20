@@ -51,7 +51,7 @@ class TransactionSort(enum.Enum):
 
 Currency = enum.Enum("Currency", CURRENCY_CODES)  # type: ignore
 # report/script modules need to serialize e.g. "USD" instead of "Currency.USD"
-Currency.__str__ = lambda self: self.name
+Currency.__str__ = lambda self: self.name  # type: ignore
 
 CurrencyType = Enum(Currency, name="currency_type")
 
@@ -358,10 +358,6 @@ class Transaction(Base, Mergeable):
     security = relationship(
         "Security", foreign_keys=[security_id], backref="transactions"
     )
-    # Currency denomination of Transaction.cash
-    currency = Column(CurrencyType)
-    # Change in money amount caused by Transaction
-    cash = Column(Numeric)
     units = Column(
         Numeric,
         CheckConstraint("units <> 0", name="units_nonzero"),
@@ -371,16 +367,10 @@ class Transaction(Base, Mergeable):
             "change in units)"
         ),
     )
-    dtsettle = Column(
-        DateTime, comment="Settlement date: pay date for return of capital"
-    )
-    memo = Column(Text)
-    securityprice = Column(
-        "securityprice",
-        Numeric,
-        CheckConstraint("securityprice >= 0", name="securityprice_not_negative"),
-        comment="For spinoffs: unit price used to fair-value destination security",
-    )
+    # Currency denomination of Transaction.cash
+    currency = Column(CurrencyType)
+    # Change in money amount caused by Transaction
+    cash = Column(Numeric)
     fromfiaccount_id = Column(
         "fromfiaccount_id",
         Integer,
@@ -414,12 +404,6 @@ class Transaction(Base, Mergeable):
     #  null value if any operand is null, they will not prevent null values in the
     #  constrained columns."
     #  https://www.postgresql.org/docs/11/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS
-    fromsecurityprice = Column(
-        "fromsecurityprice",
-        Numeric,
-        CheckConstraint("fromsecurityprice >= 0", name="fromsecurityprice_not_negative"),
-        comment="For spinoffs: unit price used to fair-value source security",
-    )
     numerator = Column(
         Numeric,
         CheckConstraint("numerator > 0", name="numerator_positive"),
@@ -430,9 +414,25 @@ class Transaction(Base, Mergeable):
         CheckConstraint("denominator > 0", name="denominator_positive"),
         comment="For splits, spinoffs: normalized units of source security",
     )
+    memo = Column(Text)
+    dtsettle = Column(
+        DateTime, comment="Settlement date: pay date for return of capital"
+    )
     sort = Column(
         Enum(TransactionSort, name="transaction_sort"),
         comment="Sort algorithm for gain recognition",
+    )
+    securityprice = Column(
+        "securityprice",
+        Numeric,
+        CheckConstraint("securityprice >= 0", name="securityprice_not_negative"),
+        comment="For spinoffs: unit price used to fair-value destination security",
+    )
+    fromsecurityprice = Column(
+        "fromsecurityprice",
+        Numeric,
+        CheckConstraint("fromsecurityprice >= 0", name="fromsecurityprice_not_negative"),
+        comment="For spinoffs: unit price used to fair-value source security",
     )
 
     __table_args__ = (

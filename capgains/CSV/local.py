@@ -425,7 +425,7 @@ class CsvGainWriter(csv.DictWriter):
         )
 
     def writerows(  # type: ignore
-        self, gains: Sequence[inventory.Gain], consolidate: bool = False
+        self, gains: Sequence[inventory.types.Gain], consolidate: bool = False
     ) -> None:
         """ """
         if consolidate:
@@ -557,11 +557,10 @@ class Transaction(NamedTuple):
     numerator: Optional[Decimal] = None
     denominator: Optional[Decimal] = None
     memo: Optional[str] = None
-    #  sort: Optional[Mapping[str, Union[bool, Callable[[Any], Tuple]]]] = None
     sort: Optional[inventory.SortType] = None
 
 
-def report_gain(session, gain: inventory.Gain) -> GainReport:
+def report_gain(session, gain: inventory.types.Gain) -> GainReport:
     """ Extract a GainReport from a Gain instance. """
     gain = translate_gain(session, gain)
     gaintx = gain.transaction
@@ -586,7 +585,7 @@ def report_gain(session, gain: inventory.Gain) -> GainReport:
     )
 
 
-def translate_gain(session, gain: inventory.Gain) -> inventory.Gain:
+def translate_gain(session, gain: inventory.types.Gain) -> inventory.Gain:
     """
     Translate Gain instance's realizing transaction to functional currency.
     """

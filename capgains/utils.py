@@ -2,7 +2,8 @@
 Utility functions used by capgains modules
 """
 import itertools
-from typing import Any, Tuple, Iterable, Callable
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Any, Tuple, Iterable, Callable, Union
 
 
 def partition(
@@ -17,6 +18,15 @@ def partition(
     return itertools.filterfalse(pred, t1), filter(pred, t2)
 
 
+def all_equal(iterable):
+    """Returns True if all the elements are equal to each other
+
+    https://docs.python.org/3/library/itertools.html#itertools-recipes
+    """
+    g = itertools.groupby(iterable)
+    return next(g, True) and not next(g, False)
+
+
 def matchEverything(element: Any) -> bool:
     """Degenerate predicate that always return True"""
     return True
@@ -25,3 +35,10 @@ def matchEverything(element: Any) -> bool:
 def sign(x) -> int:
     """Extract the sign of a number (+1, -1, or 0)"""
     return (x != 0) and (1, -1)[x < 0]
+
+
+DECIMAL_SCALE = Decimal("0.0001")
+
+
+def round_decimal(number: Union[int, Decimal]) -> Decimal:
+    return Decimal(number).quantize(DECIMAL_SCALE, rounding=ROUND_HALF_UP)

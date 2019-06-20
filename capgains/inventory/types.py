@@ -63,8 +63,8 @@ class DummyTransaction(NamedTuple):
     """The models.Transaction interface.
 
     Will not be dispatched by inventory.api.book().  Instances are only created when
-    deserializing Lots, as a placeholder for the key Lot.opentransaction that can't be
-    serialized.
+    translating currency of gains, or when deserializing Lots as a placeholder for
+    the Lot.opentransaction that can't be serialized.
 
     Attributes:
         type: enum specifying a transaction type below (Trade, Split, etc.)
