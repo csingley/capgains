@@ -59,31 +59,75 @@ from typing import NamedTuple, Tuple, Mapping, Callable, Any, Optional, Union
 from capgains import models
 
 
+class DummyTransaction(NamedTuple):
+    """The models.Transaction interface.
+
+    Will not be dispatched by inventory.api.book().  Instances are only created when
+    deserializing Lots, as a placeholder for the key Lot.opentransaction that can't be
+    serialized.
+
+    Attributes:
+        type: enum specifying a transaction type below (Trade, Split, etc.)
+        uniqueid: transaction unique identifier (e.g. FITID).
+        datetime: transaction date/time - accrual basis
+                  (ex-date for spinoffs and return of capital).
+        fiaccount: brokerage account where security and/or cash changes
+                   (destination account for transfers).
+        security: asset that changes
+                  (destination security for transfers, spinoffs, and options exercise).
+        units: change in (destination) security amount resulting from transaction.
+        currency: currency denomination of cash (ISO 4217 code).
+        cash: change in money amount (+ increases cash, - decreases cash).
+        fromfiaccount: source brokerage account for transfers.
+        fromsecurity: source security for transfers, spinoffs, options exercise.
+        fromunits: change in source security amount for transfers, options exercise.
+        numerator: normalized units of destination or post-split security.
+        denominator: normalized units of source or pre-slit security.
+        memo: transaction notes.
+        dtsettle: transaction date/time - cash basis
+                  (pay date for spinoffs and return of capital).
+        sort: sort algorithm for gain recognition.
+        securityprice: for spinoffs - price used to fair-value source security.
+        fromsecurityprice: for spinoffs - price used to fair-value destination security.
+    """
+
+    type: models.TransactionType
+    uniqueid: str
+    datetime: _datetime.datetime
+    fiaccount: Any
+    security: Any
+    units: Optional[Decimal] = None
+    currency: Optional[models.Currency] = None
+    cash: Optional[Decimal] = None
+    fromfiaccount: Any = None
+    fromsecurity: Any = None
+    fromunits: Optional[Decimal] = None
+    numerator: Optional[Decimal] = None
+    denominator: Optional[Decimal] = None
+    memo: Optional[str] = None
+    dtsettle: Optional[_datetime.datetime] = None
+    # sort's type is Optional[SortType], but mypy chokes on recursion - redefine here.
+    sort: Optional[Mapping[str, Union[bool, Callable[[Any], Tuple]]]] = None
+    securityprice: Optional[Decimal] = None
+    fromsecurityprice: Optional[Decimal] = None
+
+
 class Trade(NamedTuple):
     """Buy/sell a security, creating basis (if opening) or realizing gain (if closing).
 
     Attributes:
-        uniqueid: transaction unique identifier (e.g. FITID).
-        datetime: trade date/time.
-        fiaccount: brokerage account where the trade is executed.
-        security: asset bought/sold.
-        cash: change in money amount (+ increases cash, - decreases cash).
-        currency: currency denomination of cash (ISO 4217 code).
-        units: change in security amount.
-        dtsettle: trade settlement date/time.
-        memo: transaction notes.
-        sort: sort algorithm for gain recognition.
+        cf. DummyTransaction docstring
     """
 
     uniqueid: str
     datetime: _datetime.datetime
     fiaccount: Any
     security: Any
+    units: Decimal
     currency: models.Currency
     cash: Decimal
-    units: Decimal
-    dtsettle: Optional[_datetime.datetime] = None
     memo: Optional[str] = None
+    dtsettle: Optional[_datetime.datetime] = None
     # sort's type is Optional[SortType], but mypy chokes on recursion - redefine here.
     sort: Optional[Mapping[str, Union[bool, Callable[[Any], Tuple]]]] = None
 
@@ -91,16 +135,10 @@ class Trade(NamedTuple):
 class ReturnOfCapital(NamedTuple):
     """Cash distribution that reduces cost basis.
 
+    Note: `datetime` is ex-date; `dtsettle` is pay date.
+
     Attributes:
-        id: database primary key of transaction.
-        uniqueid: transaction unique identifier (e.g. FITID).
-        datetime: effective date/time of distribution (ex-date).
-        fiaccount: brokerage account where the distribution is received.
-        security: security making the distribution.
-        cash: amount of distribution (+ increases cash, - decreases cash).
-        currency: currency denomination of cash (ISO 4217 code).
-        dtsettle: pay date of distribution.
-        memo: transaction notes.
+        cf. DummyTransaction docstring
     """
 
     uniqueid: str
@@ -109,28 +147,18 @@ class ReturnOfCapital(NamedTuple):
     security: Any
     currency: models.Currency
     cash: Decimal
-    dtsettle: Optional[_datetime.datetime] = None
     memo: Optional[str] = None
+    dtsettle: Optional[_datetime.datetime] = None
 
 
 class Transfer(NamedTuple):
     """Move assets between (fiaccount, security) pockets, retaining basis/ open date.
 
-    Units can also be changed during the Transfer, so it's useful for corporate
-    reorganizations (mergers, etc.)
+    Units can also be changed during a Transfer, so this type can also represent
+    corporate reorganizations (mergers, etc.)
 
     Attributes:
-        uniqueid: transaction unique identifier (e.g. FITID).
-        datetime: transfer date/time.
-        fiaccount: destination brokerage account.
-        security: destination security.
-        fiaccount: destination brokerage account.
-        security: destination security.
-        units: destination security amount.
-        fromfiaccount: source brokerage account.
-        fromsecurity: source security.
-        fromunits: source security amount.
-        memo: transaction notes.
+        cf. DummyTransaction docstring
     """
 
     uniqueid: str
@@ -148,20 +176,14 @@ class Split(NamedTuple):
     """Change position units without affecting costs basis or holding period.
 
     Splits are declared in terms of new units : old units (the split ratio).
+    These normalized units are represented by `numerator`:`denominator`.
 
     Note:
-        A Split is essentially a Transfer where fiaccount=fiaccountfrom and
+        A Split is essentially a Transfer where fiaccount=fromfiaccount and
         security=SecurityFrom, differing only in units/unitsfrom.
 
     Attributes:
-        uniqueid: transaction unique identifier (e.g. FITID).
-        datetime: effective date/time of split (ex-date).
-        fiaccount: brokerage account where the split happens.
-        security: security being split.
-        numerator: normalized units of post-split security.
-        denominator: normalized units of pre-slit security.
-        units: change in security amount resulting from the split.
-        memo: transaction notes.
+        cf. DummyTransaction docstring
     """
 
     uniqueid: str
@@ -179,24 +201,17 @@ class Spinoff(NamedTuple):
     """Turn one security into two, partitioning cost basis between them.
 
     Spinoffs are declared in terms of (units new security) : (units original security).
+    These normalized units are represented by `numerator`:`denominator`.
+
     Per the US tax code, cost basis must be divided between the two securities
     positions in proportion to their fair market value.  For exchange-traded securities
     this is normally derived from market prices immediately after the spinoff.  This
-    pricing isn't known at the time of the spinoff; securityprice and securityfromprice
-    must be edited in after market data becomes available.
+    pricing, represented by `securityprice` (for the spun-off security) and
+    `securityfromprice` (for the spinning security), isn't generally known at the time
+    of the spinoff.  Pricing data must be edited in after market data becomes available.
 
     Attributes:
-        uniqueid: transaction unique identifier (e.g. FITID).
-        datetime: effective date/time of spinoff (ex-date).
-        fiaccount: brokerage account where the spinoff happens.
-        security: destination security (i.e. new spinoff security).
-        units: amount of destination security received.
-        numerator: normalized units of destination security.
-        denominator: normalized units of source security.
-        fromsecurity: source security (i.e. security subject to spinoff).
-        memo: transaction notes.
-        securityprice: unit price used to fair-value source security.
-        fromsecurityprice: unit price used to fair-value destination security.
+        cf. DummyTransaction docstring
     """
 
     uniqueid: str
@@ -219,17 +234,13 @@ class Exercise(NamedTuple):
     basis into the underlying.  For tax purposes, the holding period for the
     underlying begins at exercise, not at purchase of the option.
 
+    Note:
+        Source security is the option; destination security is the underlying.
+        `cash` represents the net exercise payment, which will have + sign for
+        exercising long put/short call or - sign for exercising long call/short put.
+
     Attributes:
-        uniqueid: transaction unique identifier (e.g. FITID).
-        datetime: date/time of option exercise.
-        fiaccount: brokerage account where the option is exercised.
-        security: destination security (i.e. underlying received via exercise).
-        units: change in amount of destination security (i.e. the underlying).
-        cash: net exercise payment (+ long put/short call; - long call/short put)
-        currency: currency denomination of cash (ISO 4217 code).
-        fromsecurity: source security (i.e. the option).
-        fromunits: change in mount of source security (i.e. the option).
-        memo: transaction notes.
+        cf. DummyTransaction docstring
     """
 
     uniqueid: str
@@ -245,12 +256,20 @@ class Exercise(NamedTuple):
 
 
 TransactionType = Union[
-    Trade, ReturnOfCapital, Split, Transfer, Spinoff, Exercise, models.Transaction
+    models.Transaction,
+    DummyTransaction,
+    Trade,
+    ReturnOfCapital,
+    Split,
+    Transfer,
+    Spinoff,
+    Exercise,
 ]
 """Type alias for classes implementing the Transaction interface.
 
-Includes models.Transaction, as well as the NamedTuple subclasses defined above that
-implement each relevant subset of Transaction attributes.
+Includes models.Transaction and its incarnations as a DummyTransaction, as well as
+the NamedTuple subclasses defined above that implement each relevant subset of
+Transaction attributes.
 
 This type alias must be defined after the transaction NamedTuples to which it refers,
 because mypy can't yet handle the recursive type definition.
