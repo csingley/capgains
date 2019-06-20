@@ -22,6 +22,7 @@ from typing import NamedTuple, Sequence, Union, Optional
 
 # 3rd part imports
 import tablib
+import sqlalchemy
 
 # local imports
 from capgains import models, inventory, utils, CONFIG
@@ -100,8 +101,8 @@ class FlatGain(NamedTuple):
 
 
 def flatten_portfolio(
-    portfolio: inventory.api.PortfolioType, *, consolidate: bool = False
-) -> Sequence[FlatLot]:
+    portfolio: inventory.api.PortfolioType, *, consolidate: Optional[bool] = False
+) -> tablib.Dataset[FlatLot]:
     """Convert a Portfolio into tablib.Dataset prepared for serialization.
 
     Columns are the fields of FlatLot; rows represent Lot instances.
@@ -123,7 +124,7 @@ def flatten_position(
     security: models.Security,
     position: Sequence[inventory.types.Lot],
     *,
-    consolidate: bool = False,
+    consolidate: Optional[bool] = False,
 ) -> Sequence[FlatLot]:
     """Construct a sequence of LotReports from a portfolio position.
 
@@ -174,8 +175,11 @@ def flatten_position(
 
 
 def flatten_gains(
-    session, gains: Sequence[inventory.api.Gain], *, consolidate: bool = False
-) -> Sequence[FlatLot]:
+    session: sqlalchemy.Session,
+    gains: Sequence[inventory.api.Gain],
+    *,
+    consolidate: Optional[bool] = False,
+) -> tablib.Dataset[FlatLot]:
     """Convert a sequence of Gains into tablib.Dataset prepared for serialization.
 
     Columns are the fields of FlatGain; rows represent Gain instances.
@@ -227,7 +231,7 @@ def flatten_gains(
     return data
 
 
-def flatten_gain(session, gain: inventory.types.Gain) -> FlatGain:
+def flatten_gain(session: sqlalchemy.Session, gain: inventory.types.Gain) -> FlatGain:
     """Construct a FlatGain from a Gain instance.
 
     Translate currency of opening/closing transactions to functional currency as needed.
@@ -271,7 +275,9 @@ def flatten_gain(session, gain: inventory.types.Gain) -> FlatGain:
 FUNCTIONAL_CURRENCY = getattr(models.Currency, CONFIG["books"]["functional_currency"])
 
 
-def translate_gain(session, gain: inventory.types.Gain) -> inventory.types.Gain:
+def translate_gain(
+    session: sqlalchemy.Session, gain: inventory.types.Gain
+) -> inventory.types.Gain:
     """Translate Gain instance's realizing transaction to functional currency.
 
     26 CFR Section 1.988-2(a)(2)(iv)

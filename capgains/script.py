@@ -21,9 +21,10 @@ WORKFLOW
 5) (optional) pg_dump the transaction data.
 """
 # stdlib imports
-from argparse import ArgumentParser
+import argparse
+from argparse import ArgumentParser, _SubParsersAction
 from datetime import datetime
-from typing import Tuple, MutableMapping
+from typing import Tuple, MutableMapping, Sequence, Optional
 
 # 3rd party imports
 import sqlalchemy
@@ -52,10 +53,10 @@ def drop_all_tables(args):
     print("finished.")
 
 
-def import_transactions(args):
+def import_transactions(args: argparse.Namespace) -> Sequence[models.Transaction]:
     engine = create_engine()
 
-    output = []
+    output: list = []
     EXTMAP = {"ofx": ofx.read, "qfx": ofx.read, "xml": flex.read, "csv": CSV.read}
     with sessionmanager(bind=engine) as session:
         for path in args.file:
@@ -72,7 +73,7 @@ def import_transactions(args):
     return output
 
 
-def dump_lots(args):
+def dump_lots(args: argparse.Namespace) -> None:
     engine = create_engine()
     dump_csv(
         engine,
@@ -85,7 +86,7 @@ def dump_lots(args):
     )
 
 
-def dump_gains(args):
+def dump_gains(args: argparse.Namespace) -> None:
     engine = create_engine()
     dump_csv(
         engine,
@@ -99,47 +100,47 @@ def dump_gains(args):
 
 
 def dump_csv(
-    engine,
-    dtstart,
-    dtend,
-    dtstart_gains=None,
-    consolidate=False,
-    lotloadfile=None,
-    lotdumpfile=None,
-    gaindumpfile=None,
-):
+    engine: sqlalchemy.engine,
+    dtstart: datetime,
+    dtend: datetime,
+    dtstart_gains: Optional[datetime] = None,
+    consolidate: Optional[bool] = False,
+    lotloadfile: Optional[str] = None,
+    lotdumpfile: Optional[str] = None,
+    gaindumpfile: Optional[str] = None,
+) -> None:
     dtstart_gains = dtstart_gains or datetime.min
 
     with sessionmanager(bind=engine) as session:
         portfolio = load_portfolio(session, lotloadfile)
 
         transactions = models.Transaction.between(
-            session,
-            dtstart=dtstart or datetime.min,
-            dtend=dtend or datetime.max,
+            session, dtstart=dtstart or datetime.min, dtend=dtend or datetime.max
         )
 
         gains = [portfolio.book(tx) for tx in transactions]
-        # Flatten nested list; filter for gains during reporting period
-        gains = [
-            gain
-            for gs in gains
-            for gain in gs
-            if gain.transaction.datetime >= dtstart_gains
-        ]
 
         if gaindumpfile:
-            gains_table = report.flatten_gains(session, gains, consolidate=consolidate)
+            # Flatten nested list; filter for gains during reporting period
+            gains_ = [
+                gain
+                for gs in gains
+                for gain in gs
+                if gain.transaction.datetime >= dtstart_gains
+            ]
+            gains_table = report.flatten_gains(session, gains_, consolidate=consolidate)
             with open(gaindumpfile, "w") as csvfile:
                 csvfile.write(gains_table.csv)
 
         if lotdumpfile:
-            portfolio_table = report.flatten_portfolio(portfolio, consolidate=consolidate)
+            portfolio_table = report.flatten_portfolio(
+                portfolio, consolidate=consolidate
+            )
             with open(lotdumpfile, "w") as csvfile:
                 csvfile.write(portfolio_table.csv)
 
 
-def load_portfolio(session, path):
+def load_portfolio(session: sqlalchemy.Session, path: Optional[str]) -> Portfolio:
     portfolio = Portfolio()
     if not path:
         return portfolio
@@ -168,7 +169,7 @@ def load_lot_report(row: MutableMapping) -> report.FlatLot:
 
 
 def load_lot(
-    session, lotreport: report.FlatLot
+    session: sqlalchemy.Session, lotreport: report.FlatLot
 ) -> Tuple[models.FiAccount, models.Security, Lot]:
     account = models.FiAccount.merge(
         session, brokerid=lotreport.brokerid, number=lotreport.acctid
@@ -207,7 +208,7 @@ def load_lot(
     return account, security, lot
 
 
-def make_argparser():
+def make_argparser() -> Tuple[ArgumentParser, _SubParsersAction]:
     """
     Return subparsers as well, so that the ArgumentParser can be extended.
     """
@@ -277,7 +278,7 @@ def make_argparser():
     return argparser, subparsers
 
 
-def run(argparser):
+def run(argparser: ArgumentParser) -> None:
     args = argparser.parse_args()
 
     # Parse datetime args
@@ -299,7 +300,7 @@ def run(argparser):
         argparser.print_help()
 
 
-def main():
+def main() -> None:
     argparser, subparsers = make_argparser()
     run(argparser)
 
