@@ -16,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     ForeignKey,
     Enum,
+    and_
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import NoResultFound
@@ -49,6 +50,9 @@ class TransactionSort(enum.Enum):
 
 
 Currency = enum.Enum("Currency", CURRENCY_CODES)  # type: ignore
+# report/script modules need to serialize e.g. "USD" instead of "Currency.USD"
+Currency.__str__ = lambda self: self.name
+
 CurrencyType = Enum(Currency, name="currency_type")
 
 
@@ -437,6 +441,26 @@ class Transaction(Base, Mergeable):
     )
 
     signature = ("fiaccount", "uniqueid")
+
+    @classmethod
+    def between(cls, session, dtstart, dtend):
+        """Convenience method for common query.
+        """
+        transactions = (
+            session.query(cls)
+            .filter(
+                and_(
+                    cls.datetime >= dtstart,
+                    cls.datetime < dtend,
+                )
+            )
+            .order_by(
+                cls.datetime,
+                cls.type,
+                cls.uniqueid,
+            )
+        )
+        return transactions
 
 
 class CurrencyRate(Base, Mergeable):
