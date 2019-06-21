@@ -128,7 +128,7 @@ class FlatGain(NamedTuple):
     proceeds: Decimal
     cost: Decimal
     currency: models.Currency
-    longterm: bool
+    longterm: Optional[bool]
     disallowed: Optional[bool] = None
 
 
@@ -415,17 +415,15 @@ def flatten_gain(
     """
     gain = translate_gain(session, gain)
     gaintx = gain.transaction
-    lot = gain.lot
-    units = lot.units
-
     fiaccount = gaintx.fiaccount
     security = gaintx.security
+
+    lot = gain.lot
+    units = lot.units
     opentx = lot.opentransaction
 
-    # Short sales never get long-term capital gains treatment
-    gaindt = gaintx.datetime
     opendt = opentx.datetime
-    longterm = (units > 0) and (gaindt - opendt >= timedelta(days=366))
+    gaindt = gaintx.datetime
 
     return FlatGain(
         brokerid=fiaccount.fi.brokerid,
@@ -440,7 +438,7 @@ def flatten_gain(
         proceeds=units * gain.price,
         cost=units * lot.price,
         currency=lot.currency,
-        longterm=longterm,
+        longterm=utils.realize_longterm(units, opendt, gaindt),
         disallowed=None,
     )
 

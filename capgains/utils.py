@@ -3,6 +3,7 @@ Utility functions used by capgains modules
 """
 import itertools
 from decimal import Decimal, ROUND_HALF_UP
+import datetime
 from typing import Any, Tuple, Iterable, Callable, Union
 
 
@@ -46,3 +47,42 @@ def round_decimal(number: Union[int, Decimal], power: int = -4) -> Decimal:
         if d == d.to_integral_value()
         else d.quantize(Decimal("10") ** power, rounding=ROUND_HALF_UP)
     )
+
+
+def realize_longterm(
+    units: Union[float, Decimal],
+    opendt: Union[datetime.date, datetime.datetime],
+    closedt: Union[datetime.date, datetime.datetime],
+) -> bool:
+    """Returns True if a realization is eligible for long-term capital gains treatment.
+
+    IRS Pub 550
+    '''
+    If you hold investment property more than 1 year, any capital gain or loss is a
+    long-term capital gain or loss. If you hold the property 1 year or less, any capital
+    gain or loss is a short-term capital gain or loss.  To determine how long you held
+    the investment property, begin counting on the date after the day you acquired the
+    property. The day you disposed of the property is part of your holding period.
+    ...
+    For securities traded on an established securities market, your holding period
+    begins the day after the trade date you bought the securities, and ends on the
+    trade date you sold them.
+    ...
+    Your gain, if any, when you close the short sale is a short-term capital gain
+    '''
+
+    Args:
+        units: amount of asset being realized (+ for sale of long, - for closing short)
+        opendt: trade date (not settlement date) of the opening transaction.
+        closedt: trade date (not settlement date) of the realizing transaction.
+    """
+    if units < 0:
+        return False
+
+    opendt_ = opendt + datetime.timedelta(days=1)
+
+    period_months = 12 * (closedt.year - opendt_.year) + (closedt.month - opendt_.month)
+    if period_months > 12 or period_months == 12 and closedt.day >= opendt_.day:
+        return True
+
+    return False
