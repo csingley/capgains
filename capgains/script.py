@@ -24,7 +24,7 @@ WORKFLOW
 import argparse
 from argparse import ArgumentParser, _SubParsersAction
 from datetime import datetime
-from typing import Tuple, MutableMapping, Sequence, Optional
+from typing import Tuple, Sequence, Optional
 
 # 3rd party imports
 import sqlalchemy
@@ -32,14 +32,15 @@ import tablib
 
 
 # Local imports
-from capgains import models, utils, flex, ofx, CSV, CONFIG
+from capgains import models, flex, ofx, CSV, CONFIG
 from capgains.inventory import report
-from capgains.inventory.types import Lot, DummyTransaction
 from capgains.inventory.api import Portfolio
 from capgains.database import Base, sessionmanager
 
 
 def create_engine():
+    """
+    """
     engine = sqlalchemy.create_engine(CONFIG.db_uri)
     # Create table metadata here too
     Base.metadata.create_all(bind=engine)
@@ -47,6 +48,8 @@ def create_engine():
 
 
 def drop_all_tables(args):
+    """
+    """
     engine = sqlalchemy.create_engine(CONFIG.db_uri)
     print("Dropping all tables on {}...".format(CONFIG.db_uri), end=" ")
     Base.metadata.drop_all(bind=engine)
@@ -54,6 +57,8 @@ def drop_all_tables(args):
 
 
 def import_transactions(args: argparse.Namespace) -> Sequence[models.Transaction]:
+    """
+    """
     engine = create_engine()
 
     output: list = []
@@ -74,6 +79,8 @@ def import_transactions(args: argparse.Namespace) -> Sequence[models.Transaction
 
 
 def dump_lots(args: argparse.Namespace) -> None:
+    """
+    """
     engine = create_engine()
     dump_csv(
         engine,
@@ -87,6 +94,8 @@ def dump_lots(args: argparse.Namespace) -> None:
 
 
 def dump_gains(args: argparse.Namespace) -> None:
+    """
+    """
     engine = create_engine()
     dump_csv(
         engine,
@@ -109,6 +118,8 @@ def dump_csv(
     lotdumpfile: Optional[str] = None,
     gaindumpfile: Optional[str] = None,
 ) -> None:
+    """
+    """
     dtstart_gains = dtstart_gains or datetime.min
 
     with sessionmanager(bind=engine) as session:
@@ -128,19 +139,23 @@ def dump_csv(
                 for gain in gs
                 if gain.transaction.datetime >= dtstart_gains
             ]
-            gains_table = report.flatten_gains(session, gains_, consolidate=consolidate)
+            gains_dataset = report.flatten_gains(session, gains_, consolidate=consolidate)
             with open(gaindumpfile, "w") as csvfile:
-                csvfile.write(gains_table.csv)
+                csvfile.write(gains_dataset.csv)
 
         if lotdumpfile:
-            portfolio_table = report.flatten_portfolio(
+            lots_dataset = report.flatten_portfolio(
                 portfolio, consolidate=consolidate
             )
             with open(lotdumpfile, "w") as csvfile:
-                csvfile.write(portfolio_table.csv)
+                csvfile.write(lots_dataset.csv)
 
 
-def load_portfolio(session: sqlalchemy.Session, path: Optional[str]) -> Portfolio:
+def load_portfolio(
+    session: sqlalchemy.orm.session.Session, path: Optional[str]
+) -> Portfolio:
+    """
+    """
     portfolio = Portfolio()
     if not path:
         return portfolio
@@ -148,64 +163,7 @@ def load_portfolio(session: sqlalchemy.Session, path: Optional[str]) -> Portfoli
     with open(path, "r") as csvfile:
         data = tablib.Dataset().load(csvfile.read())
 
-    reports = (load_lot_report(row) for row in data.dict)
-    for rept in reports:
-        account, security, lot = load_lot(session, rept)
-        portfolio[(account, security)].append(lot)
-
-    return portfolio
-
-
-def load_lot_report(row: MutableMapping) -> report.FlatLot:
-    row.update(
-        {
-            "opendt": datetime.strptime(row["opendt"], "%Y-%m-%d %H:%M:%S"),
-            "units": utils.round_decimal(row["units"]),
-            "cost": utils.round_decimal(row["cost"]),
-            "currency": getattr(models.Currency, row["currency"]),
-        }
-    )
-    return report.FlatLot(**row)
-
-
-def load_lot(
-    session: sqlalchemy.Session, lotreport: report.FlatLot
-) -> Tuple[models.FiAccount, models.Security, Lot]:
-    account = models.FiAccount.merge(
-        session, brokerid=lotreport.brokerid, number=lotreport.acctid
-    )
-    assert lotreport.opentxid is not None
-    assert lotreport.opendt is not None
-
-    # Create mock opentransaction
-    opentransaction = DummyTransaction(
-        uniqueid=lotreport.opentxid,
-        datetime=lotreport.opendt,
-        fiaccount=None,
-        security=None,
-        type=models.TransactionType.TRADE,
-    )
-
-    for uniqueidtype in ("CUSIP", "ISIN", "CONID", "TICKER"):
-        uniqueid = getattr(lotreport, uniqueidtype)
-        if uniqueid:
-            security = models.Security.merge(
-                session,
-                uniqueidtype=uniqueidtype,
-                uniqueid=uniqueid,
-                ticker=lotreport.ticker,
-                name=lotreport.secname,
-            )
-
-    lot = Lot(
-        units=lotreport.units,
-        price=lotreport.cost / lotreport.units,
-        opentransaction=opentransaction,
-        createtransaction=opentransaction,
-        currency=lotreport.currency,
-    )
-
-    return account, security, lot
+    return report.unflatten_portfolio(session, data)
 
 
 def make_argparser() -> Tuple[ArgumentParser, _SubParsersAction]:

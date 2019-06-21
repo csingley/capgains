@@ -1,11 +1,35 @@
 # coding: utf-8
-"""Data structures and functions to (de)serialize inventory Lots and Gains.
+"""Data structures and functions for inventory Lots and Gains to prepare for
+serialization and recover from deserialization.
+
+Conversion for serialization is a two-step process.
+
+First each Lot or Gain (nested with references to opening/closing Transactions/Lots)
+is "flattened" into an un-nested intermediate sequence (FlatLot or FlatGain) holding
+all information needed to recreate the source instance.
+
+Next each FlatLot or FlatGain is "excreted", i.e. all attributes are type-converted to
+strings and formatted as desired.
+
+The excrete()d data is packed (along with metadata mapping FlatLot/FlatGain attributes
+to columns) into a tablib.Dataset container that provides serialization/deserialization.
+
+Deserialization is the inverse.  Dataset rows are "ingested", i.e. type-converted
+from strings, then "unflattened" to reconstitute inventory Lots and Gains.
+
+This module doesn't perform the actual reading or writing; callers handle that by
+working with tablib.Dataset instances passed into/out of these functions.
 """
 __all__ = [
     "FlatLot",
     "FlatGain",
     "flatten_portfolio",
-    "flatten_position",
+    "unflatten_portfolio",
+    "consolidate_lots",
+    "flatten_lot",
+    "unflatten_lot",
+    "excrete_lot",
+    "ingest_lot",
     "flatten_gains",
     "flatten_gain",
     "translate_gain",
@@ -18,7 +42,15 @@ import datetime as _datetime
 from datetime import date, timedelta
 import itertools
 import functools
-from typing import NamedTuple, Sequence, Union, Optional
+from typing import (
+    Tuple,
+    NamedTuple,
+    Mapping,
+    MutableMapping,
+    Sequence,
+    Union,
+    Optional,
+)
 
 # 3rd part imports
 import tablib
@@ -102,37 +134,64 @@ class FlatGain(NamedTuple):
 
 def flatten_portfolio(
     portfolio: inventory.api.PortfolioType, *, consolidate: Optional[bool] = False
-) -> tablib.Dataset[FlatLot]:
+) -> tablib.Dataset:
     """Convert a Portfolio into tablib.Dataset prepared for serialization.
 
-    Columns are the fields of FlatLot; rows represent Lot instances.
+    Columns are the fields of FlatLot; rows represent Lot instances.  All output values
+    have been converted to formatted strings.
 
     Args:
         portfolio: a mapping of (FiAccount, Security) to a sequence of Lot instances.
         consolidate: if True, sum all Lots for each (account, security) position.
     """
-    data = tablib.Dataset(headers=FlatLot._fields)
+    dataset = tablib.Dataset(headers=FlatLot._fields)
     for (acc, sec), position in portfolio.items():
-        report = flatten_position(acc, sec, position, consolidate=consolidate)
-        for item in report:
-            data.append(item)
-    return data
+        if consolidate:
+            flatlots = consolidate_lots(acc, sec, position)
+        else:
+            flatlots = [flatten_lot(acc, sec, lot) for lot in position]
+        for flatlot in flatlots:
+            dataset.append(excrete_lot(flatlot))
+    return dataset
 
 
-def flatten_position(
+def unflatten_portfolio(
+    session: sqlalchemy.orm.session.Session, dataset: tablib.Dataset
+) -> inventory.api.Portfolio:
+    """Convert a freshly-deserialized tablib.Dataset into a Portfolio.
+
+    Note:
+        This function is the inverse of flatten_portfolio().  Unless the input data
+        needs to be rounded to fit the output format, it should survive a round trip.
+
+    Args:
+        session: a sqlalchemy.Session instance bound to a database engine.
+        dataset: a tablib.Dataset with headers set to FlatLot._fields,
+                 and all values as strings.
+    """
+    portfolio = inventory.api.Portfolio()
+    for row in dataset.dict:
+        flatlot = ingest_lot(row)
+        account, security, lot = unflatten_lot(session, flatlot)
+        portfolio[(account, security)].append(lot)
+
+    return portfolio
+
+
+def consolidate_lots(
     account: models.FiAccount,
     security: models.Security,
     position: Sequence[inventory.types.Lot],
-    *,
-    consolidate: Optional[bool] = False,
 ) -> Sequence[FlatLot]:
-    """Construct a sequence of LotReports from a portfolio position.
+    """Condense a portfolio position into a single-element FlatLot sequence.
+
+    Note:
+        This function is irreversible; it's a lossy transform.
 
     Args:
         account: FiAccount of position "pocket" (portfolio key).
         security: Security of position "pocket" (portfolio key).
         position: sequence of Lot instances to report.
-        consolidate: if True, sum all Lots for the position.
     """
     common_attrs = {secid.uniqueidtype: secid.uniqueid for secid in security.ids}
     common_attrs.update(
@@ -143,43 +202,162 @@ def flatten_position(
             "secname": security.name,
         }
     )
-    if consolidate:
-        extract = [(lot.units, lot.units * lot.price, lot.currency) for lot in position]
-        if not extract:
-            return []
-        units, cost, currency = zip(*extract)
-        currency = tuple(currency)
-        assert utils.all_equal(currency)  # FIXME
+    extract = [(lot.units, lot.units * lot.price, lot.currency) for lot in position]
+    if not extract:
+        return []
+    units, cost, currency = zip(*extract)
+    currency = tuple(currency)
+    assert utils.all_equal(currency)  # FIXME
 
-        flatlot = FlatLot(
-            opendt=None,
-            opentxid=None,
-            units=utils.round_decimal(sum(units)),
-            cost=utils.round_decimal(sum(cost)),
-            currency=currency[0],
-            **common_attrs,
-        )
-        return [flatlot]
+    flatlot = FlatLot(
+        opendt=None,
+        opentxid=None,
+        units=sum(units),
+        cost=sum(cost),
+        currency=currency[0],
+        **common_attrs,
+    )
+    return [flatlot]
 
-    return [
-        FlatLot(
-            opendt=lot.opentransaction.datetime,
-            opentxid=lot.opentransaction.uniqueid,
-            units=utils.round_decimal(lot.units),
-            cost=utils.round_decimal(lot.units * lot.price),
-            currency=lot.currency,
-            **common_attrs,
-        )
-        for lot in position
-    ]
+
+def flatten_lot(
+    account: models.FiAccount, security: models.Security, lot: inventory.types.Lot
+) -> FlatLot:
+    """Convert a Lot instance into unnested intermediate FlatLot representation.
+
+    Args:
+        account: FiAccount of position "pocket" (portfolio key) holding the Lot.
+        security: Security of position "pocket" (portfolio key) holding the Lot.
+        lot: Lot instance being flattened.
+    """
+    sec_attrs = {secid.uniqueidtype: secid.uniqueid for secid in security.ids}
+    return FlatLot(
+        brokerid=account.fi.brokerid,
+        acctid=account.number,
+        ticker=security.ticker,
+        secname=security.name,
+        opendt=lot.opentransaction.datetime,
+        opentxid=lot.opentransaction.uniqueid,
+        units=lot.units,
+        cost=lot.units * lot.price,
+        currency=lot.currency,
+        **sec_attrs,
+    )
+
+
+def unflatten_lot(
+    session: sqlalchemy.orm.session.Session, flatlot: FlatLot
+) -> Tuple[models.FiAccount, models.Security, inventory.types.Lot]:
+    """Convert an unnested intermediate FlatLot representation into a Lot instance.
+
+    Note:
+        This function is the inverse of flatten_lot().
+        Input data should survive a round trip.
+
+    Args:
+        session: a sqlalchemy.Session instance bound to a database engine.
+        flatlot: FlatLot instance holding the ingest()ed Lot data
+                 (already type-converted from strings).
+    """
+    account = models.FiAccount.merge(
+        session, brokerid=flatlot.brokerid, number=flatlot.acctid
+    )
+    assert flatlot.opentxid is not None
+    assert flatlot.opendt is not None
+
+    # Create mock opentransaction
+    opentransaction = inventory.types.DummyTransaction(
+        uniqueid=flatlot.opentxid,
+        datetime=flatlot.opendt,
+        fiaccount=None,
+        security=None,
+        type=models.TransactionType.TRADE,
+    )
+
+    for uniqueidtype in ("CUSIP", "ISIN", "CONID", "TICKER"):
+        uniqueid = getattr(flatlot, uniqueidtype)
+        if uniqueid:
+            security = models.Security.merge(
+                session,
+                uniqueidtype=uniqueidtype,
+                uniqueid=uniqueid,
+                ticker=flatlot.ticker,
+                name=flatlot.secname,
+            )
+
+    lot = inventory.types.Lot(
+        units=flatlot.units,
+        price=flatlot.cost / flatlot.units,
+        opentransaction=opentransaction,
+        createtransaction=opentransaction,
+        currency=flatlot.currency,
+    )
+
+    return account, security, lot
+
+
+def excrete_lot(flatlot: FlatLot) -> Tuple:
+    """Convert unnested intermediate FlatLot representation into a tablib.Dataset row.
+
+    Args:
+        flatlot: fully-populated FlatLot instance.
+    """
+    def default(val):
+        return str(val)
+
+    def round_penny(val):
+        return str(utils.round_decimal(val, power=-2))
+
+    def name_currency(val):
+        return val.name
+
+    def datetime_str(val):
+        if val:
+            return val.isoformat()
+
+    def maybe_empty(val):
+        return val or ""
+
+    handlers = {
+        "opendt": datetime_str,
+        "opentxid": maybe_empty,
+        "units": round_penny,
+        "cost": round_penny,
+        "currency": name_currency,
+    }
+
+    values = (handlers.get(k, default)(v) for k, v in flatlot._asdict().items())
+    return tuple(values)
+
+
+def ingest_lot(row: Mapping) -> FlatLot:
+    """Convert a freshly-deserialized tablib.Dataset row into an intermediate FlatLot.
+
+    Note:
+excrete_lot().  Unless the input data
+        needs to be rounded to fit the output format, it should survive a round trip.
+
+    Args:
+        row: a mapping where keys are FlatLot._fields and values are strings.
+    """
+    row_ = dict(row)
+    row_.update(
+        {
+            "opendt": _datetime.datetime.fromisoformat(row["opendt"]),
+            "units": utils.round_decimal(row["units"]),
+            "cost": utils.round_decimal(row["cost"]),
+            "currency": getattr(models.Currency, row["currency"]),
+        }
+    )
+    return FlatLot(**row_)
 
 
 def flatten_gains(
-    session: sqlalchemy.Session,
+    session: sqlalchemy.orm.Session,
     gains: Sequence[inventory.api.Gain],
     *,
     consolidate: Optional[bool] = False,
-) -> tablib.Dataset[FlatLot]:
+) -> tablib.Dataset:
     """Convert a sequence of Gains into tablib.Dataset prepared for serialization.
 
     Columns are the fields of FlatGain; rows represent Gain instances.
@@ -231,7 +409,9 @@ def flatten_gains(
     return data
 
 
-def flatten_gain(session: sqlalchemy.Session, gain: inventory.types.Gain) -> FlatGain:
+def flatten_gain(
+    session: sqlalchemy.orm.session.Session, gain: inventory.types.Gain
+) -> FlatGain:
     """Construct a FlatGain from a Gain instance.
 
     Translate currency of opening/closing transactions to functional currency as needed.
@@ -263,9 +443,9 @@ def flatten_gain(session: sqlalchemy.Session, gain: inventory.types.Gain) -> Fla
         opentxid=opentx.uniqueid,
         gaindt=gaindt,
         gaintxid=gaintx.uniqueid,
-        units=units,
-        proceeds=units * gain.price,
-        cost=units * lot.price,
+        units=utils.round_decimal(units, power=-2),
+        proceeds=utils.round_decimal(units * gain.price, power=-2),
+        cost=utils.round_decimal(units * lot.price, power=-2),
         currency=lot.currency,
         longterm=longterm,
         disallowed=None,
@@ -276,7 +456,7 @@ FUNCTIONAL_CURRENCY = getattr(models.Currency, CONFIG["books"]["functional_curre
 
 
 def translate_gain(
-    session: sqlalchemy.Session, gain: inventory.types.Gain
+    session: sqlalchemy.orm.session.Session, gain: inventory.types.Gain
 ) -> inventory.types.Gain:
     """Translate Gain instance's realizing transaction to functional currency.
 

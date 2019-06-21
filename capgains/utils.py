@@ -37,8 +37,12 @@ def sign(x) -> int:
     return (x != 0) and (1, -1)[x < 0]
 
 
-DECIMAL_SCALE = Decimal("0.0001")
-
-
-def round_decimal(number: Union[int, Decimal]) -> Decimal:
-    return Decimal(number).quantize(DECIMAL_SCALE, rounding=ROUND_HALF_UP)
+def round_decimal(number: Union[int, Decimal], power: int = -4) -> Decimal:
+    """Convert to Decimal; round to units if possible, else round to desired exponent.
+    """
+    d = Decimal(number)
+    return (
+        d.quantize(Decimal(1))
+        if d == d.to_integral_value()
+        else d.quantize(Decimal("10") ** power, rounding=ROUND_HALF_UP)
+    )
