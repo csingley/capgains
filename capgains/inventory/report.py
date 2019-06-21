@@ -6,15 +6,14 @@ Conversion for serialization is a two-step process.
 
 First each Lot or Gain (nested with references to opening/closing Transactions/Lots)
 is "flattened" into an un-nested intermediate sequence (FlatLot or FlatGain) holding
-all information needed to recreate the source instance.
+information needed to recreate the source instance.
 
-Next each FlatLot or FlatGain is "excreted", i.e. all attributes are type-converted to
-strings and formatted as desired.
+Next each FlatLot or FlatGain is "exported", i.e. attributes are formatted as desired.
 
-The excrete()d data is packed (along with metadata mapping FlatLot/FlatGain attributes
+The export()ed data is packed (along with metadata mapping FlatLot/FlatGain attributes
 to columns) into a tablib.Dataset container that provides serialization/deserialization.
 
-Deserialization is the inverse.  Dataset rows are "ingested", i.e. type-converted
+Deserialization is the inverse.  Dataset rows are "imported", i.e. type-converted
 from strings, then "unflattened" to reconstitute inventory Lots and Gains.
 
 This module doesn't perform the actual reading or writing; callers handle that by
@@ -28,10 +27,11 @@ __all__ = [
     "consolidate_lots",
     "flatten_lot",
     "unflatten_lot",
-    "excrete_lot",
-    "ingest_lot",
+    "export_flatlot",
+    "import_flatlot",
     "flatten_gains",
     "flatten_gain",
+    "export_flatlot",
     "translate_gain",
     "translate_transaction",
 ]
@@ -137,8 +137,7 @@ def flatten_portfolio(
 ) -> tablib.Dataset:
     """Convert a Portfolio into tablib.Dataset prepared for serialization.
 
-    Columns are the fields of FlatLot; rows represent Lot instances.  All output values
-    have been converted to formatted strings.
+    Columns are the fields of FlatLot; rows represent Lot instances.
 
     Args:
         portfolio: a mapping of (FiAccount, Security) to a sequence of Lot instances.
@@ -151,7 +150,7 @@ def flatten_portfolio(
         else:
             flatlots = [flatten_lot(acc, sec, lot) for lot in position]
         for flatlot in flatlots:
-            dataset.append(excrete_lot(flatlot))
+            dataset.append(export_flatlot(flatlot))
     return dataset
 
 
@@ -160,18 +159,14 @@ def unflatten_portfolio(
 ) -> inventory.api.Portfolio:
     """Convert a freshly-deserialized tablib.Dataset into a Portfolio.
 
-    Note:
-        This function is the inverse of flatten_portfolio().  Unless the input data
-        needs to be rounded to fit the output format, it should survive a round trip.
-
     Args:
         session: a sqlalchemy.Session instance bound to a database engine.
         dataset: a tablib.Dataset with headers set to FlatLot._fields,
                  and all values as strings.
     """
     portfolio = inventory.api.Portfolio()
-    for row in dataset.dict:
-        flatlot = ingest_lot(row)
+    for row in dataset:
+        flatlot = import_flatlot(row)
         account, security, lot = unflatten_lot(session, flatlot)
         portfolio[(account, security)].append(lot)
 
@@ -186,7 +181,8 @@ def consolidate_lots(
     """Condense a portfolio position into a single-element FlatLot sequence.
 
     Note:
-        This function is irreversible; it's a lossy transform.
+        This function is completely irreversible; it loses all information about
+        holding period and portfolio pocket.
 
     Args:
         account: FiAccount of position "pocket" (portfolio key).
@@ -250,13 +246,9 @@ def unflatten_lot(
 ) -> Tuple[models.FiAccount, models.Security, inventory.types.Lot]:
     """Convert an unnested intermediate FlatLot representation into a Lot instance.
 
-    Note:
-        This function is the inverse of flatten_lot().
-        Input data should survive a round trip.
-
     Args:
         session: a sqlalchemy.Session instance bound to a database engine.
-        flatlot: FlatLot instance holding the ingest()ed Lot data
+        flatlot: FlatLot instance holding the import()ed Lot data
                  (already type-converted from strings).
     """
     account = models.FiAccount.merge(
@@ -285,6 +277,7 @@ def unflatten_lot(
                 name=flatlot.secname,
             )
 
+    assert isinstance(flatlot.currency, models.Currency)
     lot = inventory.types.Lot(
         units=flatlot.units,
         price=flatlot.cost / flatlot.units,
@@ -296,60 +289,60 @@ def unflatten_lot(
     return account, security, lot
 
 
-def excrete_lot(flatlot: FlatLot) -> Tuple:
-    """Convert unnested intermediate FlatLot representation into a tablib.Dataset row.
+def export_flatlot(flatlot: FlatLot) -> Tuple:
+    """Convert FlatLot into a row (tuple) ready for serialization.
+
+    Do the minimum work such that the values look right when tablib.Dataset
+    type-converts them during serialization.
 
     Args:
         flatlot: fully-populated FlatLot instance.
     """
-    def default(val):
-        return str(val)
-
-    def round_penny(val):
-        return str(utils.round_decimal(val, power=-2))
-
-    def name_currency(val):
-        return val.name
-
-    def datetime_str(val):
-        if val:
-            return val.isoformat()
-
-    def maybe_empty(val):
-        return val or ""
-
-    handlers = {
-        "opendt": datetime_str,
-        "opentxid": maybe_empty,
-        "units": round_penny,
-        "cost": round_penny,
-        "currency": name_currency,
-    }
-
-    values = (handlers.get(k, default)(v) for k, v in flatlot._asdict().items())
-    return tuple(values)
+    # As of Python 3.7:
+    #  """Dictionaries preserve insertion order. Note that updating a key does not
+    #  affect the order."""
+    #  https://docs.python.org/3.7/library/stdtypes.html#dict
+    attrs = flatlot._asdict()
+    attrs.update(
+        {
+            "units": utils.round_decimal(attrs["units"], power=-2),
+            "cost": utils.round_decimal(attrs["cost"], power=-2),
+            "currency": attrs["currency"].name,
+        }
+    )
+    row = tuple(attrs.values())
+    return row
 
 
-def ingest_lot(row: Mapping) -> FlatLot:
+def import_flatlot(row: Tuple) -> FlatLot:
     """Convert a freshly-deserialized tablib.Dataset row into an intermediate FlatLot.
 
     Note:
-excrete_lot().  Unless the input data
-        needs to be rounded to fit the output format, it should survive a round trip.
+        This function is not the inverse of export_flatlot().  Input tuple may not
+        have the right types for numeric and date/time values, whereas the output of
+        export_flatlot() retains the FlatLot attribute type (except currrency).
 
     Args:
-        row: a mapping where keys are FlatLot._fields and values are strings.
+        row: tuple whose values correspond to FlatLot._fields.
     """
-    row_ = dict(row)
-    row_.update(
+    attrs = dict(zip(FlatLot._fields, row))
+
+    opendt = attrs["opendt"]
+    if isinstance(opendt, _datetime.datetime):
+        opendt_ = opendt
+    else:
+        assert isinstance(opendt, str)
+        opendt_ = _datetime.datetime.fromisoformat(opendt)
+
+    attrs.update(
         {
-            "opendt": _datetime.datetime.fromisoformat(row["opendt"]),
-            "units": utils.round_decimal(row["units"]),
-            "cost": utils.round_decimal(row["cost"]),
-            "currency": getattr(models.Currency, row["currency"]),
+            "opendt": opendt_,
+            "units": Decimal(attrs["units"]),
+            "cost": Decimal(attrs["cost"]),
+            "currency": getattr(models.Currency, attrs["currency"]),
         }
     )
-    return FlatLot(**row_)
+    return FlatLot(**attrs)
 
 
 def flatten_gains(
@@ -399,9 +392,9 @@ def flatten_gains(
         for secid, gs in itertools.groupby(sorted(gains, key=keyfunc), key=keyfunc):
             reports_ = (flatten_gain(session, gain) for gain in gs)
             totals = itertools.accumulate(reports_, accum)
-            flatgains.append(list(totals)[-1])
+            flatgains.append(export_flatgain(list(totals)[-1]))
     else:
-        flatgains = [flatten_gain(session, gain) for gain in gains]
+        flatgains = [export_flatgain(flatten_gain(session, gain)) for gain in gains]
 
     data = tablib.Dataset(headers=FlatGain._fields)
     for item in flatgains:
@@ -443,13 +436,39 @@ def flatten_gain(
         opentxid=opentx.uniqueid,
         gaindt=gaindt,
         gaintxid=gaintx.uniqueid,
-        units=utils.round_decimal(units, power=-2),
-        proceeds=utils.round_decimal(units * gain.price, power=-2),
-        cost=utils.round_decimal(units * lot.price, power=-2),
+        units=units,
+        proceeds=units * gain.price,
+        cost=units * lot.price,
         currency=lot.currency,
         longterm=longterm,
         disallowed=None,
     )
+
+
+def export_flatgain(flatgain: FlatGain) -> Tuple:
+    """Convert FlatGain into a row (tuple) ready for serialization.
+
+    Do the minimum work such that the values look right when tablib.Dataset
+    type-converts them during serialization.
+
+    Args:
+        flatgain: fully-populated FlatGain instance.
+    """
+    # As of Python 3.7:
+    #  """Dictionaries preserve insertion order. Note that updating a key does not
+    #  affect the order."""
+    #  https://docs.python.org/3.7/library/stdtypes.html#dict
+    attrs = flatgain._asdict()
+    attrs.update(
+        {
+            "units": utils.round_decimal(attrs["units"], power=-2),
+            "proceeds": utils.round_decimal(attrs["proceeds"], power=-2),
+            "cost": utils.round_decimal(attrs["cost"], power=-2),
+            "currency": attrs["currency"].name,
+        }
+    )
+    row = tuple(attrs.values())
+    return row
 
 
 FUNCTIONAL_CURRENCY = getattr(models.Currency, CONFIG["books"]["functional_currency"])
