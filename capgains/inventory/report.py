@@ -31,7 +31,7 @@ __all__ = [
     "import_flatlot",
     "flatten_gains",
     "flatten_gain",
-    "export_flatlot",
+    "export_flatgain",
     "translate_gain",
     "translate_transaction",
 ]
@@ -150,7 +150,10 @@ def flatten_portfolio(
         else:
             flatlots = [flatten_lot(acc, sec, lot) for lot in position]
         for flatlot in flatlots:
-            dataset.append(export_flatlot(flatlot))
+            row = export_flatlot(flatlot)
+            units = row[6]
+            if units != 0:
+                dataset.append(row)
     return dataset
 
 
@@ -167,8 +170,9 @@ def unflatten_portfolio(
     portfolio = inventory.api.Portfolio()
     for row in dataset:
         flatlot = import_flatlot(row)
-        account, security, lot = unflatten_lot(session, flatlot)
-        portfolio[(account, security)].append(lot)
+        if flatlot.units:
+            account, security, lot = unflatten_lot(session, flatlot)
+            portfolio[(account, security)].append(lot)
 
     return portfolio
 
@@ -203,7 +207,7 @@ def consolidate_lots(
         return []
     units, cost, currency = zip(*extract)
     currency = tuple(currency)
-    assert utils.all_equal(currency)  # FIXME
+    assert utils.all_equal(currency)  # FIXME - translate currency?
 
     flatlot = FlatLot(
         opendt=None,
@@ -387,25 +391,28 @@ def flatten_gains(
                 disallowed=None,
             )
 
-        flatgains = []
+        rows = []
 
         for secid, gs in itertools.groupby(sorted(gains, key=keyfunc), key=keyfunc):
-            reports_ = (flatten_gain(session, gain) for gain in gs)
-            totals = itertools.accumulate(reports_, accum)
-            flatgains.append(export_flatgain(list(totals)[-1]))
+            flatgains = (flatten_gain(session, gain) for gain in gs)
+            totals = itertools.accumulate(flatgains, accum)
+            rows.append(export_flatgain(list(totals)[-1]))
     else:
-        flatgains = [export_flatgain(flatten_gain(session, gain)) for gain in gains]
+        rows = (export_flatgain(flatten_gain(session, gain)) for gain in gains)
 
     data = tablib.Dataset(headers=FlatGain._fields)
-    for item in flatgains:
-        data.append(item)
+    for row in rows:
+        units = row[8]
+        assert FlatGain._fields[8] == "units"
+        if units != 0:
+            data.append(row)
     return data
 
 
 def flatten_gain(
     session: sqlalchemy.orm.session.Session, gain: inventory.types.Gain
 ) -> FlatGain:
-    """Construct a FlatGain from a Gain instance.
+    """Construct an unnested intermediate FlatGain from a Gain instance.
 
     Translate currency of opening/closing transactions to functional currency as needed.
 
@@ -563,8 +570,7 @@ def translate_cash_currency(
 ) -> CashTransaction:
     """Translate transaction cash into a different currency.
 
-    Args:
-        cf. translate_transaction() docstring.
+    Args - cf. translate_transaction() docstring.
     """
     cash = _scaleAttr(transaction, "cash", rate)
     assert cash is not None
@@ -577,8 +583,7 @@ def translate_security_pricing(
 ) -> inventory.Spinoff:
     """Translate transaction security pricing into a different currency.
 
-    Args:
-        cf. translate_transaction() docstring.
+    Args - cf. translate_transaction() docstring.
     """
 
     return transaction._replace(
@@ -593,8 +598,7 @@ def translate_model(
 ) -> inventory.types.DummyTransaction:
     """Translate a transaction into a different currency for reporting purposes.
 
-    Args:
-        cf. translate_transaction() docstring
+    Args - cf. translate_transaction() docstring
     """
 
     return inventory.types.DummyTransaction(
