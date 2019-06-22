@@ -195,8 +195,8 @@ def consolidate_lots(
         security: Security of position "pocket" (portfolio key).
         position: sequence of Lot instances to report.
     """
-    common_attrs = {secid.uniqueidtype: secid.uniqueid for secid in security.ids}
-    common_attrs.update(
+    pocket_attrs = {secid.uniqueidtype: secid.uniqueid for secid in security.ids}
+    pocket_attrs.update(
         {
             "brokerid": account.fi.brokerid,
             "acctid": account.number,
@@ -204,22 +204,39 @@ def consolidate_lots(
             "secname": security.name,
         }
     )
-    extract = [(lot.units, lot.units * lot.price, lot.currency) for lot in position]
-    if not extract:
-        return []
-    units, cost, currency = zip(*extract)
-    currency = tuple(currency)
-    assert utils.all_equal(currency)  # FIXME - translate currency?
 
-    flatlot = FlatLot(
-        opendt=None,
-        opentxid=None,
-        units=sum(units),
-        cost=sum(cost),
-        currency=currency[0],
-        **common_attrs,
-    )
-    return [flatlot]
+    def accumulate(
+        flatlot: Optional[FlatLot], lot: inventory.types.Lot,
+    ) -> FlatLot:
+        """Accumulate total (units, cost) for all Lots in sequence.
+
+        Args:
+            flatlot: accumulated totals.
+            lot: the next Lot instance in sequence.
+        """
+        lot_units = lot.units
+        lot_cost = lot_units * lot.price
+
+        if flatlot:
+            assert flatlot.currency == lot.currency  # FIXME - translate currency?
+            flatlot = flatlot._replace(
+                units=flatlot.units + lot_units,
+                cost=flatlot.cost + lot_cost,
+            )
+        else:
+            flatlot = FlatLot(
+                opendt=None,
+                opentxid=None,
+                units=lot_units,
+                cost=lot_cost,
+                currency=lot.currency,
+                **pocket_attrs,
+            )
+
+        return flatlot
+
+    flatlot = functools.reduce(accumulate, position, None)
+    return [flatlot] if flatlot else []
 
 
 def flatten_lot(
@@ -395,7 +412,9 @@ def consolidate_gains(
 
     Args:
         session: a sqlalchemy.Session instance bound to a database engine.
-        gains: sequence of Gain instances.
+        gains: sequence of Gain instances to consolidate.
+        subconsolidate_accounts: if True, consolidate by (Fiaccount, Security).
+                                 if False (the default), consolidate by Security.
     """
     if subconsolidate_accounts:
         keyfunc = operator.attrgetter("transaction.security")
