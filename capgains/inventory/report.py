@@ -39,16 +39,18 @@ __all__ = [
 # stdlib imports
 from decimal import Decimal
 import datetime as _datetime
-from datetime import date, timedelta
-import itertools
+from datetime import date
 import functools
+import operator
 from typing import (
+    Any,
     Tuple,
     NamedTuple,
-    Mapping,
     MutableMapping,
     Sequence,
     Union,
+    Callable,
+    Iterable,
     Optional,
 )
 
@@ -79,8 +81,8 @@ class FlatLot(NamedTuple):
         TICKER: security symbol, as sourced from CSV file.
     """
 
-    brokerid: str
-    acctid: str
+    brokerid: Optional[str]
+    acctid: Optional[str]
     ticker: str
     secname: str
     opendt: Optional[_datetime.datetime]
@@ -116,8 +118,8 @@ class FlatGain(NamedTuple):
         disallowed: if True, signals a wash sale (not yet implemented).
     """
 
-    brokerid: str
-    acctid: str
+    brokerid: Optional[str]
+    acctid: Optional[str]
     ticker: str
     secname: str
     opendt: Optional[_datetime.datetime]
@@ -365,40 +367,11 @@ def flatten_gains(
         consolidate: if True, sum all Lots for each (account, security) position.
     """
     if consolidate:
-
-        def keyfunc(gain):
-            return gain.transaction.security.id
-
-        def accum(report0, report1):
-            assert report0.ticker == report1.ticker
-            assert report0.secname == report1.secname
-            #  FIXME - convert currency?
-            assert report0.currency == report1.currency
-            return FlatGain(
-                brokerid=None,
-                acctid=None,
-                ticker=report0.ticker,
-                secname=report0.secname,
-                opendt=None,
-                opentxid=None,
-                gaindt=None,
-                gaintxid=None,
-                units=report0.units + report1.units,
-                proceeds=report0.proceeds + report1.proceeds,
-                cost=report0.cost + report1.cost,
-                currency=report0.currency,
-                longterm=None,
-                disallowed=None,
-            )
-
-        rows = []
-
-        for secid, gs in itertools.groupby(sorted(gains, key=keyfunc), key=keyfunc):
-            flatgains = (flatten_gain(session, gain) for gain in gs)
-            totals = itertools.accumulate(flatgains, accum)
-            rows.append(export_flatgain(list(totals)[-1]))
+        flatgains = consolidate_gains(session, gains)
     else:
-        rows = (export_flatgain(flatten_gain(session, gain)) for gain in gains)
+        flatgains = (flatten_gain(session, gain) for gain in gains)
+
+    rows = (export_flatgain(flatgain) for flatgain in flatgains)
 
     data = tablib.Dataset(headers=FlatGain._fields)
     for row in rows:
@@ -407,6 +380,75 @@ def flatten_gains(
         if units != 0:
             data.append(row)
     return data
+
+
+def consolidate_gains(
+    session: sqlalchemy.orm.Session,
+    gains: Sequence[inventory.api.Gain],
+    subconsolidate_accounts: bool = False,
+) -> Iterable[FlatGain]:
+    """Sum a sequence of Gains into a single FlatGain per security.
+
+    Note:
+        This function is completely irreversible; it loses all information about
+        holding period.
+
+    Args:
+        session: a sqlalchemy.Session instance bound to a database engine.
+        gains: sequence of Gain instances.
+    """
+    if subconsolidate_accounts:
+        keyfunc = operator.attrgetter("transaction.security")
+    else:
+        keyfunc = operator.attrgetter("transaction.fiaccount", "transaction.security")
+
+    def make_accum(
+        keyfunc: Callable[[inventory.api.Gain], Any]
+    ) -> Callable[[MutableMapping, inventory.api.Gain], MutableMapping]:
+        """Factory for accumulator functions to pass to functools.reduce().
+
+        Args:
+            keyfunc: function that extracts dict key from each Gain instance.
+        """
+
+        def accum(
+            map: MutableMapping[Any, FlatGain], gain: inventory.api.Gain
+        ) -> MutableMapping[Any, FlatGain]:
+            """Accumulate total (units, cost, proceeds) for all Gains in sequence
+            matching distinct keys given by keyfunc().
+
+            Args:
+                map: map of keyfunc() value to accumulated totals.
+                gain: the next Gain instance in sequence.
+            """
+            flatgain = flatten_gain(session, gain)
+            key = keyfunc(gain)
+            if key in map:
+                flatgain0 = map[key]
+                map[key] = flatgain0._replace(
+                    units=flatgain0.units + flatgain.units,
+                    proceeds=flatgain0.proceeds + flatgain.proceeds,
+                    cost=flatgain0.cost + flatgain.cost,
+                )
+            else:
+                map[key] = flatgain._replace(
+                    brokerid=None,
+                    acctid=None,
+                    opendt=None,
+                    opentxid=None,
+                    gaindt=None,
+                    gaintxid=None,
+                    longterm=None,
+                    disallowed=None,
+                )
+
+            return map
+
+        return accum
+
+    accumulator = make_accum(keyfunc)
+    map: MutableMapping = functools.reduce(accumulator, gains, {})
+    return map.values()
 
 
 def flatten_gain(
