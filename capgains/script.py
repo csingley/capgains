@@ -1,24 +1,64 @@
 # coding: utf-8
-"""
-WORKFLOW
---------
-0) If not the initial period, load CSV dump of previous period lots, or restore
-   database from dump.
-1) Import current period transaction data files.
-2) Dump gains, passing in args for:
-    * previous period lots CSV file
-    * first day of current period
-    * first day of next period
-3) Dump lots, passing in args for:
-    * previous period lots CSV file
-    * first day of current period
-    * first day of next period
-4) Dump lots, passing in args for:
-    * consolidate
-    * previous period lots CSV file
-    * first day of current period
-    * first day of next period
-5) (optional) pg_dump the transaction data.
+"""CLI front end to import transactions, book to inventory, and report results.
+
+
+INSTALL
+-------
+q.v. package README.  The package requires Python v3.7+, SQLAlchemy, the Psycopg2
+database adapter, and a running PostgreSQL server.  To import OFX data files, ofxtools
+is required; to import Interactive Brokers Flex XML data files, ibflex is required.
+
+CONFIGURE
+---------
+We look for the config file in ~/.config/capgains/capgains.cfg.  It's in INI format,
+and needs to have at least the following sections (with values modified for your
+installation):
+
+    [db]
+    dialect = postgresql
+    driver = psycopg2
+    username = user
+    password = pass
+    host = localhost
+    port = 5432
+    database = capgainsdb
+
+    [books]
+    functional_currency = USD
+
+PREPARATION
+-----------
+To use this program to report capital gains & ending lots for a period, you will need
+to have either:
+    * an existing database with complete and accurate transaction data
+for all prior periods; or
+    * a CSV dump of the prior period ending portfolio.
+
+IMPORT
+------
+Import the transaction data for the current period, e.g.
+
+    python script.py import /path/to/transaction/files/*.ofx
+
+REPORT
+------
+With a complete transaction database, reporting capital gains looks like:
+    python script.py gains -b <first day of period> -e <first day of next period> /path/to/desired/dumpfile.csv
+
+To report ending positions with a complete transaction database:
+    python script.py lots -e <first day of next period> /path/to/desired/dumpfile.csv
+
+If loading from prior period position CSV file:
+    python script.py gains -l /path/to/last/lots/dumpfile.csv -b <first day of period> -s <first day of period> -e <first day of next period> /path/to/desired/dumpfile.csv
+    python script.py lots -l /path/to/last/lots/dumpfile.csv -s <first day of period> -e <first day of next period> /path/to/desired/dumpfile.csv
+
+Instead of granular reporting at the level of individual lots, the above reports can
+be consolidated by security/account by passing the --consolidate/-c option to the CLI.
+Probably you want a set of reports including:
+
+    1) Capital gains by lot
+    2) Ending lots (tax lot detail)
+    3) Ending consolidated lots (investment summary)
 """
 # stdlib imports
 import argparse
@@ -48,7 +88,10 @@ def create_engine():
 
 
 def drop_all_tables(args):
-    """
+    """Just what it says on the tin.  DROP all tables defined by models.
+
+    Args:
+        args: argparse.Namespace instance populated with parsed CLI arguments.
     """
     engine = sqlalchemy.create_engine(CONFIG.db_uri)
     print("Dropping all tables on {}...".format(CONFIG.db_uri), end=" ")
@@ -57,7 +100,10 @@ def drop_all_tables(args):
 
 
 def import_transactions(args: argparse.Namespace) -> Sequence[models.Transaction]:
-    """
+    """Import securities transactions from OFX/XML/CSV datafile; persist to DB.
+
+    Args:
+        args: argparse.Namespace instance populated with parsed CLI arguments.
     """
     engine = create_engine()
 
@@ -79,7 +125,10 @@ def import_transactions(args: argparse.Namespace) -> Sequence[models.Transaction
 
 
 def dump_lots(args: argparse.Namespace) -> None:
-    """
+    """Book DB transactions matching CLI args to inventory; write ending Lots to disk.
+
+    Args:
+        args: argparse.Namespace instance populated with parsed CLI arguments.
     """
     engine = create_engine()
     dump_csv(
@@ -94,7 +143,10 @@ def dump_lots(args: argparse.Namespace) -> None:
 
 
 def dump_gains(args: argparse.Namespace) -> None:
-    """
+    """Book DB transactions matching CLI args to inventory; write Gains to disk.
+
+    Args:
+        args: argparse.Namespace instance populated with parsed CLI arguments.
     """
     engine = create_engine()
     dump_csv(
@@ -119,6 +171,19 @@ def dump_csv(
     gaindumpfile: Optional[str] = None,
 ) -> None:
     """
+    Args:
+        engine: a sqlalchemy.engine.Engine instance representing a database connection.
+        dtstart: book Transactions occurring on/after this date/time
+                 (if None, book from beginning of Transactions).
+        dtend: book Transactions occurring before this date/time
+               (if None, book through end of Transactions).
+        dtstart_gains: report Gains ockcurring on or after this date/time
+                       (if None, report all Gains).
+        consolidate: if True, consolidate output Lots by (FiAccount, Security);
+                     consolidate output Gains by (Security).
+        lotloadfile: if set, path to file holding serialized begin portfolio positions.
+        lotdumpfile: if set, path to write file of serialized end portfolio positions.
+        gaindumpfile: if set, path to write file of seralized realized gains.
     """
     dtstart_gains = dtstart_gains or datetime.min
 
@@ -154,7 +219,11 @@ def dump_csv(
 def load_portfolio(
     session: sqlalchemy.orm.session.Session, path: Optional[str]
 ) -> Portfolio:
-    """
+    """Deserialize starting portfolio positions from saved dumpfile.
+
+    Args:
+        session: a sqlalchemy.Session instance bound to a database engine.
+        path: filesystem path to Lot dumpfile.
     """
     portfolio = Portfolio()
     if not path:
@@ -167,8 +236,7 @@ def load_portfolio(
 
 
 def make_argparser() -> Tuple[ArgumentParser, _SubParsersAction]:
-    """
-    Return subparsers as well, so that the ArgumentParser can be extended.
+    """Return subparsers along with the ArgumentParer, so the latter can be extended.
     """
     argparser = ArgumentParser(description="Lot utility")
     # argparser.add_argument('--verbose', '-v', action='count',
@@ -237,6 +305,11 @@ def make_argparser() -> Tuple[ArgumentParser, _SubParsersAction]:
 
 
 def run(argparser: ArgumentParser) -> None:
+    """Parse args and pass them to the indication function.
+
+    Args:
+        argparser: the ArgumentParser instance returned by make_argparser().
+    """
     args = argparser.parse_args()
 
     # Parse datetime args
