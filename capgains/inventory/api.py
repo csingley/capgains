@@ -52,13 +52,12 @@ __all__ = [
 # stdlib imports
 from collections import defaultdict
 from decimal import Decimal
-import itertools
 import functools
 from typing import Tuple, List, MutableMapping, Any, Optional, Union
 
 
 # local imports
-from capgains import models, utils
+from capgains import models
 from capgains.inventory import functions
 from .types import (
     Lot,
@@ -249,11 +248,12 @@ def book_returnofcapital(
     pocket = (transaction.fiaccount, transaction.security)
     position = portfolio.get(pocket, [])
 
-    # First get a total of shares affected by return of capital,
-    # in order to determine return of capital per share
-    unaffected, affected = utils.partition(longAsOf(transaction.datetime), position)
-    affected = list(affected)
-    if not affected:
+    reducedLots, unaffected, gains = functions.adjust_cost_prorata(
+        position=position,
+        transaction=transaction,
+        predicate=longAsOf(transaction.datetime),
+    )
+    if not reducedLots:
         msg = (
             f"Return of capital {transaction}:\n"
             f"FI account {transaction.fiaccount} has no long position in "
@@ -261,19 +261,8 @@ def book_returnofcapital(
         )
         raise Inconsistent(transaction, msg)
 
-    unitROC = transaction.cash / sum([lot.units for lot in affected])
-
-    def reduceBasis(lot: Lot, unitROC: Decimal) -> Tuple[Lot, Optional[Gain]]:
-        gain = None
-        newBasis = lot.price - unitROC
-        if newBasis < 0:
-            gain = Gain(lot=lot, transaction=transaction, price=unitROC)
-            newBasis = Decimal("0")
-        return (lot._replace(price=newBasis), gain)
-
-    basisReduced, gains = zip(*(reduceBasis(lot, unitROC) for lot in affected))
-    portfolio[pocket] = list(basisReduced) + list(unaffected)
-    return [gain for gain in gains if gain is not None]
+    portfolio[pocket] = reducedLots + unaffected
+    return gains
 
 
 @book.register(Split)
@@ -297,42 +286,30 @@ def book_split(
                       the split ratio, wouldn't cause a share delta that matches
                       `Split.units`.
     """
-    splitRatio = transaction.numerator / transaction.denominator
-
     pocket = (transaction.fiaccount, transaction.security)
-    position = portfolio.get(pocket, [])
+    try:
+        position = portfolio[pocket]
+    except KeyError:
+        raise Inconsistent(transaction, f"No position in {pocket}")
 
-    if not position:
-        msg = (
-            f"Split {transaction.security} "
-            f"{transaction.numerator}:{transaction.denominator} "
-            f"on {transaction.datetime} -\n"
-            f"No position in FI account {transaction.fiaccount}"
-        )
-        raise Inconsistent(transaction, msg)
+    splitRatio = transaction.numerator / transaction.denominator
+    postsplit, unaffected, units_change = functions.scale_units(
+        position=position, ratio=splitRatio, predicate=openAsOf(transaction.datetime)
+    )
 
-    unaffected, affected = utils.partition(openAsOf(transaction.datetime), position)
-
-    def _split(lot: Lot, ratio: Decimal) -> Tuple[Lot, Decimal]:
-        """ Returns (post-split Lot, original Units) """
-        units = lot.units * ratio
-        price = lot.price / ratio
-        return (lot._replace(units=units, price=price), lot.units)
-
-    position_new, origUnits = zip(*(_split(lot, splitRatio) for lot in affected))
-    newUnits = sum([lot.units for lot in position_new]) - sum(origUnits)
-    if abs(newUnits - transaction.units) > UNITS_TOLERANCE:
+    if abs(units_change - transaction.units) > UNITS_TOLERANCE:
+        old_units = sum(lot.units for lot in postsplit) - units_change
         msg = (
             f"Split {transaction.security} "
             f"{transaction.numerator}:{transaction.denominator} -\n"
             f"To receive {transaction.units} units {transaction.security} "
             f"requires a position of {transaction.units / splitRatio} units of "
             f"{transaction.security} in FI account {transaction.fiaccount} "
-            f"on {transaction.datetime}, not units={origUnits}"
+            f"on {transaction.datetime}, not units={old_units}"
         )
         raise Inconsistent(transaction, msg)
 
-    portfolio[pocket] = list(position_new) + list(unaffected)
+    portfolio[pocket] = postsplit + unaffected
 
     # Stock splits don't realize Gains
     return []
@@ -391,19 +368,9 @@ def book_transfer(
 
     transferRatio = -transaction.units / transaction.fromunits
 
-    gains = (
-        functions.mutate_portfolio(
-            portfolio=portfolio,
-            transaction=transaction,
-            units=lot.units * transferRatio,
-            currency=lot.currency,
-            cash=-lot.price * lot.units,
-            opentransaction=lot.opentransaction,
-            sort=sort,
-        )
-        for lot in lotsRemoved
+    return functions.scale_units_mutate_portfolio(
+        portfolio, transaction, lotsRemoved, transferRatio, sort
     )
-    return list(itertools.chain.from_iterable(gains))
 
 
 #  FIXME - account for the sometimes-lengthy gap between `datetime` and `dtsettle`
@@ -475,19 +442,9 @@ def book_spinoff(
 
     portfolio[sourcePocket] = sourcePosition
 
-    gains = (
-        functions.mutate_portfolio(
-            portfolio=portfolio,
-            transaction=transaction,
-            units=lotFrom.units * spinRatio,
-            currency=lotFrom.currency,
-            cash=-lotFrom.price * lotFrom.units,
-            opentransaction=lotFrom.opentransaction,
-            sort=sort,
-        )
-        for lotFrom in lotsRemoved
+    return functions.scale_units_mutate_portfolio(
+        portfolio, transaction, lotsRemoved, spinRatio, sort
     )
-    return list(itertools.chain.from_iterable(gains))
 
 
 @book.register(Exercise)
@@ -532,17 +489,19 @@ def book_exercise(
     portfolio[sourcePocket] = sourcePosition
 
     multiplier = abs(transaction.units / transaction.fromunits)
-    strikePrice = abs(transaction.cash / transaction.units)
 
-    gains = (
-        functions.mutate_portfolio(
-            portfolio=portfolio,
-            transaction=transaction,
-            units=lot.units * multiplier,
-            currency=lot.currency,
-            cash=(lot.price * -lot.units) + (lot.units * multiplier * strikePrice),
-            sort=sort,
-        )
-        for lot in lotsRemoved
+    # Adjust cost basis of options for net payment of strike price upon exercise
+    lotsExercised, unaffected, gains = functions.adjust_cost_prorata(
+        position=lotsRemoved, transaction=transaction, predicate=None
     )
-    return list(itertools.chain.from_iterable(gains))
+    assert not unaffected
+    assert not gains
+
+    # Apply option basis to underlying position, scaling units by contract multiplier.
+    return functions.scale_units_mutate_portfolio(
+        portfolio=portfolio,
+        transaction=transaction,
+        lots=lotsExercised,
+        ratio=multiplier,
+        sort=sort,
+    )
