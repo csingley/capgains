@@ -1,6 +1,5 @@
 # coding: utf-8
-"""
-Data structures for tracking units/cost history of financial assets.
+"""Data structures for tracking units/cost history of financial assets.
 
 Each Lot tracks the current state of a particular bunch of securities - (unit, cost).
 Lots are collected in lists called "positions", which are the values of a
@@ -20,20 +19,8 @@ spin-offs, mergers, etc., these will be different.
 Gains link opening Transactions to realizing Transactions - which are usually closing
 Transactions, but may also come from return of capital distributions that exceed
 cost basis.  Return of capital Transactions generally don't provide per-share
-distribution information, so Gains must keep state for the realizing price.
-
-To compute realized capital gains from a Gain instance:
-    * Proceeds - gain.lot.units * gain.price
-    * Basis - gain.lot.units * gain.lot.price
-    * Holding period start - gain.lot.opentransaction.datetime
-    * Holding period end - gain.transaction.datetime
-
-Lots and Transactions are immutable, so you can rely on the accuracy of references
-to them (e.g. Gain.lot; Lot.createtransaction).  Everything about a Lot (except
-opentransaction) can be changed by Transactions; the changes are reflected in a
-newly-created Lot, leaving the old Lot undisturbed.
-
-Nothing in this module changes a Transaction or a Gain, once created.
+distribution information, so Gains store the realizing price as a separate field to
+avoid repeating this calculation.
 """
 
 __all__ = [
@@ -64,7 +51,7 @@ class DummyTransaction(NamedTuple):
 
     Will not be dispatched by inventory.api.book().  Instances are only created when
     translating currency of gains, or when deserializing Lots as a placeholder for
-    the Lot.opentransaction that can't be serialized.
+    the Lot.opentransaction, only some of which fields get serialized.
 
     Attributes:
         type: enum specifying a transaction type below (Trade, Split, etc.)

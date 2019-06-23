@@ -1,47 +1,37 @@
 # coding: utf-8
-"""
+"""Functions to apply securities transactions to inventory and compute realized gains.
+
 Besides the fundamental requirement of keeping accurate tallies, the main purpose
 of this module is to match opening and closing transactions in order to calculate
 the amount and character of realized gains.
 
 To use this module, create a Portfolio instance and call its book() method, passing in
-instances of type capgains.inventory.models.TransactionType.
+instances of type capgains.inventory.models.TransactionType.  Alternatively, you can use
+any object that implements the mapping protocol, and pass it to the module-level book()
+function.
 
-Alternatively, you can use any object that implements the
-mapping protocol, and pass it to the module-level book() function.
+The functions in this module are impure; they mutate the input Portfolio (a collection
+of Lots) as a side effect and return Gains. Gains refer to Lots, which are immutable;
+changes to a Lot are reflected in a newly-created Lot, leaving the old Lot undisturbed
+to preserve referential integrity. A gain.lot refers to the portfolio state at the
+moment of the realizing transaction, not the current state.
 
-Each Lot tracks the current state of a particular bunch of securities - (unit, cost).
-Lots are collected in lists called "positions", which are the values of a
-Portfolio mapping keyed by a (FI account, security) tuple called a "pocket".
+Gains also refer to transactions, which generally are models.Transaction instances
+(wrapping DB rows) are mutable.  You can harm referential integrity by mutating
+Transactions after you have bound them to Gains.  Don't to that.  Nothing in this
+module mutates a Transaction, once created.
 
-Additionally, each Lot keeps a reference to its opening Transaction, i.e. the
-Transaction which started its holding period for tax purposes (to determine whether
-the character of realized Gain is long-term or short-term).
-
-Each Lot also keeps a reference to its "creating" Transaction, i.e. the Transaction
-which added the Lot to its current pocket.  A Lot's security can be sourced from
-Lot.createtransaction.security, and the account where it's custodied can be sourced
-from Lot.createtransaction.fiaccount.  In the case of an opening trade, the
-opening Transaction and the creating Transaction will be the same.  For transfers,
-spin-offs, mergers, etc., these will be different.
-
-Gains link opening Transactions to realizing Transactions - which are usually closing
-Transactions, but may also come from return of capital distributions that exceed
-cost basis.  Return of capital Transactions generally don't provide per-share
-distribution information, so Gains must keep state for the realizing price.
+We could plug this hole by converting each models.Transaction to an immutable
+inventory.types.DummyTransaction, and converting each FiAccount/Security to an immutable
+dummy version, but we'd prefer not to.  It's handy for Lots and Gains to have "live"
+references to SQLAlchemy wrappers for Transactions/FiAccounts/Securities during
+interactive interpreter sessions.
 
 To compute realized capital gains from a Gain instance:
-    * Proceeds - gain.lot.units * gain.price
-    * Basis - gain.lot.units * gain.lot.price
-    * Holding period start - gain.lot.opentransaction.datetime
-    * Holding period end - gain.transaction.datetime
-
-Lots and Transactions are immutable, so you can rely on the accuracy of references
-to them (e.g. Gain.lot; Lot.createtransaction).  Everything about a Lot (except
-opentransaction) can be changed by Transactions; the changes are reflected in a
-newly-created Lot, leaving the old Lot undisturbed.
-
-Nothing in this module changes a Transaction or a Gain, once created.
+    * Proceeds = gain.lot.units * gain.price
+    * Basis = gain.lot.units * gain.lot.price
+    * Holding period start = gain.lot.opentransaction.datetime
+    * Holding period end = gain.transaction.datetime
 """
 
 __all__ = [
@@ -224,7 +214,7 @@ def book_trade(
     if transaction.units == 0:
         raise ValueError(f"units can't be zero: {transaction}")
 
-    return _pop_push_lots(
+    return _mutate_portfolio(
         portfolio=portfolio,
         transaction=transaction,
         units=transaction.units,
@@ -376,40 +366,42 @@ def book_transfer(
         msg = f"units and fromunits aren't oppositely signed in {transaction}"
         raise ValueError(msg)
 
-    pocketFrom = (transaction.fromfiaccount, transaction.fromsecurity)
-    positionFrom = portfolio.get(pocketFrom, [])
-    if not positionFrom:
-        raise Inconsistent(transaction, f"No position in {pocketFrom}")
+    sourcePocket = (transaction.fromfiaccount, transaction.fromsecurity)
+    try:
+        sourcePosition = portfolio[sourcePocket]
+    except KeyError:
+        raise Inconsistent(transaction, f"No position in {sourcePocket}")
 
-    # Remove the Lots from the source position
-    lotsFrom, positionFrom = functions.part_units(
-        positionFrom, openAsOf(transaction.datetime), -transaction.fromunits
+    lotsRemoved, sourcePosition = functions.part_units(
+        position=sourcePosition,
+        predicate=openAsOf(transaction.datetime),
+        max_units=-transaction.fromunits,
     )
 
-    openUnits = sum([lot.units for lot in lotsFrom])
-    if abs(openUnits + transaction.fromunits) > UNITS_TOLERANCE:
+    unitsRemoved = sum([lot.units for lot in lotsRemoved])
+    if abs(unitsRemoved + transaction.fromunits) > UNITS_TOLERANCE:
         msg = (
             f"Position in {transaction.security} for FI account "
             f"{transaction.fiaccount} on {transaction.datetime} is only "
-            f"{openUnits} units; can't transfer out {transaction.units} units."
+            f"{unitsRemoved} units; can't transfer out {transaction.units} units."
         )
         raise Inconsistent(transaction, msg)
 
-    portfolio[pocketFrom] = positionFrom
+    portfolio[sourcePocket] = sourcePosition
 
     transferRatio = -transaction.units / transaction.fromunits
 
     gains = (
-        _pop_push_lots(
+        _mutate_portfolio(
             portfolio=portfolio,
             transaction=transaction,
-            units=lotFrom.units * transferRatio,
-            currency=lotFrom.currency,
-            cash=-lotFrom.price * lotFrom.units,
-            opentransaction=lotFrom.opentransaction,
+            units=lot.units * transferRatio,
+            currency=lot.currency,
+            cash=-lot.price * lot.units,
+            opentransaction=lot.opentransaction,
             sort=sort,
         )
-        for lotFrom in lotsFrom
+        for lot in lotsRemoved
     )
     return list(itertools.chain.from_iterable(gains))
 
@@ -444,11 +436,12 @@ def book_spinoff(
         msg = f"numerator & denominator must be positive Decimals in {transaction}"
         raise ValueError(msg)
 
-    pocketFrom = (transaction.fiaccount, transaction.fromsecurity)
-    positionFrom = portfolio.get(pocketFrom, [])
-    if not positionFrom:
-        raise Inconsistent(transaction, f"No position in {pocketFrom}")
-    positionFrom.sort(**(sort or FIFO))
+    sourcePocket = (transaction.fiaccount, transaction.fromsecurity)
+    try:
+        sourcePosition = portfolio[sourcePocket]
+    except KeyError:
+        raise Inconsistent(transaction, f"No position in {sourcePocket}")
+    sourcePosition.sort(**(sort or FIFO))
 
     spinRatio = Decimal(transaction.numerator) / Decimal(transaction.denominator)
 
@@ -462,26 +455,28 @@ def book_spinoff(
         costFraction = spinoffFMV / (spinoffFMV + spunoffFMV)
 
     # Take the basis from the source Position
-    lotsFrom, positionFrom = functions.part_basis(
-        positionFrom, openAsOf(transaction.datetime), costFraction
+    lotsRemoved, sourcePosition = functions.part_basis(
+        position=sourcePosition,
+        predicate=openAsOf(transaction.datetime),
+        max_units=costFraction,
     )
 
-    openUnits = sum([lot.units for lot in lotsFrom])
-    if abs(openUnits * spinRatio - transaction.units) > UNITS_TOLERANCE:
+    unitsRemoved = sum([lot.units for lot in lotsRemoved])
+    if abs(unitsRemoved * spinRatio - transaction.units) > UNITS_TOLERANCE:
         msg = (
             f"Spinoff {transaction.numerator} units {transaction.security} "
             f"for {transaction.denominator} units {transaction.fromsecurity}:\n"
             f"To receive {transaction.units} units {transaction.security} "
             f"requires a position of {transaction.units / spinRatio} units of "
             f"{transaction.fromsecurity} in FI account {transaction.fiaccount} "
-            f"on {transaction.datetime}, not units={openUnits}"
+            f"on {transaction.datetime}, not units={unitsRemoved}"
         )
         raise Inconsistent(transaction, msg)
 
-    portfolio[pocketFrom] = positionFrom
+    portfolio[sourcePocket] = sourcePosition
 
     gains = (
-        _pop_push_lots(
+        _mutate_portfolio(
             portfolio=portfolio,
             transaction=transaction,
             units=lotFrom.units * spinRatio,
@@ -490,7 +485,7 @@ def book_spinoff(
             opentransaction=lotFrom.opentransaction,
             sort=sort,
         )
-        for lotFrom in lotsFrom
+        for lotFrom in lotsRemoved
     )
     return list(itertools.chain.from_iterable(gains))
 
@@ -520,26 +515,27 @@ def book_exercise(
 
     fromunits = transaction.fromunits
 
-    pocketFrom = (transaction.fiaccount, transaction.fromsecurity)
-    positionFrom = portfolio.get(pocketFrom, [])
+    sourcePocket = (transaction.fiaccount, transaction.fromsecurity)
+    sourcePosition = portfolio.get(sourcePocket, [])
 
-    # Remove lots from the source position
-    takenLots, remainingPosition = functions.part_units(
-        positionFrom, openAsOf(transaction.datetime), -fromunits
+    lotsRemoved, sourcePosition = functions.part_units(
+        position=sourcePosition,
+        predicate=openAsOf(transaction.datetime),
+        max_units=-fromunits,
     )
 
-    takenUnits = sum([lot.units for lot in takenLots])
-    if abs(takenUnits) - abs(fromunits) > UNITS_TOLERANCE:
-        msg = f"Exercise Lot.units={takenUnits} (not {fromunits})"
+    unitsRemoved = sum([lot.units for lot in lotsRemoved])
+    if abs(unitsRemoved) - abs(fromunits) > UNITS_TOLERANCE:
+        msg = f"Exercise Lot.units={unitsRemoved} (not {fromunits})"
         raise Inconsistent(transaction, msg)
 
-    portfolio[pocketFrom] = remainingPosition
+    portfolio[sourcePocket] = sourcePosition
 
     multiplier = abs(transaction.units / transaction.fromunits)
     strikePrice = abs(transaction.cash / transaction.units)
 
     gains = (
-        _pop_push_lots(
+        _mutate_portfolio(
             portfolio=portfolio,
             transaction=transaction,
             units=lot.units * multiplier,
@@ -547,13 +543,12 @@ def book_exercise(
             cash=(lot.price * -lot.units) + (lot.units * multiplier * strikePrice),
             sort=sort,
         )
-
-        for lot in takenLots
+        for lot in lotsRemoved
     )
     return list(itertools.chain.from_iterable(gains))
 
 
-def _pop_push_lots(
+def _mutate_portfolio(
     portfolio: PortfolioType,
     transaction: TransactionType,
     units: Decimal,
@@ -570,7 +565,7 @@ def _pop_push_lots(
     Note:
         Transactions which transform basis (Transfer, Spinoff, Exercise) must first take
         basis from the "source pocket", i.e. (fromfiaccount, fromsecurity, fromunits)
-        before calling this function to apply basis/proceeds to the transaction's
+        before calling this function to apply the removed basis to the transaction's
         "destination pocket", i.e. (account, security, units).
 
     Args:
@@ -594,12 +589,14 @@ def _pop_push_lots(
     price = abs(cash / units)
 
     # First remove existing Position Lots closed by the transaction.
-    lots_closed, position = functions.part_units(
-        position, closable(units, transaction.datetime), -units
+    lotsClosed, position = functions.part_units(
+        postion=position,
+        predicate=closable(units, transaction.datetime),
+        max_units=-units,
     )
 
     # Units not consumed in closing existing Lots are applied as basis in a new Lot.
-    units += sum([lot.units for lot in lots_closed])
+    units += sum([lot.units for lot in lotsClosed])
     if units != 0:
         newLot = Lot(
             opentransaction=opentransaction or transaction,
@@ -613,6 +610,4 @@ def _pop_push_lots(
     portfolio[pocket] = position
 
     # Bind closed Lots to realizing transaction to generate Gains.
-    return [
-        Gain(lot=lot, transaction=transaction, price=price) for lot in lots_closed
-    ]
+    return [Gain(lot=lot, transaction=transaction, price=price) for lot in lotsClosed]

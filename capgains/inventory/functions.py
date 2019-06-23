@@ -1,5 +1,5 @@
 # coding: utf-8
-"""
+"""Base functions used by inventory.api to mutate the Portfolio.
 """
 
 __all__ = ["part_units", "part_basis"]
@@ -21,11 +21,13 @@ def part_units(
     predicate: Optional[PredicateType] = None,
     max_units: Optional[Decimal] = None,
 ) -> Tuple[List[Lot], List[Lot]]:
-    """Partition a position according to some predicate.
+    """Partition position's Lots according to some predicate, limiting max units taken.
+
+    This is a pure function.
 
     Note:
-        If `max_units` is set, then `predicate` must match only Lots where
-        units are the same sign as `max_units`.ab.
+        If `max_units` is set, then the caller must ensure that `predicate` only
+        matches Lots whose units are the same sign as `max_units`.
 
     Args:
         position: list of Lots.  Must be presorted by caller.
@@ -107,7 +109,9 @@ def _iterpart_lot_units(
 def part_basis(
     position: List[Lot], predicate: Optional[PredicateType], fraction: Decimal
 ) -> Tuple[List[Lot], List[Lot]]:
-    """Remove a fraction of the cost from each Lot in the Position.
+    """Remove a fraction of the cost from each Lot in the Position.matching a predicate.
+
+    This is a pure function.
 
     Args:
         position: list of Lots.  Must be presorted by caller.
