@@ -1,24 +1,95 @@
 # coding: utf-8
 """Base functions used by inventory.api to mutate the Portfolio.
 """
+from __future__ import annotations
 
-__all__ = ["part_units", "part_basis"]
+
+__all__ = ["mutate_portfolio", "part_units", "part_basis"]
 
 
 # stdlib imports
 from decimal import Decimal
-from typing import Tuple, List, Sequence, Generator, Optional
+from typing import Tuple, List, Sequence, Generator, Optional, TYPE_CHECKING
 
 
 # local imports
-from .types import Lot
-from .predicates import PredicateType
-from capgains import utils
+from capgains import models, utils
+from .types import Lot, Gain, TransactionType
+from . import predicates
+from . import sortkeys
+
+if TYPE_CHECKING:
+    from .api import PortfolioType
+
+
+def mutate_portfolio(
+    portfolio: PortfolioType,
+    transaction: TransactionType,
+    units: Decimal,
+    cash: Decimal,
+    currency: models.Currency,
+    *,
+    opentransaction: Optional[TransactionType] = None,
+    sort: Optional[sortkeys.SortType] = None,
+) -> List[Gain]:
+    """Apply a transaction's units to a Portfolio, opening/closing Lots as appropriate.
+
+    The Portfolio is modified in place as a side effect; return vals are realized Gains.
+
+    Note:
+        Transactions which transform basis (Transfer, Spinoff, Exercise) must first take
+        basis from the "source pocket", i.e. (fromfiaccount, fromsecurity, fromunits)
+        before calling this function to apply the removed basis to the transaction's
+        "destination pocket", i.e. (account, security, units).
+
+    Args:
+        portfolio: map of (FI account, security) to list of Lots.
+        transaction: the source transaction generating the units.
+        units: amount of security to add to/subtract from position.
+        cash: money amount (basis/proceeds) attributable to the units.
+        currency: currency denomination of basis/proceeds
+        opentransaction: opening transaction of record (establishing holding period)
+                         for any Lots created by applying the transaction.  By default,
+                         use the current transaction being processed.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+
+    Returns:
+        A sequence of Gain instances, reflecting Lots closed by the transaction.
+    """
+    pocket = (transaction.fiaccount, transaction.security)
+    position = portfolio.get(pocket, [])
+    position.sort(**(sort or sortkeys.FIFO))
+
+    price = abs(cash / units)
+
+    # First remove existing Position Lots closed by the transaction.
+    lotsClosed, position = part_units(
+        position=position,
+        predicate=predicates.closable(units, transaction.datetime),
+        max_units=-units,
+    )
+
+    # Units not consumed in closing existing Lots are applied as basis in a new Lot.
+    units += sum([lot.units for lot in lotsClosed])
+    if units != 0:
+        newLot = Lot(
+            opentransaction=opentransaction or transaction,
+            createtransaction=transaction,
+            units=units,
+            price=price,
+            currency=currency,
+        )
+        position.append(newLot)
+
+    portfolio[pocket] = position
+
+    # Bind closed Lots to realizing transaction to generate Gains.
+    return [Gain(lot=lot, transaction=transaction, price=price) for lot in lotsClosed]
 
 
 def part_units(
     position: List[Lot],
-    predicate: Optional[PredicateType] = None,
+    predicate: Optional[predicates.PredicateType] = None,
     max_units: Optional[Decimal] = None,
 ) -> Tuple[List[Lot], List[Lot]]:
     """Partition position's Lots according to some predicate, limiting max units taken.
@@ -56,7 +127,9 @@ def part_units(
 
 
 def _iterpart_lot_units(
-    position: Sequence[Lot], predicate: PredicateType, max_units: Optional[Decimal]
+    position: Sequence[Lot],
+    predicate: predicates.PredicateType,
+    max_units: Optional[Decimal],
 ) -> Generator[Tuple[Optional[Lot], Optional[Lot]], None, None]:
     """Iterator over Lots; partition according to `predicate`/`max_units` constraints.
 
@@ -107,7 +180,9 @@ def _iterpart_lot_units(
 
 
 def part_basis(
-    position: List[Lot], predicate: Optional[PredicateType], fraction: Decimal
+    position: List[Lot],
+    predicate: Optional[predicates.PredicateType],
+    fraction: Decimal,
 ) -> Tuple[List[Lot], List[Lot]]:
     """Remove a fraction of the cost from each Lot in the Position.matching a predicate.
 
@@ -150,7 +225,7 @@ def part_basis(
 
 
 def _part_lot_basis(
-    lot: Lot, predicate: PredicateType, fraction: Decimal
+    lot: Lot, predicate: predicates.PredicateType, fraction: Decimal
 ) -> Tuple[Optional[Lot], Lot]:
     """
     Args:

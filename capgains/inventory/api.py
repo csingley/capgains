@@ -71,7 +71,7 @@ from .types import (
     Spinoff,
     Exercise,
 )
-from .predicates import openAsOf, longAsOf, closable
+from .predicates import openAsOf, longAsOf
 from .sortkeys import SortType, FIFO
 
 
@@ -214,7 +214,7 @@ def book_trade(
     if transaction.units == 0:
         raise ValueError(f"units can't be zero: {transaction}")
 
-    return _mutate_portfolio(
+    return functions.mutate_portfolio(
         portfolio=portfolio,
         transaction=transaction,
         units=transaction.units,
@@ -392,7 +392,7 @@ def book_transfer(
     transferRatio = -transaction.units / transaction.fromunits
 
     gains = (
-        _mutate_portfolio(
+        functions.mutate_portfolio(
             portfolio=portfolio,
             transaction=transaction,
             units=lot.units * transferRatio,
@@ -458,7 +458,7 @@ def book_spinoff(
     lotsRemoved, sourcePosition = functions.part_basis(
         position=sourcePosition,
         predicate=openAsOf(transaction.datetime),
-        max_units=costFraction,
+        fraction=costFraction,
     )
 
     unitsRemoved = sum([lot.units for lot in lotsRemoved])
@@ -476,7 +476,7 @@ def book_spinoff(
     portfolio[sourcePocket] = sourcePosition
 
     gains = (
-        _mutate_portfolio(
+        functions.mutate_portfolio(
             portfolio=portfolio,
             transaction=transaction,
             units=lotFrom.units * spinRatio,
@@ -535,7 +535,7 @@ def book_exercise(
     strikePrice = abs(transaction.cash / transaction.units)
 
     gains = (
-        _mutate_portfolio(
+        functions.mutate_portfolio(
             portfolio=portfolio,
             transaction=transaction,
             units=lot.units * multiplier,
@@ -546,68 +546,3 @@ def book_exercise(
         for lot in lotsRemoved
     )
     return list(itertools.chain.from_iterable(gains))
-
-
-def _mutate_portfolio(
-    portfolio: PortfolioType,
-    transaction: TransactionType,
-    units: Decimal,
-    cash: Decimal,
-    currency: models.Currency,
-    *,
-    opentransaction: Optional[TransactionType] = None,
-    sort: Optional[SortType] = None,
-) -> List[Gain]:
-    """Apply a transaction's units to a Portfolio, opening/closing Lots as appropriate.
-
-    The Portfolio is modified in place as a side effect; return vals are realized Gains.
-
-    Note:
-        Transactions which transform basis (Transfer, Spinoff, Exercise) must first take
-        basis from the "source pocket", i.e. (fromfiaccount, fromsecurity, fromunits)
-        before calling this function to apply the removed basis to the transaction's
-        "destination pocket", i.e. (account, security, units).
-
-    Args:
-        portfolio: map of (FI account, security) to list of Lots.
-        transaction: the source transaction generating the units.
-        units: amount of security to add to/subtract from position.
-        cash: money amount (basis/proceeds) attributable to the units.
-        currency: currency denomination of basis/proceeds
-        opentransaction: opening transaction of record (establishing holding period)
-                         for any Lots created by applying the transaction.  By default,
-                         use the current transaction being processed.
-        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-
-    Returns:
-        A sequence of Gain instances, reflecting Lots closed by the transaction.
-    """
-    pocket = (transaction.fiaccount, transaction.security)
-    position = portfolio.get(pocket, [])
-    position.sort(**(sort or FIFO))
-
-    price = abs(cash / units)
-
-    # First remove existing Position Lots closed by the transaction.
-    lotsClosed, position = functions.part_units(
-        postion=position,
-        predicate=closable(units, transaction.datetime),
-        max_units=-units,
-    )
-
-    # Units not consumed in closing existing Lots are applied as basis in a new Lot.
-    units += sum([lot.units for lot in lotsClosed])
-    if units != 0:
-        newLot = Lot(
-            opentransaction=opentransaction or transaction,
-            createtransaction=transaction,
-            units=units,
-            price=price,
-            currency=currency,
-        )
-        position.append(newLot)
-
-    portfolio[pocket] = position
-
-    # Bind closed Lots to realizing transaction to generate Gains.
-    return [Gain(lot=lot, transaction=transaction, price=price) for lot in lotsClosed]
