@@ -36,7 +36,6 @@ To compute realized capital gains from a Gain instance:
 
 __all__ = [
     "Inconsistent",
-    "UNITS_TOLERANCE",
     "Portfolio",
     "book",
     "book_model",
@@ -57,7 +56,7 @@ from typing import Tuple, List, MutableMapping, Any, Optional, Union
 
 
 # local imports
-from capgains import models
+from capgains import models, utils
 from capgains.inventory import functions
 from .types import (
     Lot,
@@ -94,16 +93,6 @@ class Inconsistent(InventoryError):
         self.transaction = transaction
         self.msg = msg
         super(Inconsistent, self).__init__(f"{transaction} inconsistent: {msg}")
-
-
-UNITS_TOLERANCE = Decimal("0.001")
-"""Significance threshold for difference between predicted units and reported units.
-
-For transactions that involve scaling units by a ratio (i.e. Split & Spinoff), if the
-product of that ratio and the total position Lot.units affected by the transaction
-differs from the reported transaction.units/fromunits by more than UNITS_TOLERANCE, then
-an Inconsistent error is raised.
-"""
 
 
 class Portfolio(defaultdict):
@@ -213,7 +202,7 @@ def book_trade(
     if transaction.units == 0:
         raise ValueError(f"units can't be zero: {transaction}")
 
-    return functions.mutate_portfolio(
+    return functions.load_transaction(
         portfolio=portfolio,
         transaction=transaction,
         units=transaction.units,
@@ -232,14 +221,12 @@ def book_returnofcapital(
     """Apply a ReturnOfCapital to the appropriate position(s) in the Portfolio.
 
     Note:
-        Sort algorithm is irrelevant for ReturnOfCapital, which closes no Lots.
+        ReturnOfCapital never closes Lots but may realize Gains; this function
+        accepts no `sort` arg but returns a list of Gains.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to list of Lots.
-
-    Returns:
-        A sequence of Gain instances, reflecting Lots closed by the transaction.
 
     Raises:
         Inconsistent: if no position in the `portfolio` as of `ReturnOfCapital.datetime`
@@ -248,12 +235,9 @@ def book_returnofcapital(
     pocket = (transaction.fiaccount, transaction.security)
     position = portfolio.get(pocket, [])
 
-    reducedLots, unaffected, gains = functions.adjust_cost_prorata(
-        position=position,
-        transaction=transaction,
-        predicate=longAsOf(transaction.datetime),
-    )
-    if not reducedLots:
+    unaffected, affected = utils.partition(longAsOf(transaction.datetime), position)
+    affected = list(affected)
+    if not affected:
         msg = (
             f"Return of capital {transaction}:\n"
             f"FI account {transaction.fiaccount} has no long position in "
@@ -261,7 +245,8 @@ def book_returnofcapital(
         )
         raise Inconsistent(transaction, msg)
 
-    portfolio[pocket] = reducedLots + unaffected
+    adjustedLots, gains = functions.adjust_price(affected, transaction)
+    portfolio[pocket] = adjustedLots + list(unaffected)
     return gains
 
 
@@ -271,8 +256,7 @@ def book_split(
 ) -> List[Gain]:
     """Apply a Split to the appropriate position(s) in the Portfolio.
 
-    Note:
-        Sort algorithm is irrelevant for Splits, which close no Lots.
+    Splits don't close Lots, so this function takes no `sort` arg.
 
     Args:
         transaction: the transaction to apply to the Portfolio.
@@ -293,23 +277,21 @@ def book_split(
         raise Inconsistent(transaction, f"No position in {pocket}")
 
     splitRatio = transaction.numerator / transaction.denominator
-    postsplit, unaffected, units_change = functions.scale_units(
-        position=position, ratio=splitRatio, predicate=openAsOf(transaction.datetime)
-    )
+    unaffected, affected = utils.partition(openAsOf(transaction.datetime), position)
+    postsplit, old_units, new_units = functions.scale_units(affected, splitRatio)
 
-    if abs(units_change - transaction.units) > UNITS_TOLERANCE:
-        old_units = sum(lot.units for lot in postsplit) - units_change
+    if not utils.almost_equal(new_units - old_units, transaction.units):
         msg = (
             f"Split {transaction.security} "
             f"{transaction.numerator}:{transaction.denominator} -\n"
             f"To receive {transaction.units} units {transaction.security} "
             f"requires a position of {transaction.units / splitRatio} units of "
             f"{transaction.security} in FI account {transaction.fiaccount} "
-            f"on {transaction.datetime}, not units={old_units}"
+            f"on {transaction.datetime.date()}, not units={old_units}"
         )
         raise Inconsistent(transaction, msg)
 
-    portfolio[pocket] = postsplit + unaffected
+    portfolio[pocket] = list(postsplit) + list(unaffected)
 
     # Stock splits don't realize Gains
     return []
@@ -356,7 +338,7 @@ def book_transfer(
     )
 
     unitsRemoved = sum([lot.units for lot in lotsRemoved])
-    if abs(unitsRemoved + transaction.fromunits) > UNITS_TOLERANCE:
+    if not utils.almost_equal(unitsRemoved, -transaction.fromunits):
         msg = (
             f"Position in {transaction.security} for FI account "
             f"{transaction.fiaccount} on {transaction.datetime} is only "
@@ -367,9 +349,15 @@ def book_transfer(
     portfolio[sourcePocket] = sourcePosition
 
     transferRatio = -transaction.units / transaction.fromunits
+    lotsScaled, fromunits, units = functions.scale_units(lotsRemoved, transferRatio)
+    assert utils.almost_equal(fromunits, -transaction.fromunits)
+    assert utils.almost_equal(units, transaction.units)
 
-    return functions.scale_units_mutate_portfolio(
-        portfolio, transaction, lotsRemoved, transferRatio, sort
+    return functions.load_lots(
+        portfolio=portfolio,
+        transaction=transaction,
+        lots=lotsScaled,
+        sort=sort,
     )
 
 
@@ -429,7 +417,7 @@ def book_spinoff(
     )
 
     unitsRemoved = sum([lot.units for lot in lotsRemoved])
-    if abs(unitsRemoved * spinRatio - transaction.units) > UNITS_TOLERANCE:
+    if not utils.almost_equal(unitsRemoved * spinRatio, transaction.units):
         msg = (
             f"Spinoff {transaction.numerator} units {transaction.security} "
             f"for {transaction.denominator} units {transaction.fromsecurity}:\n"
@@ -442,8 +430,15 @@ def book_spinoff(
 
     portfolio[sourcePocket] = sourcePosition
 
-    return functions.scale_units_mutate_portfolio(
-        portfolio, transaction, lotsRemoved, spinRatio, sort
+    lotsScaled, fromunits, units = functions.scale_units(lotsRemoved, spinRatio)
+    assert utils.almost_equal(transaction.units / fromunits, spinRatio)
+    assert utils.almost_equal(units, transaction.units)
+
+    return functions.load_lots(
+        portfolio=portfolio,
+        transaction=transaction,
+        lots=lotsScaled,
+        sort=sort,
     )
 
 
@@ -460,9 +455,6 @@ def book_exercise(
         transaction: the transaction to apply to the Portfolio.
         portfolio: map of (FI account, security) to list of Lots.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-
-    Returns:
-        A sequence of Gain instances, reflecting Lots closed by the transaction.
 
     Raises:
         Inconsistent: if the relevant position in `portfolio` as of `Exercise.datetime`
@@ -482,26 +474,24 @@ def book_exercise(
     )
 
     unitsRemoved = sum([lot.units for lot in lotsRemoved])
-    if abs(unitsRemoved) - abs(fromunits) > UNITS_TOLERANCE:
+    if not utils.almost_equal(unitsRemoved, -fromunits):
         msg = f"Exercise Lot.units={unitsRemoved} (not {fromunits})"
         raise Inconsistent(transaction, msg)
 
     portfolio[sourcePocket] = sourcePosition
 
-    multiplier = abs(transaction.units / transaction.fromunits)
-
-    # Adjust cost basis of options for net payment of strike price upon exercise
-    lotsExercised, unaffected, gains = functions.adjust_cost_prorata(
-        position=lotsRemoved, transaction=transaction, predicate=None
-    )
-    assert not unaffected
+    # Adjust cost basis of options for net payment upon exercise
+    lotsPaid, gains = functions.adjust_price(lotsRemoved, transaction)
     assert not gains
 
-    # Apply option basis to underlying position, scaling units by contract multiplier.
-    return functions.scale_units_mutate_portfolio(
+    multiplier = -transaction.units / transaction.fromunits
+    lotsConverted, fromunits, units = functions.scale_units(lotsPaid, multiplier)
+    assert utils.almost_equal(fromunits, -transaction.fromunits)
+    assert utils.almost_equal(units, transaction.units)
+
+    return functions.load_lots(
         portfolio=portfolio,
         transaction=transaction,
-        lots=lotsExercised,
-        ratio=multiplier,
+        lots=lotsConverted,
         sort=sort,
     )

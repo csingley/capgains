@@ -4,29 +4,53 @@
 from __future__ import annotations
 
 
-__all__ = ["mutate_portfolio", "part_units", "part_basis", "adjust_cost_prorata"]
+__all__ = [
+    "load_transaction",
+    "part_units",
+    "part_basis",
+    "adjust_price",
+    "scale_units",
+    "load_lots",
+]
 
 
 # stdlib imports
 from decimal import Decimal
 import functools
 import itertools
-from typing import Tuple, List, Sequence, Generator, Optional, Union, TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Tuple,
+    List,
+    Sequence,
+    Iterable,
+    Generator,
+    Optional,
+    Union,
+)
 
 
 # local imports
 from capgains import models, utils
-from .types import Lot, Gain, TransactionType
+from .types import (
+    Lot,
+    Gain,
+    ReturnOfCapital,
+    Transfer,
+    Spinoff,
+    Exercise,
+    TransactionType,
+)
 from . import predicates
 from . import sortkeys
 
 # Avoid recursive imports inventory.api <-> inventory.functions
 # We only need inventory.api namespace for type annotations.
 if TYPE_CHECKING:
-    from .api import ReturnOfCapital, PortfolioType
+    from .api import PortfolioType
 
 
-def mutate_portfolio(
+def load_transaction(
     portfolio: PortfolioType,
     transaction: TransactionType,
     units: Decimal,
@@ -36,29 +60,26 @@ def mutate_portfolio(
     opentransaction: Optional[TransactionType] = None,
     sort: Optional[sortkeys.SortType] = None,
 ) -> List[Gain]:
-    """Apply a transaction's units to a Portfolio, opening/closing Lots as appropriate.
+    """Apply a Transaction to a Portfolio, opening/closing Lots as appropriate.
+
+    Units/money values are sourced from args, not the Transaction itself, so that
+    complex Transaction types (Transfer, Spinoff, Exercise) can apply basis from the
+    source position to the destination position, bound to the Transaction.
 
     The Portfolio is modified in place as a side effect; return vals are realized Gains.
 
-    Note:
-        Transactions which transform basis (Transfer, Spinoff, Exercise) must first take
-        basis from the "source pocket", i.e. (fromfiaccount, fromsecurity, fromunits)
-        before calling this function to apply the removed basis to the transaction's
-        "destination pocket", i.e. (account, security, units).
-
     Args:
-        portfolio: map of (FI account, security) to list of Lots.
-        transaction: the source transaction generating the units.
-        units: amount of security to add to/subtract from position.
+        portfolio: map of (FiAccount, Security) to list of Lots.
+        transaction: Transaction indicating destination (Fiaccount, Security).
+        units: amount of Security to add to/subtract from position.
         cash: money amount (basis/proceeds) attributable to the units.
         currency: currency denomination of basis/proceeds
-        opentransaction: opening transaction of record (establishing holding period)
-                         for any Lots created by applying the transaction.  By default,
-                         use the current transaction being processed.
+        opentransaction: opening Transaction of record (establishing holding period)
+                         for any Lots created.  By default, use the Transaction itself.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
 
     Returns:
-        A sequence of Gain instances, reflecting Lots closed by the transaction.
+        A sequence of Gain instances, reflecting Lots closed by the Transaction.
     """
     pocket = (transaction.fiaccount, transaction.security)
     position = portfolio.get(pocket, [])
@@ -66,7 +87,7 @@ def mutate_portfolio(
 
     price = abs(cash / units)
 
-    # First remove existing Position Lots closed by the transaction.
+    # First remove existing Position Lots closed by the Transaction.
     lotsClosed, position = part_units(
         position=position,
         predicate=predicates.closable(units, transaction.datetime),
@@ -87,7 +108,7 @@ def mutate_portfolio(
 
     portfolio[pocket] = position
 
-    # Bind closed Lots to realizing transaction to generate Gains.
+    # Bind closed Lots to realizing Transaction to generate Gains.
     return [Gain(lot=lot, transaction=transaction, price=price) for lot in lotsClosed]
 
 
@@ -97,8 +118,6 @@ def part_units(
     max_units: Optional[Decimal] = None,
 ) -> Tuple[List[Lot], List[Lot]]:
     """Partition Lots according to some predicate, limiting max units taken.
-
-    This is a pure function.
 
     Note:
         If `max_units` is set, then the caller must ensure that `predicate` only
@@ -250,135 +269,101 @@ def _part_lot_basis(
     return (lot._replace(price=takenprice), lot._replace(price=lot.price - takenprice))
 
 
-def adjust_cost_prorata(
-    position: List[Lot],
-    transaction: Union[ReturnOfCapital, models.Transaction],
-    predicate: Optional[predicates.PredicateType] = None,
-) -> Tuple[List[Lot], List[Lot], List[Gain]]:
+def adjust_price(
+    lots: List[Lot],
+    transaction: Union[ReturnOfCapital, Exercise, models.Transaction],
+) -> Tuple[List[Lot], List[Gain]]:
     """Apply Transaction cash pro rata to reduce cost basis of Lots matching predicate.
 
     Cost basis has a floor of zero; realize Gain for portion of cash that would reduce
     basis below zero.
 
     Args:
-        position: list of Lots; doesn't need to be sorted.
+        lots: sequence of Lots; doesn't need to be sorted.
         transaction: Transaction whose cash is a basis reduction.
-        predicate: filter function that accepts a Lot instance and returns bool,
-                   e.g. openAsOf(datetime) or closableBy(transaction).
-                   By default, matches everything.
 
     Returns:
-        3-tuple of:
-            0) list of Lots matching predicate, with each price reduced.
-            1) list of Lots not matching predicate.
-            2) list of Gains realized by Transaction.
+        2-tuple of:
+            0) list of Lots, with each price reduced.
+            1) list of Gains realized by Transaction.
     """
 
-    if predicate is None:
-        predicate = utils.matchEverything
+    assert lots
+    assert isinstance(transaction.cash, Decimal)
+    # FIXME - test case of short Lots (negative units) for sign of priceChange
+    priceChange = transaction.cash / sum(lot.units for lot in lots)
 
-    unaffected, affected = utils.partition(predicate, position)
-
-    # Sadly, we first have to iterate over the whole sequence in order to determine
-    # the prorated cost reduction.
-    affected = list(affected)
-    if not affected:
-        return [], position, []
-
-    prorata = transaction.cash / sum(lot.units for lot in affected)
-
-    def reduceBasis(lot: Lot) -> Tuple[Lot, Optional[Gain]]:
+    def _adjust_price(lot: Lot) -> Tuple[Lot, Optional[Gain]]:
         gain = None
-        new_price = lot.price - prorata
+        new_price = lot.price - priceChange
         if new_price < 0:
-            gain = Gain(lot=lot, transaction=transaction, price=prorata)
+            gain = Gain(lot=lot, transaction=transaction, price=priceChange)
             new_price = Decimal("0")
         return (lot._replace(price=new_price), gain)
 
-    reducedLots, gains = zip(*(reduceBasis(lot) for lot in affected))
-    gains = [gain for gain in gains if gain is not None]
-    return list(reducedLots), list(unaffected), gains
+    adjustedLots, gains = zip(*(_adjust_price(lot) for lot in lots))
+    return list(adjustedLots), [gain for gain in gains if gain is not None]
 
 
 def scale_units(
-    position: List[Lot],
+    lots: Iterable[Lot],
     ratio: Decimal,
-    predicate: Optional[predicates.PredicateType] = None,
-) -> Tuple[List[Lot], List[Lot], Decimal]:
-    """Scale units of Lots matching predicate by the given ratio.
-
-    Cost basis of Lot is not affected.
+) -> Tuple[List[Lot], Decimal, Decimal]:
+    """Scale Lot units by the given ratio.  Cost basis is not affected.
 
     Args:
-        position: list of Lots; doesn't need to be sorted.
+        lots: list of Lots; doesn't need to be sorted.
         ratio: scaling factor, i.e. new units per old units.
-        predicate: filter function that accepts a Lot instance and returns bool,
-                   e.g. openAsOf(datetime) or closableBy(transaction).
-                   By default, matches everything.
 
     Returns:
-        3-tuple of:
-            0) list of Lots matching predicate, with each units scaled.
-            1) list of Lots not matching predicate.
-            2) total change in units resulting from application of the scaling ratio.
+        2-tuple of:
+            0) list of Lots with each units scaled.
+            1) units total pre-scaling
+            2) units total post-scaling
     """
-
-    if predicate is None:
-        predicate = utils.matchEverything
-
-    unaffected, affected = utils.partition(predicate, position)
-
     Accumulator = Tuple[List[Lot], Decimal, Decimal]
 
     def accum_scale(accum: Accumulator, lot: Lot) -> Accumulator:
-        lots, new_units_total, old_units_total = accum
+        lots, fromunits, units = accum
 
-        units = lot.units * ratio
+        units_ = lot.units * ratio
         price = lot.price / ratio
 
-        lots.append(lot._replace(units=units, price=price))
-        new_units_total += units
-        old_units_total += lot.units
+        lots.append(lot._replace(units=units_, price=price))
+        fromunits += lot.units
+        units += units_
 
-        return lots, new_units_total, old_units_total
+        return lots, fromunits, units
 
     # Need annotation to determine type of list elements
     initial: Accumulator = ([], Decimal(0), Decimal(0))
-    postsplit, new_units, old_units = functools.reduce(accum_scale, affected, initial)
-    return postsplit, list(unaffected), new_units - old_units
+    scaledLots, fromunits, units = functools.reduce(accum_scale, lots, initial)
+    return scaledLots, fromunits, units
 
 
-def scale_units_mutate_portfolio(
+def load_lots(
     portfolio: PortfolioType,
-    transaction: TransactionType,
-    lots: Sequence[Lot],
-    ratio: Decimal,
+    transaction: Union[Transfer, Spinoff, Exercise, models.Transaction],
+    lots: Iterable[Lot],
     sort: Optional[sortkeys.SortType] = None,
 ) -> List[Gain]:
-    """Scale units of lots by given ratio, then apply to a Portfolio, opening/closing
-    Lots as appropriate.
+    """Apply a sequence of Lots holding units/basis to Portfolio, bound to Transaction.
 
-    The Portfolio is modified in place as a side effect; return vals are realized Gains.
-
-    Note:
-        Transactions which transform basis (Transfer, Spinoff, Exercise) must first take
-        basis from the "source pocket", i.e. (fromfiaccount, fromsecurity, fromunits)
-        before calling this function to apply the removed basis to the transaction's
-        "destination pocket", i.e. (account, security, units).
+    Used by complex Transactions (Transfer, Spinoff, Exercise) as the second step
+    to transfer extracted basis from source position to destination position.
 
     Args:
         portfolio: map of (FI account, security) to list of Lots.
-        transaction: the source transaction generating the units.
+        transaction: Transaction indicating destination (Fiaccount, Security).
         lots: list of Lots; doesn't need to be sorted.
-        ratio: scaling factor, i.e. new units per old units.
         sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
         extra_price: additional
     """
     gains = (
-        mutate_portfolio(
+        load_transaction(
             portfolio=portfolio,
             transaction=transaction,
-            units=lot.units * ratio,
+            units=lot.units,
             currency=lot.currency,
             cash=lot.price * -lot.units,
             opentransaction=lot.opentransaction,
