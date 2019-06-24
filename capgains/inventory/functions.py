@@ -112,6 +112,39 @@ def load_transaction(
     return [Gain(lot=lot, transaction=transaction, price=price) for lot in lotsClosed]
 
 
+def load_lots(
+    portfolio: PortfolioType,
+    transaction: Union[Transfer, Spinoff, Exercise, models.Transaction],
+    lots: Iterable[Lot],
+    sort: Optional[sortkeys.SortType] = None,
+) -> List[Gain]:
+    """Apply a sequence of Lots holding units/basis to Portfolio, bound to Transaction.
+
+    Used by complex Transactions (Transfer, Spinoff, Exercise) as the second step
+    to transfer extracted basis from source position to destination position.
+
+    Args:
+        portfolio: map of (FI account, security) to list of Lots.
+        transaction: Transaction indicating destination (Fiaccount, Security).
+        lots: list of Lots; doesn't need to be sorted.
+        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
+        extra_price: additional
+    """
+    gains = (
+        load_transaction(
+            portfolio=portfolio,
+            transaction=transaction,
+            units=lot.units,
+            currency=lot.currency,
+            cash=lot.price * -lot.units,
+            opentransaction=lot.opentransaction,
+            sort=sort,
+        )
+        for lot in lots
+    )
+    return list(itertools.chain.from_iterable(gains))
+
+
 def part_units(
     position: List[Lot],
     predicate: Optional[predicates.PredicateType] = None,
@@ -208,8 +241,6 @@ def part_basis(
     fraction: Decimal,
 ) -> Tuple[List[Lot], List[Lot]]:
     """Remove a fraction of the cost from each Lot matching a predicate.
-
-    This is a pure function.
 
     Args:
         position: list of Lots; doesn't need to be sorted.
@@ -339,36 +370,3 @@ def scale_units(
     initial: Accumulator = ([], Decimal(0), Decimal(0))
     scaledLots, fromunits, units = functools.reduce(accum_scale, lots, initial)
     return scaledLots, fromunits, units
-
-
-def load_lots(
-    portfolio: PortfolioType,
-    transaction: Union[Transfer, Spinoff, Exercise, models.Transaction],
-    lots: Iterable[Lot],
-    sort: Optional[sortkeys.SortType] = None,
-) -> List[Gain]:
-    """Apply a sequence of Lots holding units/basis to Portfolio, bound to Transaction.
-
-    Used by complex Transactions (Transfer, Spinoff, Exercise) as the second step
-    to transfer extracted basis from source position to destination position.
-
-    Args:
-        portfolio: map of (FI account, security) to list of Lots.
-        transaction: Transaction indicating destination (Fiaccount, Security).
-        lots: list of Lots; doesn't need to be sorted.
-        sort: sort algorithm for gain recognition e.g. FIFO, used to order closed Lots.
-        extra_price: additional
-    """
-    gains = (
-        load_transaction(
-            portfolio=portfolio,
-            transaction=transaction,
-            units=lot.units,
-            currency=lot.currency,
-            cash=lot.price * -lot.units,
-            opentransaction=lot.opentransaction,
-            sort=sort,
-        )
-        for lot in lots
-    )
-    return list(itertools.chain.from_iterable(gains))
