@@ -3,7 +3,7 @@
 Functions used as filter predicates to select Lots from positins.
 """
 
-__all__ = ["PredicateType", "openAsOf", "longAsOf", "closableBy"]
+__all__ = ["PredicateType", "openAsOf", "longAsOf", "closable"]
 
 
 # stdlib imports
