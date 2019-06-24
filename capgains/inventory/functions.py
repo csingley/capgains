@@ -18,16 +18,7 @@ __all__ = [
 from decimal import Decimal
 import functools
 import itertools
-from typing import (
-    TYPE_CHECKING,
-    Tuple,
-    List,
-    Sequence,
-    Iterable,
-    Generator,
-    Optional,
-    Union,
-)
+from typing import TYPE_CHECKING, Tuple, List, Iterable, Callable, Optional, Union
 
 
 # local imports
@@ -169,70 +160,54 @@ def part_units(
         (matching Lots, nonmatching Lots)
     """
 
-    if not position:
-        return [], []
-
     if predicate is None:
         predicate = utils.matchEverything
 
-    lots_taken, lots_left = zip(*_iterpart_lot_units(position, predicate, max_units))
-    return (
-        [lot for lot in lots_taken if lot is not None],
-        [lot for lot in lots_left if lot is not None],
-    )
+    Accumulator = Tuple[List[Lot], List[Lot], Optional[Decimal]]
 
+    def make_accum(
+        predicate: predicates.PredicateType
+    ) -> Callable[[Accumulator, Lot], Accumulator]:
+        """Factory to produce accumulator function from predicate"""
 
-def _iterpart_lot_units(
-    position: Sequence[Lot],
-    predicate: predicates.PredicateType,
-    max_units: Optional[Decimal],
-) -> Generator[Tuple[Optional[Lot], Optional[Lot]], None, None]:
-    """Iterator over Lots; partition according to `predicate`/`max_units` constraints.
+        def accum_part(accum: Accumulator, lot: Lot) -> Accumulator:
+            taken, left, units_remain = accum
 
-    Args:
-        position: list of Lots; must be presorted by caller.
-        predicate: filter function that accepts a Lot instance and returns bool,
-                   e.g. openAsOf(datetime) or closableBy(transaction).
-                   By default, matches everything.
-        max_units: limit of units matching predicate to take.  Sign convention
-                   is SAME SIGN as Lot, i.e. `max_units` is positive for long,
-                   negative for short. By default, take all units that match predicate.
-
-    Yields:
-        2-tuple of:
-            0) Lot instance matching `predicate`/`max_units` constraints, or None.
-            1) Lot instance failing `predicate`/`max_units` constrants, or None.
-    """
-
-    units_remain = max_units
-    for lot in position:
-        # Failing the predicate trumps any consideration of max_units.
-        if not predicate(lot):
-            yield (None, lot)
-        # All cases below here have matched the predicate.
-        # Now consider max_units constraint.
-        elif units_remain is None:
-            # args passed in max_units=None -> take all predicate matches
-            yield (lot, None)
-        elif units_remain == 0:
-            # max_units already filled; we're done.
-            yield (None, lot)
-        else:
-            # Predicate matched; max_units unfilled.
-            # Take as many units as possible until we run out of Lot.units or max_units.
-            assert lot.units * units_remain > 0
-            if lot.units / units_remain <= 1:
-                # Taking the whole Lot won't exceed max_units (but might reach it).
-                units_remain -= lot.units
-                yield (lot, None)
+            # Failing the predicate trumps any consideration of max_units.
+            if not predicate(lot):
+                left.append(lot)
+            # All cases below here have matched the predicate.
+            # Now consider max_units constraint.
+            elif units_remain is None:
+                # args passed in max_units=None -> take all predicate matches
+                taken.append(lot)
+            elif units_remain == 0:
+                # max_units already filled; we're done.
+                left.append(lot)
             else:
-                # The Lot more than suffices to fulfill max_units -> split the Lot
-                taken, left = (
-                    lot._replace(units=units_remain),
-                    lot._replace(units=lot.units - units_remain),
-                )
-                units_remain = Decimal("0")
-                yield (taken, left)
+                # Predicate matched; max_units unfilled.
+                # Take all units we can until we run out of Lot.units or max_units.
+                assert lot.units * units_remain > 0
+                if lot.units / units_remain <= 1:
+                    # Taking the whole Lot won't exceed max_units (but might reach it).
+                    units_remain -= lot.units
+                    taken.append(lot)
+                else:
+                    # The Lot more than suffices to fulfill max_units -> split the Lot
+                    take, leave = (
+                        lot._replace(units=units_remain),
+                        lot._replace(units=lot.units - units_remain),
+                    )
+                    taken.append(take)
+                    left.append(leave)
+                    units_remain = Decimal("0")
+
+            return taken, left, units_remain
+
+        return accum_part
+
+    initial: Accumulator = ([], [], max_units)
+    return functools.reduce(make_accum(predicate), position, initial)[:-1]
 
 
 def part_basis(
@@ -269,53 +244,44 @@ def part_basis(
         msg = f"fraction must be between 0 and 1 (inclusive), not '{fraction}'"
         raise ValueError(msg)
 
-    lots_taken, lots_left = zip(
-        *(_part_lot_basis(lot, predicate, fraction) for lot in position)
-    )
-    return (
-        [lot for lot in lots_taken if lot is not None],
-        [lot for lot in lots_left if lot is not None],
-    )
+    Accumulator = Tuple[List[Lot], List[Lot]]
 
+    def make_accum(
+        predicate: predicates.PredicateType
+    ) -> Callable[[Accumulator, Lot], Accumulator]:
+        """Factory to produce accumulator function from predicate"""
 
-def _part_lot_basis(
-    lot: Lot, predicate: predicates.PredicateType, fraction: Decimal
-) -> Tuple[Optional[Lot], Lot]:
-    """
-    Args:
-        lot: a Lot instance.
-        predicate: filter function that accepts a Lot instance and returns bool,
-        fraction: portion of cost to remove from Lot if predicate matches.
+        def accum_part(accum: Accumulator, lot: Lot) -> Accumulator:
+            taken, left = accum
+            if not predicate(lot):
+                left.append(lot)
+            else:
+                takenprice = lot.price * fraction
+                taken.append(lot._replace(price=takenprice))
+                left.append(lot._replace(price=lot.price - takenprice))
+            return taken, left
 
-    Returns:
-        2-tuple of:
-            0) If Lot matches predicate - copy of Lot, with basis fraction removed.
-                If Lot fails predicate - None.
-            1) Original Lot, with basis reduced by fraction (if applicable).
-    """
-    if not predicate(lot):
-        return (None, lot)
+        return accum_part
 
-    takenprice = lot.price * fraction
-    return (lot._replace(price=takenprice), lot._replace(price=lot.price - takenprice))
+    initial: Accumulator = ([], [])
+    return functools.reduce(make_accum(predicate), position, initial)
 
 
 def adjust_price(
-    lots: List[Lot],
-    transaction: Union[ReturnOfCapital, Exercise, models.Transaction],
+    lots: List[Lot], transaction: Union[ReturnOfCapital, Exercise, models.Transaction]
 ) -> Tuple[List[Lot], List[Gain]]:
-    """Apply Transaction cash pro rata to reduce cost basis of Lots matching predicate.
+    """Apply Transaction cash pro rata to directly adjust cost basis of Lots.
 
-    Cost basis has a floor of zero; realize Gain for portion of cash that would reduce
-    basis below zero.
+    If reducing basis, cost has a floor of zero; realize Gain for portion of cash that
+    would reduce basis below zero.
 
     Args:
         lots: sequence of Lots; doesn't need to be sorted.
-        transaction: Transaction whose cash is a basis reduction.
+        transaction: Transaction whose cash is a basis adjustment.
 
     Returns:
         2-tuple of:
-            0) list of Lots, with each price reduced.
+            0) list of Lots, with each price adjusted.
             1) list of Gains realized by Transaction.
     """
 
@@ -324,21 +290,30 @@ def adjust_price(
     # FIXME - test case of short Lots (negative units) for sign of priceChange
     priceChange = transaction.cash / sum(lot.units for lot in lots)
 
-    def _adjust_price(lot: Lot) -> Tuple[Lot, Optional[Gain]]:
-        gain = None
-        new_price = lot.price - priceChange
-        if new_price < 0:
-            gain = Gain(lot=lot, transaction=transaction, price=priceChange)
-            new_price = Decimal("0")
-        return (lot._replace(price=new_price), gain)
+    Accumulator = Tuple[List[Lot], List[Gain]]
 
-    adjustedLots, gains = zip(*(_adjust_price(lot) for lot in lots))
-    return list(adjustedLots), [gain for gain in gains if gain is not None]
+    def make_accum(priceChange: Decimal) -> Callable[[Accumulator, Lot], Accumulator]:
+        """Factory to produce accumulator function from price adjustment"""
+
+        def accum_price_adj(accum: Accumulator, lot: Lot) -> Accumulator:
+            lots, gains = accum
+
+            new_price = lot.price - priceChange
+            if new_price < 0:
+                gains.append(Gain(lot=lot, transaction=transaction, price=priceChange))
+                new_price = Decimal("0")
+            lots.append(lot._replace(price=new_price))
+            return lots, gains
+
+        return accum_price_adj
+
+    # Need annotation to determine type of list elements
+    initial: Accumulator = ([], [])
+    return functools.reduce(make_accum(priceChange), lots, initial)
 
 
 def scale_units(
-    lots: Iterable[Lot],
-    ratio: Decimal,
+    lots: Iterable[Lot], ratio: Decimal
 ) -> Tuple[List[Lot], Decimal, Decimal]:
     """Scale Lot units by the given ratio.  Cost basis is not affected.
 
@@ -354,19 +329,24 @@ def scale_units(
     """
     Accumulator = Tuple[List[Lot], Decimal, Decimal]
 
-    def accum_scale(accum: Accumulator, lot: Lot) -> Accumulator:
-        lots, fromunits, units = accum
+    def make_accum(ratio: Decimal) -> Callable[[Accumulator, Lot], Accumulator]:
+        """Factory to produce accumulator function from scaling ratio"""
 
-        units_ = lot.units * ratio
-        price = lot.price / ratio
+        def accum_scale(accum: Accumulator, lot: Lot) -> Accumulator:
+            lots, fromunits, units = accum
 
-        lots.append(lot._replace(units=units_, price=price))
-        fromunits += lot.units
-        units += units_
+            units_ = lot.units * ratio
+            price = lot.price / ratio
 
-        return lots, fromunits, units
+            lots.append(lot._replace(units=units_, price=price))
+            fromunits += lot.units
+            units += units_
+
+            return lots, fromunits, units
+
+        return accum_scale
 
     # Need annotation to determine type of list elements
     initial: Accumulator = ([], Decimal(0), Decimal(0))
-    scaledLots, fromunits, units = functools.reduce(accum_scale, lots, initial)
+    scaledLots, fromunits, units = functools.reduce(make_accum(ratio), lots, initial)
     return scaledLots, fromunits, units
