@@ -49,6 +49,13 @@ def round_decimal(number: Union[int, Decimal], power: int = -4) -> Decimal:
     )
 
 
+MATERIALITY_TOLERANCE = Decimal("0.001")
+
+
+def almost_equal(number0: Union[int, Decimal], number1: Union[int, Decimal]) -> bool:
+    return abs(number0 - number1) < MATERIALITY_TOLERANCE  # type: ignore
+
+
 def realize_longterm(
     units: Union[float, Decimal],
     opendt: Union[datetime.date, datetime.datetime],
