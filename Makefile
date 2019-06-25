@@ -1,4 +1,6 @@
 test:
+	mypy --ignore-missing-imports capgains
+	mypy --ignore-missing-imports tests
 	coverage erase
 	python `which nosetests` -dsv --nologcapture --with-coverage --cover-package capgains tests/*.py
 
