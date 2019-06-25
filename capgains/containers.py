@@ -16,10 +16,6 @@ import itertools
 from typing import Callable, Iterable, Optional, Any
 
 
-# local imports
-from capgains import models, utils
-
-
 ListFunction = Callable[[Iterable], Iterable]
 
 
