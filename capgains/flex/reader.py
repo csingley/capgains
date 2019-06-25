@@ -20,7 +20,7 @@ from ofxtools.utils import validate_cusip, cusip2isin, validate_isin
 
 
 # local imports
-from capgains.ofx.reader import OfxStatementReader
+from capgains.ofx.reader import OfxStatementReader, cancel
 from capgains.database import Base, sessionmanager
 from capgains import models
 from capgains.flex import BROKERID
@@ -430,16 +430,18 @@ class FlexStatementReader(OfxStatementReader):
         group = (
             GroupedList(transactions)
             .groupby(self.groupCorporateActionsForCancel)
-            .cancel(
-                filterfunc=self.filterCorporateActionCancels,
-                matchfunc=self.matchCorporateActionWithCancel,
-                sortfunc=self.sortCanceledCorporateActions,
+            .bind(
+                cancel(
+                    filterfunc=self.filterCorporateActionCancels,
+                    matchfunc=self.matchCorporateActionWithCancel,
+                    sortfunc=self.sortCanceledCorporateActions,
+                )
             )
             .reduce(self.netCorporateActions)
             .flatten()
             .map(self.parseCorporateActionMemo)
             .groupby(self.groupParsedCorporateActions)
-            .sorted(self.sortParsedCorporateActions)
+            .sort(self.sortParsedCorporateActions)
         )
 
         return group

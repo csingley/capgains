@@ -4,11 +4,13 @@ Creates model instances from OFX downloads.
 """
 # stdlib imports
 from collections import namedtuple
+import functools
 import itertools
 import operator
 import hashlib
 import logging
 import warnings
+from typing import Callable, Any
 
 
 # 3rd party imports
@@ -17,9 +19,25 @@ from ofxtools.utils import cusip2isin
 
 
 # Local imports
-from capgains import models
+from capgains import models, utils
 from capgains.containers import GroupedList
 from capgains.database import Base, sessionmanager
+
+
+CashTransaction = namedtuple(
+    "CashTransaction",
+    [
+        "fitid",
+        "dttrade",
+        "dtsettle",
+        "memo",
+        "uniqueidtype",
+        "uniqueid",
+        "incometype",
+        "currency",
+        "total",
+    ],
+)
 
 
 class OfxResponseReader(object):
@@ -156,10 +174,12 @@ class OfxStatementReader(object):
             GroupedList(transactions)
             .filter(self.filterTrades)
             .groupby(self.groupTradesForCancel)
-            .cancel(
-                filterfunc=self.filterTradeCancels,
-                matchfunc=self.matchTradeWithCancel,
-                sortfunc=self.sortCanceledTrades,
+            .bind(
+                cancel(
+                    filterfunc=self.filterTradeCancels,
+                    matchfunc=self.matchTradeWithCancel,
+                    sortfunc=self.sortCanceledTrades,
+                )
             )
             .filter(operator.attrgetter("units"))
             .map(self.merge_trade)
@@ -291,10 +311,12 @@ class OfxStatementReader(object):
             GroupedList(transactions)
             .filter(self.filterCashTransactions)
             .groupby(self.groupCashTransactionsForCancel)
-            .cancel(
-                filterfunc=self.filterCashTransactionCancels,
-                matchfunc=self.matchCashTransactionWithCancel,
-                sortfunc=self.sortCanceledCashTransactions,
+            .bind(
+                cancel(
+                    filterfunc=self.filterCashTransactionCancels,
+                    matchfunc=self.matchCashTransactionWithCancel,
+                    sortfunc=self.sortCanceledCashTransactions,
+                )
             )
             .reduce(self.netCashTransactions)
             .filter(operator.attrgetter("total"))
@@ -510,22 +532,42 @@ class OfxStatementReader(object):
 
 
 ###############################################################################
-# DATA CONTAINERS
+# HELPER FUNCTIONS
 ###############################################################################
-CashTransaction = namedtuple(
-    "CashTransaction",
-    [
-        "fitid",
-        "dttrade",
-        "dtsettle",
-        "memo",
-        "uniqueidtype",
-        "uniqueid",
-        "incometype",
-        "currency",
-        "total",
-    ],
-)
+def cancel(
+    filterfunc: Callable[[models.Transaction], bool],
+    matchfunc: Callable[[models.Transaction, models.Transaction], bool],
+    sortfunc: Callable[[models.Transaction], Any],
+) -> "GroupedList":
+    """Factory for functions that identify and apply cancelling Transactions,
+    e.g. trade cancellations or dividened reversals/reclassifications.
+
+    Args: filterfunc - Judges whether a Transaction is a cancelling Transaction.
+          matchfunc - Judges whether two Transactions cancel each other out.
+          sortfunc - function consuming Transaction and returning sort key.
+                     Used to sort original Transactions, against which matching
+                     cancelling transacions will be applied in order.
+    """
+
+    def applyCancel(items):
+        originals, cancels = utils.partition(filterfunc, items)
+        originals = sorted(originals, key=sortfunc)
+
+        for cancel in cancels:
+            canceled = utils.first_true(
+                originals, pred=functools.partial(matchfunc, cancel)
+            )
+            if canceled is False:
+                raise ValueError(
+                    "Can't find Transaction canceled by {}".format(cancel)
+                )
+            # N.B. must remove canceled transaction from further iterations
+            # to avoid multiple cancels matching the same original, thereby
+            # leaving subsequent original(s) uncanceled when they should be
+            originals.remove(canceled)
+        return originals
+
+    return applyCancel
 
 
 ##############################################################################

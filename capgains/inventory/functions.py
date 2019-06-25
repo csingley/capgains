@@ -112,7 +112,7 @@ def load_lots(
     """Apply a sequence of Lots holding units/basis to Portfolio, bound to Transaction.
 
     Used by complex Transactions (Transfer, Spinoff, Exercise) as the second step
-    to transfer extracted basis from source position to destination position.
+    to transfer basis extracted from source position to destination position.
 
     Args:
         portfolio: map of (FI account, security) to list of Lots.

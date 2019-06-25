@@ -1,29 +1,42 @@
 # coding: utf-8
-"""
+"""Container types implementing fluent interfaces.
+
+'Fluent interface' here means processing pipelines implemented by method chaining, e.g.
+
+    GroupedList(transactions)
+    .filter(isInteresting)
+    .groupby(keyFunc)
+    .reduce(netTransactions)
+    .filter(operator.attrgetter("total"))
+    .map(sum)
 """
 # stdlib imports
 import functools
 import itertools
+from typing import Callable, Iterable, Optional, Any
 
 
 # local imports
-from capgains import utils
+from capgains import models, utils
+
+
+ListFunction = Callable[[Iterable], Iterable]
 
 
 class GroupedList(list):
-    """
-    Container that groups items and composes operations on those groups/items.
+    """Container that groups items and composes operations on those groups/items.
 
-    If grouped=False, then it directly contains data (and key is also =False).
+    List items must either be all data, or all nested GroupedList instances.
 
-    If grouped=True, then contents are GroupedList instances whose key
-    attribute is set to the output value of the function used to form the
-    group.  These contained GroupedLists may contain data (in which case they
-    have grouped=False), or they may in turn contain further nested
-    GroupedList instance (in which case they have grouped=True).
+    Public methods all transform the contained data or grouping structure,
+    and return a GroupedList instance containing the transformed grouping/data,
+    so that method chaining may be applied.
 
-    Methods defined here all return GroupedList instances with methods applied,
-    for easy function composition.
+    Attributes:
+        grouped: if False, the instance's list contents are data items.
+                 If True, the instance contains other GroupedList instances.
+        key: the output value of the function used to form the group.
+             This value is None for the root instance.
     """
 
     def __init__(self, *args, **kwargs):
@@ -32,46 +45,13 @@ class GroupedList(list):
         list.__init__(self, *args, **kwargs)
 
     def __repr__(self):
-        return "GroupedList({}, grouped={}, key={})".format(
-            list(self), self.grouped, self.key
-        )
+        return f"GroupedList({list(self)}, grouped={self.grouped}, key={self.key})"
 
-    def bind_data(self, func):
+    def groupby(self, func: Callable) -> "GroupedList":
+        """Group bottom-level data items with function, preserving structure above.
+
+        Increases nesting depth by 1,
         """
-        Applies input function to data items (i.e my own items if they're data,
-        or my children's items if I contain GroupedLists).
-        """
-        if self.grouped:
-            items = [item.bind_data(func) for item in self]
-        else:
-            items = func(self)
-        return self.__class__(items, grouped=self.grouped, key=self.key)
-
-    def sorted(self, func):
-        return self.bind_data(functools.partial(sorted, key=func))
-
-    def filter(self, func=None):
-        # "If function is None, the identity function is assumed,
-        # that is, all elements of iterable that are false are removed."
-        # https://docs.python.org/3/library/functions.html#filter
-        return self.bind_data(functools.partial(filter, func))
-
-    def map(self, func):
-        return self.bind_data(functools.partial(map, func))
-
-    def reduce(self, func):
-        return self.bind_data(
-            lambda items: [functools.reduce(func, items)] if items else []
-        )
-
-    def flatten(self):
-        if self.grouped:
-            items = itertools.chain.from_iterable(item.flatten() for item in self)
-        else:
-            items = self
-        return self.__class__(items, grouped=False, key=None)
-
-    def groupby(self, func):
         if self.grouped:
             return self.__class__(
                 [item.groupby(func) for item in self],
@@ -85,54 +65,49 @@ class GroupedList(list):
             ]
             return self.__class__(items, grouped=True, key=self.key)
 
-    def cancel(self, filterfunc, matchfunc, sortfunc):
+    def flatten(self) -> "GroupedList":
+        """Chain bottom-level data items.  Reduces nesting depth to zero.
         """
-        Identify and apply cancelling transactions.
+        if self.grouped:
+            return type(self)(
+                itertools.chain.from_iterable(item.flatten() for item in self),
+                grouped=False,
+                key=None,
+            )
+        else:
+            return type(self)(self, grouped=False, key=None)
 
-        Specialized method for reversing/cancelled transactions e.g.
-        dividend adjustments & trades.
+    def bind(self, func: ListFunction) -> "GroupedList":
+        """Applies function to bottom-level GroupedList instances (data-bearing).
 
-        Args: filterfunc - function consuming Transaction and returning bool.
-                             Judges whether a given transaction is a cancelling
-                             transaction.
-              matchfunc - function consuming (Transaction, Transaction) and
-                      returning bool.  Judges whether two transactions cancel
-                      each other out.
-              sortfunc - function consuming Transaction and returning sort key.
-                     Used to sort original transactions, against which
-                     matching cancelling transacions will be applied in order.
+        Args:
+            func: function accepting and returning a list.
         """
+        if self.grouped:
+            items = [item.bind(func) for item in self]
+        else:
+            items = list(func(self))
+        return self.__class__(items, grouped=self.grouped, key=self.key)
 
-        def applyCancel(items):
-            originals, cancels = utils.partition(filterfunc, items)
-            originals = sorted(originals, key=sortfunc)
+    def sort(self, func: ListFunction) -> "GroupedList":
+        return self.bind(functools.partial(sorted, key=func))
 
-            for cancel in cancels:
-                canceled = first_true(
-                    originals, pred=functools.partial(matchfunc, cancel)
-                )
-                if canceled is False:
-                    raise ValueError(
-                        "Can't find Transaction canceled by {}".format(cancel)
-                    )
-                # N.B. must remove canceled transaction from further iterations
-                # to avoid multiple cancels matching the same original, thereby
-                # leaving subsequent original(s) uncanceled when they should be
-                originals.remove(canceled)
-            return originals
+    def filter(self, func: Optional[ListFunction] = None) -> "GroupedList":
+        # "If function is None, the identity function is assumed,
+        # that is, all elements of iterable that are false are removed."
+        # https://docs.python.org/3/library/functions.html#filter
+        return self.bind(functools.partial(filter, func))
 
-        return self.bind_data(applyCancel)
+    def map(self, func: ListFunction) -> "GroupedList":
+        return self.bind(functools.partial(map, func))
 
+    def reduce(self, func: Callable[[Any, Any], Any]) -> "GroupedList":
+        """Bind function with functools.reduce() to bottom-level GroupedList instances.
 
-def first_true(iterable, default=False, pred=None):
-    """Returns the first true value in the iterable.
-
-    If no true value is found, returns *default*
-
-    If *pred* is not None, returns the first item
-    for which pred(item) is true.
-
-    """
-    # first_true([a,b,c], x) --> a or b or c or x
-    # first_true([a,b], x, f) --> a if f(a) else b if f(b) else x
-    return next(filter(pred, iterable), default)
+        Args:
+            func: function accepting a pair of data items and returning a single
+                  transformed data item.
+        """
+        return self.bind(
+            lambda items: [functools.reduce(func, items)] if items else []
+        )
