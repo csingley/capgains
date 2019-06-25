@@ -85,7 +85,7 @@ class GroupedList(list):
             items = list(func(self))
         return self.__class__(items, grouped=self.grouped, key=self.key)
 
-    def sort(self, func: ListFunction) -> "GroupedList":
+    def sort(self, func: ListFunction) -> "GroupedList":  # type: ignore
         return self.bind(functools.partial(sorted, key=func))
 
     def filter(self, func: Optional[ListFunction] = None) -> "GroupedList":

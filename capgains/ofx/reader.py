@@ -3,14 +3,15 @@
 Creates model instances from OFX downloads.
 """
 # stdlib imports
-from collections import namedtuple
+from datetime import datetime
+from decimal import Decimal
 import functools
 import itertools
 import operator
 import hashlib
 import logging
 import warnings
-from typing import Callable, Any
+from typing import NamedTuple, Callable, Any
 
 
 # 3rd party imports
@@ -20,24 +21,20 @@ from ofxtools.utils import cusip2isin
 
 # Local imports
 from capgains import models, utils
-from capgains.containers import GroupedList
+from capgains.containers import GroupedList, ListFunction
 from capgains.database import Base, sessionmanager
 
 
-CashTransaction = namedtuple(
-    "CashTransaction",
-    [
-        "fitid",
-        "dttrade",
-        "dtsettle",
-        "memo",
-        "uniqueidtype",
-        "uniqueid",
-        "incometype",
-        "currency",
-        "total",
-    ],
-)
+class CashTransaction(NamedTuple):
+    fitid: str
+    dttrade: datetime
+    dtsettle: datetime
+    memo: str
+    uniqueidtype: str
+    uniqueid: str
+    incometype: str
+    currency: str
+    total: Decimal
 
 
 class OfxResponseReader(object):
@@ -538,7 +535,7 @@ def cancel(
     filterfunc: Callable[[models.Transaction], bool],
     matchfunc: Callable[[models.Transaction, models.Transaction], bool],
     sortfunc: Callable[[models.Transaction], Any],
-) -> "GroupedList":
+) -> ListFunction:
     """Factory for functions that identify and apply cancelling Transactions,
     e.g. trade cancellations or dividened reversals/reclassifications.
 
