@@ -88,13 +88,13 @@ class GroupedList(list):
     def sort(self, func: ListFunction) -> "GroupedList":  # type: ignore
         return self.bind(functools.partial(sorted, key=func))
 
-    def filter(self, func: Optional[ListFunction] = None) -> "GroupedList":
+    def filter(self, func: Optional[Callable[[Any], bool]] = None) -> "GroupedList":
         # "If function is None, the identity function is assumed,
         # that is, all elements of iterable that are false are removed."
         # https://docs.python.org/3/library/functions.html#filter
         return self.bind(functools.partial(filter, func))
 
-    def map(self, func: ListFunction) -> "GroupedList":
+    def map(self, func: Callable[[Any], Any]) -> "GroupedList":
         return self.bind(functools.partial(map, func))
 
     def reduce(self, func: Callable[[Any, Any], Any]) -> "GroupedList":
