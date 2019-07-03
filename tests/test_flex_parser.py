@@ -13,7 +13,7 @@ from ibflex import schemata
 
 
 # local imports
-from capgains.flex import parser
+from capgains.flex import parser, types
 
 
 class FlexParserTestCase(unittest.TestCase):
@@ -21,7 +21,7 @@ class FlexParserTestCase(unittest.TestCase):
         acctinfo = ET.Element("AccountInformation", {"accountId": "12345"})
         acctinfo = schemata.AccountInformation.convert(acctinfo)
         acctinfo = parser.parse_acctinfo(acctinfo)
-        self.assertIsInstance(acctinfo, parser.Account)
+        self.assertIsInstance(acctinfo, types.Account)
         self.assertEqual(acctinfo.acctid, "12345")
         self.assertEqual(acctinfo.brokerid, "4705")
 
@@ -37,7 +37,7 @@ class FlexParserTestCase(unittest.TestCase):
         secs = parser.parse_security(secinfo)
         self.assertEqual(len(secs), 1)
         sec = secs.pop()
-        self.assertIsInstance(sec, parser.Security)
+        self.assertIsInstance(sec, types.Security)
         self.assertEqual(sec.uniqueidtype, "CONID")
         self.assertEqual(sec.uniqueid, "54321")
         self.assertEqual(sec.ticker, "XYZ")
@@ -64,7 +64,7 @@ class FlexParserTestCase(unittest.TestCase):
         """
         trade = schemata.Trade.convert(ET.fromstring(xml))
         tran = parser.parse_trade(trade)
-        self.assertIsInstance(tran, parser.Trade)
+        self.assertIsInstance(tran, types.Trade)
         self.assertEqual(tran.fitid, "1802867961")
         self.assertEqual(tran.dttrade, datetime.datetime(2017, 4, 25, 10, 55, 58))
         self.assertEqual(tran.memo, "SPDR BBG BARC 1-3 MONTH TBIL")
@@ -109,7 +109,7 @@ class FlexParserTestCase(unittest.TestCase):
         cashtx = schemata.CashTransaction.convert(cashtx)
 
         tran = parser.parse_cash_transaction(cashtx)
-        self.assertIsInstance(tran, parser.CashTransaction)
+        self.assertIsInstance(tran, types.CashTransaction)
         self.assertEqual(tran.fitid, "5279100113")
         self.assertEqual(tran.dtsettle, datetime.datetime(2015, 4, 23))
         self.assertEqual(
@@ -127,7 +127,7 @@ class FlexParserTestCase(unittest.TestCase):
         corpact = ET.fromstring(xml)
         corpact = schemata.CorporateAction.convert(corpact)
         tran = parser.parse_corporate_action(corpact)
-        self.assertIsInstance(tran, parser.CorporateAction)
+        self.assertIsInstance(tran, types.CorporateAction)
         self.assertEqual(tran.fitid, None)
         self.assertEqual(tran.dttrade, datetime.datetime(2012, 5, 14, 19, 45, 0))
         self.assertEqual(
@@ -156,7 +156,7 @@ class FlexParserTestCase(unittest.TestCase):
         )
         corpact = schemata.Transfer.convert(corpact)
         tran = parser.parse_transfer(corpact)
-        self.assertIsInstance(tran, parser.Transfer)
+        self.assertIsInstance(tran, types.Transfer)
         # FIXME - unique ID
         # self.assertEqual(tran.fitid, None)
         self.assertEqual(tran.dttrade, datetime.date(1997, 6, 17))

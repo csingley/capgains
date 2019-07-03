@@ -11,30 +11,50 @@ import operator
 import hashlib
 import logging
 import warnings
-from typing import NamedTuple, Callable, Any
+from typing import (
+    Tuple,
+    List,
+    MutableMapping,
+    Callable,
+    Optional,
+    Any,
+    Union,
+)
 
 
 # 3rd party imports
-from sqlalchemy import create_engine
-from ofxtools.utils import cusip2isin
+import sqlalchemy
+import ofxtools
 
 
 # Local imports
 from capgains import models, utils
 from capgains.containers import GroupedList, ListFunction
 from capgains.database import Base, sessionmanager
+from capgains.flex import types
 
 
-class CashTransaction(NamedTuple):
-    fitid: str
-    dttrade: datetime
-    dtsettle: datetime
-    memo: str
-    uniqueidtype: str
-    uniqueid: str
-    incometype: str
-    currency: str
-    total: Decimal
+Trade = Union[
+    ofxtools.models.BUYDEBT,
+    ofxtools.models.SELLDEBT,
+    ofxtools.models.BUYMF,
+    ofxtools.models.SELLMF,
+    ofxtools.models.BUYOPT,
+    ofxtools.models.SELLOPT,
+    ofxtools.models.BUYOTHER,
+    ofxtools.models.SELLOTHER,
+    ofxtools.models.BUYSTOCK,
+    ofxtools.models.SELLSTOCK,
+]
+
+
+CashTransaction = Union[
+    ofxtools.models.INCOME,
+    ofxtools.models.INVEXPENSE,
+]
+
+
+Transfer = Union[ofxtools.models.TRANSFER]
 
 
 class OfxResponseReader(object):
@@ -42,12 +62,13 @@ class OfxResponseReader(object):
     Processor for ofxtools.models.ofx.OFX instance
     """
 
-    def __init__(self, session, response):
-        """
-        Args: session - sqlalchemy.orm.session.Session instance
-              response - ofxtools.models.ofx.OFX instance
-        """
+    def __init__(
+        self,
+        session: sqlalchemy.orm.session.Session,
+        response: Optional[ofxtools.models.ofx.OFX] = None,
+    ) -> None:
         self.session = session
+        response = response or []
         self.statements = [OfxStatementReader(session, stmt) for stmt in response]
 
     def read(self):
@@ -60,37 +81,40 @@ class OfxStatementReader(object):
     Processor for ofxtools.models.INVSTMTRS instance
     """
 
-    def __init__(self, session, statement=None, seclist=None):
-        """
-        Args: session - sqlalchemy.orm.session.Session instance
-              statement - ofxtools.models.investment.INVSTMTRS instance
-              seclist - ofxtools.models.seclist.SECLIST instance
-        """
+    def __init__(
+        self,
+        session: sqlalchemy.orm.session.Session,
+        statement: Optional[ofxtools.models.INVSTMTRS] = None,
+        seclist: Optional[ofxtools.models.SECLIST] = None,
+    ) -> None:
         self.session = session
         self.statement = statement
         self.seclist = seclist
-        self.account = None
-        self.index = None
-        self.securities = {}
-        self.transactions = []
+        self.account: Optional[models.FiAccount] = None
+        #  self.index = None
+        self.securities: MutableMapping[Tuple[str, str], models.Security] = {}
+        self.transactions: List[models.Transaction] = []
 
-    def read(self, doTransactions=True):
+    def read(self, doTransactions: bool = True):
         self.read_header()
         self.read_account()
         self.read_securities()
         if doTransactions:
             self.read_transactions()
 
-    def read_header(self):
+    def read_header(self) -> None:
+        assert self.statement is not None
         self.currency_default = self.statement.curdef
 
-    def read_account(self):
+    def read_account(self) -> None:
+        assert self.statement is not None
         account = self.statement.account
         self.account = models.FiAccount.merge(
             self.session, brokerid=account.brokerid, number=account.acctid
         )
 
-    def read_securities(self):
+    def read_securities(self) -> None:
+        assert self.seclist is not None
         for sec in self.seclist:
             uniqueidtype = sec.uniqueidtype
             uniqueid = sec.uniqueid
@@ -107,7 +131,7 @@ class OfxStatementReader(object):
             # Also do ISIN; why not?
             if uniqueidtype == "CUSIP":
                 try:
-                    uniqueid = cusip2isin(uniqueid)
+                    uniqueid = ofxtools.utils.cusip2isin(uniqueid)
                     uniqueidtype = "ISIN"
                     sec = models.Security.merge(
                         self.session,
@@ -120,20 +144,21 @@ class OfxStatementReader(object):
                 except ValueError:
                     pass
 
-    def read_transactions(self):
+    def read_transactions(self) -> None:
         """
         Group parsed statement transaction instances and dispatch groups to
         relevant handler functions
         """
+        assert self.statement is not None
         self.statement.transactions.sort(key=self.groupTransactions)
         for handler, transactions in itertools.groupby(
             self.statement.transactions, key=self.groupTransactions
         ):
             if handler:
                 handler = getattr(self, handler)
-                handler(transactions)
+                handler(transactions)  # type: ignore
 
-    def groupTransactions(self, transaction):
+    def groupTransactions(self, transaction: models.Transaction) -> str:
         """ Group parsed statement transaction instances by class name """
         return self.transaction_handlers.get(transaction.__class__.__name__, "")
 
@@ -156,7 +181,7 @@ class OfxStatementReader(object):
     ###########################################################################
     # TRADES
     ###########################################################################
-    def doTrades(self, transactions):
+    def doTrades(self, transactions: Trade) -> None:
         """
         Preprocess trade transactions and send to merge_trade().
 
@@ -164,10 +189,9 @@ class OfxStatementReader(object):
         to net out canceled trades.
 
         Args: transactions - a sequence of instances implementing the interface
-                             of ofxtools.models.investment.{BUY*, SELL*}
-                             (as used by the methods below)
+                             of ofxtools.models.{BUY*, SELL*} (as used by methods below)
         """
-        txs = (
+        (
             GroupedList(transactions)
             .filter(self.filterTrades)
             .groupby(self.groupTradesForCancel)
@@ -183,7 +207,7 @@ class OfxStatementReader(object):
         )
 
     @staticmethod
-    def filterTrades(transaction):
+    def filterTrades(transaction: Trade) -> bool:
         """
         Should this trade be processed?  Implement in subclass.
 
@@ -193,7 +217,7 @@ class OfxStatementReader(object):
         return True
 
     @staticmethod
-    def groupTradesForCancel(transaction):
+    def groupTradesForCancel(transaction: Trade) -> Any:
         """
         Transactions are grouped if they have the same security/datetime
         and matching units.  abs(units) is used so that trade cancellations
@@ -210,7 +234,7 @@ class OfxStatementReader(object):
         )
 
     @staticmethod
-    def filterTradeCancels(transaction):
+    def filterTradeCancels(transaction: Trade) -> bool:
         """
         Is this trade actually a trade cancellation?  Implement in subclass.
 
@@ -221,7 +245,7 @@ class OfxStatementReader(object):
         return False
 
     @staticmethod
-    def matchTradeWithCancel(transaction0, transaction1):
+    def matchTradeWithCancel(transaction0: Trade, transaction1: Trade) -> bool:
         """
         Does one of these trades cancel the other?
 
@@ -232,7 +256,7 @@ class OfxStatementReader(object):
         return transaction0.units == -1 * transaction1.units
 
     @staticmethod
-    def sortCanceledTrades(transaction):
+    def sortCanceledTrades(transaction: Trade) -> Any:
         """
         Determines order in which trades are canceled.
 
@@ -241,7 +265,7 @@ class OfxStatementReader(object):
         """
         return transaction.fitid
 
-    def merge_trade(self, tx, memo=None):
+    def merge_trade(self, tx: Trade, memo: Optional[str] = None):
         """
         Process a trade into data fields to hand off to merge_transaction()
         to persist in the database.
@@ -273,7 +297,7 @@ class OfxStatementReader(object):
         )
 
     @staticmethod
-    def sortForTrade(transaction):
+    def sortForTrade(transaction: Trade) -> Any:
         """
         What flex.parser sort algorithm that applies to this transaction?
 
@@ -287,7 +311,7 @@ class OfxStatementReader(object):
     ###########################################################################
     # CASH TRANSACTIONS
     ###########################################################################
-    def doCashTransactions(self, transactions):
+    def doCashTransactions(self, transactions: List[CashTransaction]) -> None:
         """
         Preprocess cash transactions and send to merge_retofcap().
 
@@ -304,7 +328,7 @@ class OfxStatementReader(object):
         Args: transactions - a sequence of instances implementing the interface
                              of ofxtools.models.investment.INCOME
         """
-        txs = (
+        (
             GroupedList(transactions)
             .filter(self.filterCashTransactions)
             .groupby(self.groupCashTransactionsForCancel)
@@ -322,7 +346,7 @@ class OfxStatementReader(object):
         )
 
     @staticmethod
-    def filterCashTransactions(transaction):
+    def filterCashTransactions(transaction: CashTransaction) -> bool:
         """
         Judge whether a transaction should be processed (i.e. it's a return
         of capital).
@@ -336,7 +360,7 @@ class OfxStatementReader(object):
         return False
 
     @staticmethod
-    def groupCashTransactionsForCancel(transaction):
+    def groupCashTransactionsForCancel(transaction: CashTransaction) -> Any:
         """
         Cash transactions are grouped together for cancellation/netting
         if they're for the same security at the same time with the same memo.
@@ -349,7 +373,7 @@ class OfxStatementReader(object):
         return transaction.dttrade, security, memo
 
     @staticmethod
-    def filterCashTransactionCancels(transaction):
+    def filterCashTransactionCancels(transaction: CashTransaction) -> Any:
         """
         Is this cash transaction actually a reversal?  Implement in subclass.
 
@@ -360,7 +384,10 @@ class OfxStatementReader(object):
         return False
 
     @staticmethod
-    def matchCashTransactionWithCancel(transaction0, transaction1):
+    def matchCashTransactionWithCancel(
+        transaction0: CashTransaction,
+        transaction1: CashTransaction
+    ) -> bool:
         """
         Does one of these cash transactions reverse the other?
 
@@ -371,7 +398,7 @@ class OfxStatementReader(object):
         return transaction0.total == -1 * transaction1.total
 
     @staticmethod
-    def sortCanceledCashTransactions(transaction):
+    def sortCanceledCashTransactions(transaction: CashTransaction) -> Any:
         """
         Determines order in which cash transactions are reversed.
 
@@ -382,20 +409,24 @@ class OfxStatementReader(object):
         """
         return False
 
-    def netCashTransactions(self, transaction0, transaction1):
+    def netCashTransactions(
+        self,
+        transaction0: CashTransaction,
+        transaction1: CashTransaction
+    ) -> types.CashTransaction:
         """
         Combine two cash transactions by summing their totals, and taking
         the earliest of their dates.
 
         Args: two instances implementing the interface of
               ofxtools.models.investment.INCOME
-        Returns: a CashTransaction namedtuple instance (which implements the
+        Returns: a flex.types.CashTransaction namedtuple instance (which implements the
                  key parts of the INCOME interface)
         """
         dttrade = self._minDateTime(transaction0.dttrade, transaction1.dttrade)
         dtsettle = self._minDateTime(transaction0.dtsettle, transaction1.dtsettle)
         total = transaction0.total + transaction1.total
-        return CashTransaction(
+        return types.CashTransaction(
             transaction0.fitid,
             dttrade,
             dtsettle,
@@ -408,16 +439,16 @@ class OfxStatementReader(object):
         )
 
     @staticmethod
-    def _minDateTime(datetime0, datetime1):
+    def _minDateTime(*args: Optional[datetime]) -> Optional[datetime]:
+        """Choose the earliest non-None datetime.  If all are None, return None.
         """
-        Handle None values when taking the min of two datetimes.
-        """
-        dt0 = datetime0 or 0
-        dt1 = datetime1 or 0
-        return min(dt0, dt1) or None
+        non_null = [dt for dt in args if dt is not None]
+        if not non_null:
+            return None
+        return min(non_null)
 
     @staticmethod
-    def fixCashTransactions(transaction):
+    def fixCashTransactions(transaction: CashTransaction) -> CashTransaction:
         """
         Any last processing of the transaction before it's persisted to the DB.
 
@@ -428,7 +459,11 @@ class OfxStatementReader(object):
         """
         return transaction
 
-    def merge_retofcap(self, transaction, memo=None):
+    def merge_retofcap(
+        self,
+        transaction: CashTransaction,
+        memo: Optional[str] = None
+    ) -> models.Transaction:
         """
         Process a return of capital cash transaction into data fields to
         hand off to merge_transaction() to persist in the database.
@@ -461,7 +496,7 @@ class OfxStatementReader(object):
     ###########################################################################
     # ACCOUNT TRANSFERS
     ###########################################################################
-    def doTransfers(self, transactions):
+    def doTransfers(self, transactions: List[Transfer]) -> List[models.Transaction]:
         """
         Preprocess transfer transactions - not handled here in the base class,
         since OFX data doesn't really give us enough information to match the
@@ -473,8 +508,9 @@ class OfxStatementReader(object):
         for tx in transactions:
             msg = "Skipping transfer {}".format(tx)
             warnings.warn(msg)
+        return []
 
-    def merge_transaction(self, **kwargs):
+    def merge_transaction(self, **kwargs) -> models.Transaction:
         """
         Persist a transaction to the database, using merge() logic i.e. insert
         if it doesn't already exist.
@@ -486,18 +522,18 @@ class OfxStatementReader(object):
 
     @staticmethod
     def make_uid(
-        type,
-        datetime,
-        fiaccount,
-        security,
-        units=None,
-        currency=None,
-        cash=None,
-        fromfiaccount=None,
-        fromsecurity=None,
-        fromunits=None,
-        numerator=None,
-        denominator=None,
+        type: models.TransactionType,
+        datetime: datetime,
+        fiaccount: models.FiAccount,
+        security: models.SecurityId,
+        units: Optional[Decimal] = None,
+        currency: Optional[str] = None,
+        cash: Optional[Decimal] = None,
+        fromfiaccount: Optional[models.FiAccount] = None,
+        fromsecurity: Optional[models.Security] = None,
+        fromunits: Optional[Decimal] = None,
+        numerator: Optional[Decimal] = None,
+        denominator: Optional[Decimal] = None,
         **kwargs
     ):
         """
@@ -586,7 +622,7 @@ def main():
     logging.basicConfig(level=logLevel)
     logging.captureWarnings(True)
 
-    engine = create_engine(args.database)
+    engine = sqlalchemy.create_engine(args.database)
     Base.metadata.create_all(bind=engine)
 
     for file in args.file:

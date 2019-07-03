@@ -15,7 +15,8 @@ import ofxtools
 
 # local imports
 from capgains.config import CONFIG
-from capgains.ofx.reader import OfxStatementReader, CashTransaction
+from capgains.ofx.reader import OfxStatementReader
+from capgains import flex
 from capgains.models import (
     Fi,
     FiAccount,
@@ -201,7 +202,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
         """
         keyCashTransaction() extracts (incometype, (uniqueidtype, uniqueid), memo)
         """
-        tx = CashTransaction(
+        tx = flex.types.CashTransaction(
             fitid="5279100113",
             dttrade=datetime(2015, 4, 24),
             dtsettle=None,
@@ -233,7 +234,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
         _netCashTransactions() returns CashTransaction with amount summed,
         earliest dttrade, and other fields from the first transaction.
         """
-        tx0 = CashTransaction(
+        tx0 = flex.types.CashTransaction(
             fitid="5279100113",
             dttrade=datetime(2015, 4, 24),
             dtsettle=None,
@@ -244,7 +245,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             currency="USD",
             total=Decimal("593517"),
         )
-        tx1 = CashTransaction(
+        tx1 = flex.types.CashTransaction(
             fitid="5279100115",
             dttrade=datetime(2015, 4, 23),
             dtsettle=None,
@@ -256,7 +257,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             total=Decimal("150"),
         )
         net = OfxStatementReader(None).netCashTransactions(tx0, tx1)
-        self.assertIsInstance(net, CashTransaction)
+        self.assertIsInstance(net, flex.types.CashTransaction)
         # netCashTransactions() chooses the first transactionID
         self.assertEqual(net.fitid, "5279100113")
         self.assertEqual(net.dttrade, datetime(2015, 4, 23))
@@ -274,7 +275,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
         self.session.add_all([fi, acct, security])
         self.reader.account = acct
         self.reader.securities = {("ISIN", "9999"): security}
-        tx = CashTransaction(
+        tx = flex.types.CashTransaction(
             fitid="deadbeef",
             dttrade=datetime(2015, 4, 1),
             dtsettle=None,

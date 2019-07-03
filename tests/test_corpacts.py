@@ -9,7 +9,8 @@ import re
 
 
 # local imports
-from capgains import flex, containers
+from capgains import containers
+from capgains.flex import types, reader
 from capgains.inventory import (
     Trade,
     ReturnOfCapital,
@@ -51,7 +52,7 @@ class CorpActPreprocessingMixin(object):
         raw_memo = "{} ({}, {}, {})".format(
             key.memo, fields.ticker, fields.secname, fields.cusip
         )
-        raw = flex.parser.CorporateAction(
+        raw = types.CorporateAction(
             fitid=None,
             dttrade=key.dttrade,
             memo=raw_memo,
@@ -64,7 +65,7 @@ class CorpActPreprocessingMixin(object):
             reportdate=fields.reportdate,
             code=[],
         )
-        return flex.reader.ParsedCorpAct(
+        return reader.ParsedCorpAct(
             raw=raw,
             type=key.type,
             ticker=stripped_ticker,

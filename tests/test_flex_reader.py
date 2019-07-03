@@ -14,8 +14,7 @@ from capgains.flex import reader
 from capgains.flex.reader import FlexStatementReader, ParsedCorpAct
 
 from capgains.config import CONFIG
-from capgains.flex import parser
-from capgains.flex.parser import CorporateAction
+from capgains.flex import parser, types
 from capgains import models
 from capgains.ofx.reader import OfxStatementReader
 from capgains.inventory import ReturnOfCapital
@@ -59,7 +58,7 @@ class ReadTestCase(unittest.TestCase):
         mock_ofx_read_method.assert_called_with(True)
 
     def testReadDividends(self):
-        div0 = parser.Dividend(
+        div0 = types.Dividend(
             conid=sentinel.conid0,
             exDate=None,
             payDate=sentinel.payDate0,
@@ -68,7 +67,7 @@ class ReadTestCase(unittest.TestCase):
             taxesAndFees=None,
             total=None,
         )
-        div1 = parser.Dividend(
+        div1 = types.Dividend(
             conid=sentinel.conid1,
             exDate=None,
             payDate=sentinel.payDate1,
@@ -77,7 +76,7 @@ class ReadTestCase(unittest.TestCase):
             taxesAndFees=None,
             total=None,
         )
-        self.reader.statement = parser.FlexStatement(
+        self.reader.statement = types.FlexStatement(
             account=None,
             securities=None,
             dividends=[div0, div1],
@@ -97,19 +96,19 @@ class ReadTestCase(unittest.TestCase):
 
     @patch.object(models.Security, "merge", wraps=lambda session, **sec: sec)
     def testReadSecurities(self, mock_security_merge_method):
-        sec0 = parser.Security(
+        sec0 = types.Security(
             uniqueidtype=sentinel.cusip,
             uniqueid=sentinel.uniqueid0,
             secname=sentinel.secname0,
             ticker=sentinel.ticker0,
         )
-        sec1 = parser.Security(
+        sec1 = types.Security(
             uniqueidtype=sentinel.isin,
             uniqueid=sentinel.uniqueid1,
             secname=sentinel.secname1,
             ticker=sentinel.ticker1,
         )
-        self.reader.statement = parser.FlexStatement(
+        self.reader.statement = types.FlexStatement(
             account=None,
             securities=[sec0, sec1],
             dividends=None,
@@ -149,7 +148,7 @@ class ReadTestCase(unittest.TestCase):
 
 class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
     def testFilterTrades(self):
-        t0 = parser.Trade(
+        t0 = types.Trade(
             memo="Something",
             fitid=None,
             dttrade=None,
@@ -164,7 +163,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t0), True)
 
-        t1 = parser.Trade(
+        t1 = types.Trade(
             memo="USD.CAD",
             fitid=None,
             dttrade=None,
@@ -179,7 +178,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t1), False)
 
-        t2 = parser.Trade(
+        t2 = types.Trade(
             memo="CAD.USD",
             fitid=None,
             dttrade=None,
@@ -194,7 +193,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t2), False)
 
-        t3 = parser.Trade(
+        t3 = types.Trade(
             memo="USD.EUR",
             fitid=None,
             dttrade=None,
@@ -209,7 +208,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t3), False)
 
-        t4 = parser.Trade(
+        t4 = types.Trade(
             memo="EUR.USD",
             fitid=None,
             dttrade=None,
@@ -225,7 +224,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.filterTrades(t4), False)
 
     def testFilterTradeCancels(self):
-        t0 = parser.Trade(
+        t0 = types.Trade(
             notes=["Ca", "P"],
             fitid=None,
             dttrade=None,
@@ -240,7 +239,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTradeCancels(t0), True)
 
-        t1 = parser.Trade(
+        t1 = types.Trade(
             notes=["O", "C"],
             fitid=None,
             dttrade=None,
@@ -256,7 +255,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.filterTradeCancels(t1), False)
 
     def testSortCanceledTrades(self):
-        t0 = parser.Trade(
+        t0 = types.Trade(
             reportdate="something",
             fitid=None,
             dttrade=None,
@@ -272,7 +271,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.sortCanceledTrades(t0), "something")
 
     def testSortForTrade(self):
-        t0 = parser.Trade(
+        t0 = types.Trade(
             notes=["ML", "C"],
             fitid=None,
             dttrade=None,
@@ -287,7 +286,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.sortForTrade(t0), "MINGAIN")
 
-        t1 = parser.Trade(
+        t1 = types.Trade(
             notes=["LI", "C"],
             fitid=None,
             dttrade=None,
@@ -302,7 +301,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.sortForTrade(t1), "LIFO")
 
-        t2 = parser.Trade(
+        t2 = types.Trade(
             notes=["Ca", "O"],
             fitid=None,
             dttrade=None,
@@ -317,7 +316,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.sortForTrade(t2), None)
 
-        t3 = parser.Trade(
+        t3 = types.Trade(
             notes=["ML", "LI"],
             fitid=None,
             dttrade=None,
@@ -336,7 +335,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
 
 class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
     def testFilterCashTransactions(self):
-        t0 = parser.CashTransaction(
+        t0 = types.CashTransaction(
             incometype="Dividends",
             memo="foo ReTuRn Of CAPitAL bar",
             fitid=None,
@@ -349,7 +348,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterCashTransactions(t0), True)
 
-        t1 = parser.CashTransaction(
+        t1 = types.CashTransaction(
             incometype="Dividends",
             memo="foo InTeRiMlIqUiDaTiOn bar",
             fitid=None,
@@ -362,7 +361,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterCashTransactions(t1), True)
 
-        t2 = parser.CashTransaction(
+        t2 = types.CashTransaction(
             incometype="Dividends",
             memo="foo bar",
             fitid=None,
@@ -375,7 +374,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterCashTransactions(t2), False)
 
-        t3 = parser.CashTransaction(
+        t3 = types.CashTransaction(
             incometype="Income",
             memo="foo interimliquidation bar",
             fitid=None,
@@ -396,7 +395,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         FlexStatementReader.groupCashTransactionsForCancel() returns
         (tx.dtsettle, (tx.uniqueidtype, tx.uniqueid), tx.memo)
         """
-        tx = parser.CashTransaction(
+        tx = types.CashTransaction(
             memo=sentinel.memo,
             fitid=None,
             dttrade=None,
@@ -425,7 +424,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.stripCashTransactionMemo(memo), "foo bar")
 
     def testFilterCashTransactionCancels(self):
-        tx = parser.CashTransaction(
+        tx = types.CashTransaction(
             memo="foobar",
             fitid=None,
             dttrade=None,
@@ -439,7 +438,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         output = self.reader.filterCashTransactionCancels(tx)
         self.assertEqual(output, False)
 
-        tx = parser.CashTransaction(
+        tx = types.CashTransaction(
             memo="fooREVERSALbar",
             fitid=None,
             dttrade=None,
@@ -453,7 +452,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         output = self.reader.filterCashTransactionCancels(tx)
         self.assertEqual(output, True)
 
-        tx = parser.CashTransaction(
+        tx = types.CashTransaction(
             memo="fooCANCELbar",
             fitid=None,
             dttrade=None,
@@ -471,7 +470,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         """
         FlexStatementReader.sortCanceledCashTransactions() returns tx.fitid
         """
-        tx = parser.CashTransaction(
+        tx = types.CashTransaction(
             memo=None,
             fitid=sentinel.fitid,
             dttrade=None,
@@ -489,7 +488,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         # N.B. flex.reader.FlexStatementReader.dividends is keyed by type
         # datetime.date, but flex.parser.CashTransaction.dtsettle is type
         # datetime.datetime
-        div = parser.Dividend(
+        div = types.Dividend(
             conid=sentinel.conid,
             exDate=sentinel.exDate,
             payDate=sentinel.payDate,
@@ -500,7 +499,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.reader.dividends[(sentinel.conid, date(2012, 5, 3))] = div
 
-        tx = parser.CashTransaction(
+        tx = types.CashTransaction(
             memo=None,
             fitid=None,
             dttrade=None,
@@ -512,7 +511,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             incometype=None,
         )
         output = self.reader.fixCashTransactions(tx)
-        self.assertIsInstance(output, parser.CashTransaction)
+        self.assertIsInstance(output, types.CashTransaction)
         self.assertEqual(output.memo, tx.memo)
         self.assertEqual(output.fitid, tx.fitid)
         self.assertEqual(output.dttrade, sentinel.exDate)
@@ -559,7 +558,7 @@ class CashTransactionWithFilterCancelTestCase(
 class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
     @patch.object(FlexStatementReader, "merge_account_transfer")
     def testDoTransfers(self, mock_merge_acct_transfer_method):
-        tx0 = parser.Transfer(
+        tx0 = types.Transfer(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -570,7 +569,7 @@ class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
             type=None,
             other_acctid=None,
         )
-        tx1 = parser.Transfer(
+        tx1 = types.Transfer(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -581,7 +580,7 @@ class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
             type=None,
             other_acctid=None,
         )
-        tx2 = parser.Transfer(
+        tx2 = types.Transfer(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -862,7 +861,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(len(self.corpActMemos), len(self.cmptypes))
 
     def testGroupCorporateAcionsForCancel(self):
-        corpAct = parser.CorporateAction(
+        corpAct = types.CorporateAction(
             fitid=None,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,
@@ -887,7 +886,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
     def testFilterCorporateActionCancels(self):
-        corpAct0 = parser.CorporateAction(
+        corpAct0 = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -902,7 +901,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertIs(self.reader.filterCorporateActionCancels(corpAct0), True)
 
-        corpAct0 = parser.CorporateAction(
+        corpAct0 = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -918,7 +917,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertIs(self.reader.filterCorporateActionCancels(corpAct0), False)
 
     def testMatchCorporateActionWithCancel(self):
-        corpAct0 = parser.CorporateAction(
+        corpAct0 = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -931,7 +930,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        corpAct1 = parser.CorporateAction(
+        corpAct1 = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -944,7 +943,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        corpAct2 = parser.CorporateAction(
+        corpAct2 = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -966,7 +965,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
     def testSortCanceledCorporateActions(self):
-        corpAct = parser.CorporateAction(
+        corpAct = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -985,7 +984,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
     def testNetCorporateActions(self):
-        corpAct0 = parser.CorporateAction(
+        corpAct0 = types.CorporateAction(
             fitid=sentinel.fitid0,
             dttrade=sentinel.dttrade0,
             memo=sentinel.memo0,
@@ -998,7 +997,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=sentinel.reportdate0,
             code=sentinel.code0,
         )
-        corpAct1 = parser.CorporateAction(
+        corpAct1 = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -1013,7 +1012,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
         result = self.reader.netCorporateActions(corpAct0, corpAct1)
-        self.assertIsInstance(result, parser.CorporateAction)
+        self.assertIsInstance(result, types.CorporateAction)
         self.assertIs(result.fitid, sentinel.fitid0)
         self.assertIs(result.dttrade, sentinel.dttrade0)
         self.assertIs(result.memo, sentinel.memo0)
@@ -1041,7 +1040,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             secname = ", ".join(payload)
 
             typ = self.cmptypes[i]
-            ca = CorporateAction(
+            ca = types.CorporateAction(
                 None, None, memo, None, None, None, None, None, typ, None, None
             )
             pca = self.reader.parseCorporateActionMemo(ca)
@@ -1059,7 +1058,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             self.assertEqual(inferredType, self.cmptypes[i])
 
     def testGroupParsedCorporateActions(self):
-        corpAct = parser.CorporateAction(
+        corpAct = types.CorporateAction(
             fitid=None,
             dttrade=sentinel.dttrade,
             memo=None,
@@ -1086,7 +1085,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
     def testSortParsedCorporateActions(self):
-        corpAct = parser.CorporateAction(
+        corpAct = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -1119,7 +1118,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.securities[
             (sentinel.uniqueidtype1, sentinel.uniqueid1)
         ] = sentinel.security1
-        src = parser.CorporateAction(
+        src = types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=sentinel.memo0,
@@ -1132,7 +1131,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        dest = parser.CorporateAction(
+        dest = types.CorporateAction(
             fitid=sentinel.fitid1,
             dttrade=sentinel.dttrade1,
             memo=sentinel.memo1,
@@ -1184,7 +1183,7 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
     )
     def testMergeSplit(self, mock_merge_transaction_method):
         self.securities[(sentinel.uniqueidtype, sentinel.uniqueid)] = sentinel.security
-        corpAct = parser.CorporateAction(
+        corpAct = types.CorporateAction(
             fitid=sentinel.fitid,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,
@@ -1228,7 +1227,7 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
     )
     def testMergeSplitOverrideMemo(self, mock_merge_transaction_method):
         self.securities[(sentinel.uniqueidtype, sentinel.uniqueid)] = sentinel.security
-        corpAct = parser.CorporateAction(
+        corpAct = types.CorporateAction(
             fitid=sentinel.fitid,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,
@@ -1274,7 +1273,7 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
     )
     def testSpinoff(self, mock_merge_transaction_method):
         self.securities[(sentinel.uniqueidtype, sentinel.uniqueid)] = sentinel.security
-        corpAct = parser.CorporateAction(
+        corpAct = types.CorporateAction(
             fitid=sentinel.fitid,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,

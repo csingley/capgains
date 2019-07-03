@@ -10,7 +10,7 @@ from decimal import Decimal
 
 # local imports
 from capgains.containers import GroupedList
-from capgains.flex.parser import Trade
+from capgains.flex.types import Trade
 from capgains.ofx.reader import cancel
 
 

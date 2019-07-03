@@ -24,6 +24,7 @@ from capgains.ofx.reader import OfxStatementReader, cancel
 from capgains.database import Base, sessionmanager
 from capgains import models
 from capgains.flex import BROKERID
+from capgains.flex import types
 from capgains.flex.regexes import (
     corpActRE,
     changeSecurityRE,
@@ -37,7 +38,6 @@ from capgains.flex.regexes import (
     cashAndKindMergerRE,
     tenderRE,
 )
-from capgains.flex.parser import CorporateAction, Trade
 from capgains.containers import GroupedList
 
 
@@ -472,7 +472,7 @@ class FlexStatementReader(OfxStatementReader):
         assert corpAct0.currency == corpAct1.currency
         units = corpAct0.units + corpAct1.units
         total = corpAct0.total + corpAct1.total
-        return CorporateAction(
+        return types.CorporateAction(
             fitid=corpAct0.fitid,
             dttrade=corpAct0.dttrade,
             memo=corpAct0.memo,
@@ -859,7 +859,7 @@ class FlexStatementReader(OfxStatementReader):
             basis_adj = self._basis_stack.pop((src.uniqueidtype, src.uniqueid), None)
             if basis_adj:
                 assert spinoff.units > 0
-                tx = Trade(
+                tx = types.Trade(
                     fitid=spinoff.fitid,
                     dttrade=basis_adj.datetime,
                     memo=memo,
