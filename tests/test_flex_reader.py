@@ -1,25 +1,18 @@
 # coding: utf-8
+"""Unit tests for capgains.flex.reader.
 """
-"""
-# stdlib imports
 import unittest
 from unittest.mock import patch, call, sentinel
 from datetime import datetime, date
 from decimal import Decimal
 import os
 
+import ibflex
 
-# local imports
-from capgains.flex import reader
-from capgains.flex.reader import FlexStatementReader, ParsedCorpAct
-
+from capgains import ofx, flex, models, inventory
 from capgains.config import CONFIG
-from capgains.flex import parser, types
-from capgains import models
-from capgains.ofx.reader import OfxStatementReader
-from capgains.inventory import ReturnOfCapital
 
-from common import setUpModule, tearDownModule, RollbackMixin, XmlSnippetMixin
+from common import setUpModule, tearDownModule, RollbackMixin, ReadXmlSnippetMixin
 
 
 DB_URI = CONFIG.db_uri
@@ -30,62 +23,74 @@ class FlexStatementReaderMixin(RollbackMixin):
     def setUpClass(cls):
         super(FlexStatementReaderMixin, cls).setUpClass()
 
-        cls.reader = FlexStatementReader(cls.session)
+        cls.reader = flex.reader.FlexStatementReader(cls.session)
         cls.securities = {}
         cls.reader.securities = cls.securities
-
-
-class CashTransactionXmlSnippetMixin(XmlSnippetMixin):
-    txs_entry_point = "doCashTransactions"
+        cls.reader.account = None
 
 
 class ReadTestCase(unittest.TestCase):
     def setUp(self):
-        self.reader = FlexStatementReader(None)
+        # Need a default currency
+        account = flex.Types.Account(
+            brokerid="",
+            acctid="",
+            name=None,
+            currency="USD",
+        )
+        statement = flex.Types.FlexStatement(
+            account=account,
+            securities=(),
+            transactions=(),
+            changeInDividendAccruals=(),
+            conversionRates=(),
+        )
 
-    @patch.object(OfxStatementReader, "read")
-    @patch.object(FlexStatementReader, "read_dividends")
-    @patch.object(FlexStatementReader, "read_currency_rates")
+        self.reader = flex.reader.FlexStatementReader(None, statement)
+
+    @patch.object(ofx.reader.OfxStatementReader, "read")
+    @patch.object(flex.reader.FlexStatementReader, "read_change_in_dividend_accruals")
+    @patch.object(flex.reader.FlexStatementReader, "read_currency_rates")
     def testRead(
         self,
         mock_flex_read_currency_rates_method,
-        mock_flex_read_dividends_method,
+        mock_flex_read_change_in_dividends_method,
         mock_ofx_read_method,
     ):
         self.reader.read()
         mock_flex_read_currency_rates_method.assert_called_once()
-        mock_flex_read_dividends_method.assert_called_once()
+        mock_flex_read_change_in_dividends_method.assert_called_once()
         mock_ofx_read_method.assert_called_with(True)
 
-    def testReadDividends(self):
-        div0 = types.Dividend(
+    def testReadChangeInDividendAccruals(self):
+        """read_change_in_dividend_accruals()
+        """
+        div0 = ibflex.Types.ChangeInDividendAccrual(
+            date=date(2010, 6, 1),
             conid=sentinel.conid0,
-            exDate=None,
             payDate=sentinel.payDate0,
-            quantity=None,
-            grossRate=None,
-            taxesAndFees=None,
-            total=None,
+            code=[ibflex.enums.Code.REVERSE],
         )
-        div1 = types.Dividend(
+        div1 = ibflex.Types.ChangeInDividendAccrual(
+            date=date(2010, 7, 1),
             conid=sentinel.conid1,
-            exDate=None,
             payDate=sentinel.payDate1,
-            quantity=None,
-            grossRate=None,
-            taxesAndFees=None,
-            total=None,
+            code=[ibflex.enums.Code.REVERSE],
         )
-        self.reader.statement = types.FlexStatement(
+        div2 = ibflex.Types.ChangeInDividendAccrual(
+            date=date(2010, 8, 1),
+            conid=sentinel.conid2,
+            payDate=sentinel.payDate2,
+            code=[],
+        )
+        self.reader.statement = flex.Types.FlexStatement(
             account=None,
             securities=None,
-            dividends=[div0, div1],
             transactions=None,
-            conversionrates=None,
+            changeInDividendAccruals=[div0, div1, div2],
+            conversionRates=None,
         )
-        self.reader.read_dividends()
-
-        divs = self.reader.dividends
+        divs = self.reader.read_change_in_dividend_accruals(self.reader.statement)
         self.assertIsInstance(divs, dict)
         self.assertEqual(len(divs), 2)
         self.assertEqual(divs[(sentinel.conid0, sentinel.payDate0)], div0)
@@ -96,24 +101,24 @@ class ReadTestCase(unittest.TestCase):
 
     @patch.object(models.Security, "merge", wraps=lambda session, **sec: sec)
     def testReadSecurities(self, mock_security_merge_method):
-        sec0 = types.Security(
+        sec0 = flex.Types.Security(
             uniqueidtype=sentinel.cusip,
             uniqueid=sentinel.uniqueid0,
             secname=sentinel.secname0,
             ticker=sentinel.ticker0,
         )
-        sec1 = types.Security(
+        sec1 = flex.Types.Security(
             uniqueidtype=sentinel.isin,
             uniqueid=sentinel.uniqueid1,
             secname=sentinel.secname1,
             ticker=sentinel.ticker1,
         )
-        self.reader.statement = types.FlexStatement(
+        self.reader.statement = flex.Types.FlexStatement(
             account=None,
             securities=[sec0, sec1],
-            dividends=None,
             transactions=None,
-            conversionrates=None,
+            changeInDividendAccruals=None,
+            conversionRates=None,
         )
         self.reader.read_securities()
         self.assertEqual(
@@ -148,7 +153,7 @@ class ReadTestCase(unittest.TestCase):
 
 class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
     def testFilterTrades(self):
-        t0 = types.Trade(
+        t0 = flex.Types.Trade(
             memo="Something",
             fitid=None,
             dttrade=None,
@@ -163,7 +168,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t0), True)
 
-        t1 = types.Trade(
+        t1 = flex.Types.Trade(
             memo="USD.CAD",
             fitid=None,
             dttrade=None,
@@ -178,7 +183,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t1), False)
 
-        t2 = types.Trade(
+        t2 = flex.Types.Trade(
             memo="CAD.USD",
             fitid=None,
             dttrade=None,
@@ -193,7 +198,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t2), False)
 
-        t3 = types.Trade(
+        t3 = flex.Types.Trade(
             memo="USD.EUR",
             fitid=None,
             dttrade=None,
@@ -208,7 +213,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t3), False)
 
-        t4 = types.Trade(
+        t4 = flex.Types.Trade(
             memo="EUR.USD",
             fitid=None,
             dttrade=None,
@@ -224,8 +229,8 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.filterTrades(t4), False)
 
     def testFilterTradeCancels(self):
-        t0 = types.Trade(
-            notes=["Ca", "P"],
+        t0 = flex.Types.Trade(
+            notes=[ibflex.enums.Code.CANCEL, ibflex.enums.Code.PARTIAL],
             fitid=None,
             dttrade=None,
             memo=None,
@@ -239,8 +244,8 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTradeCancels(t0), True)
 
-        t1 = types.Trade(
-            notes=["O", "C"],
+        t1 = flex.Types.Trade(
+            notes=[ibflex.enums.Code.OPENING, ibflex.enums.Code.CLOSING],
             fitid=None,
             dttrade=None,
             memo=None,
@@ -255,7 +260,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.filterTradeCancels(t1), False)
 
     def testSortCanceledTrades(self):
-        t0 = types.Trade(
+        t0 = flex.Types.Trade(
             reportdate="something",
             fitid=None,
             dttrade=None,
@@ -271,8 +276,8 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.sortCanceledTrades(t0), "something")
 
     def testSortForTrade(self):
-        t0 = types.Trade(
-            notes=["ML", "C"],
+        t0 = flex.Types.Trade(
+            notes=[ibflex.enums.Code.MAXLOSS, ibflex.enums.Code.CLOSING],
             fitid=None,
             dttrade=None,
             memo=None,
@@ -284,10 +289,10 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.sortForTrade(t0), "MINGAIN")
+        self.assertEqual(flex.reader.sortForTrade(t0), models.TransactionSort.MINGAIN)
 
-        t1 = types.Trade(
-            notes=["LI", "C"],
+        t1 = flex.Types.Trade(
+            notes=[ibflex.enums.Code.LIFO, ibflex.enums.Code.CLOSING],
             fitid=None,
             dttrade=None,
             memo=None,
@@ -299,10 +304,10 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.sortForTrade(t1), "LIFO")
+        self.assertEqual(flex.reader.sortForTrade(t1), models.TransactionSort.LIFO)
 
-        t2 = types.Trade(
-            notes=["Ca", "O"],
+        t2 = flex.Types.Trade(
+            notes=[ibflex.enums.Code.CANCEL, ibflex.enums.Code.OPENING],
             fitid=None,
             dttrade=None,
             memo=None,
@@ -314,10 +319,10 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.sortForTrade(t2), None)
+        self.assertEqual(flex.reader.sortForTrade(t2), None)
 
-        t3 = types.Trade(
-            notes=["ML", "LI"],
+        t3 = flex.Types.Trade(
+            notes=[ibflex.enums.Code.MAXLOSS, ibflex.enums.Code.LIFO],
             fitid=None,
             dttrade=None,
             memo=None,
@@ -330,13 +335,16 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             orig_tradeid=None,
         )
         with self.assertRaises(AssertionError):
-            self.reader.sortForTrade(t3)
+            flex.reader.sortForTrade(t3)
 
 
 class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
     def testFilterCashTransactions(self):
-        t0 = types.CashTransaction(
-            incometype="Dividends",
+        """filter_cash_transactions() searches memo for text
+        `return of capital` / `interimliquidation`.
+        """
+        t0 = flex.Types.CashTransaction(
+            incometype="DIV",
             memo="foo ReTuRn Of CAPitAL bar",
             fitid=None,
             dttrade=None,
@@ -348,8 +356,8 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterCashTransactions(t0), True)
 
-        t1 = types.CashTransaction(
-            incometype="Dividends",
+        t1 = flex.Types.CashTransaction(
+            incometype="DIV",
             memo="foo InTeRiMlIqUiDaTiOn bar",
             fitid=None,
             dttrade=None,
@@ -361,8 +369,8 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterCashTransactions(t1), True)
 
-        t2 = types.CashTransaction(
-            incometype="Dividends",
+        t2 = flex.Types.CashTransaction(
+            incometype="DIV",
             memo="foo bar",
             fitid=None,
             dttrade=None,
@@ -374,20 +382,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterCashTransactions(t2), False)
 
-        t3 = types.CashTransaction(
-            incometype="Income",
-            memo="foo interimliquidation bar",
-            fitid=None,
-            dttrade=None,
-            dtsettle=None,
-            uniqueidtype=None,
-            uniqueid=None,
-            currency=None,
-            total=None,
-        )
-        self.assertEqual(self.reader.filterCashTransactions(t3), False)
-
-    @patch.object(FlexStatementReader, "stripCashTransactionMemo", wraps=lambda m: m)
+    @patch.object(flex.reader.FlexStatementReader, "stripCashTransactionMemo", wraps=lambda m: m)
     def testGroupCashTransactionsForCancel(
         self, mock_strip_cash_memo_method, wraps=lambda memo: memo
     ):
@@ -395,7 +390,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         FlexStatementReader.groupCashTransactionsForCancel() returns
         (tx.dtsettle, (tx.uniqueidtype, tx.uniqueid), tx.memo)
         """
-        tx = types.CashTransaction(
+        tx = flex.Types.CashTransaction(
             memo=sentinel.memo,
             fitid=None,
             dttrade=None,
@@ -424,7 +419,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.stripCashTransactionMemo(memo), "foo bar")
 
     def testFilterCashTransactionCancels(self):
-        tx = types.CashTransaction(
+        tx = flex.Types.CashTransaction(
             memo="foobar",
             fitid=None,
             dttrade=None,
@@ -438,7 +433,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         output = self.reader.filterCashTransactionCancels(tx)
         self.assertEqual(output, False)
 
-        tx = types.CashTransaction(
+        tx = flex.Types.CashTransaction(
             memo="fooREVERSALbar",
             fitid=None,
             dttrade=None,
@@ -452,7 +447,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         output = self.reader.filterCashTransactionCancels(tx)
         self.assertEqual(output, True)
 
-        tx = types.CashTransaction(
+        tx = flex.Types.CashTransaction(
             memo="fooCANCELbar",
             fitid=None,
             dttrade=None,
@@ -470,7 +465,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         """
         FlexStatementReader.sortCanceledCashTransactions() returns tx.fitid
         """
-        tx = types.CashTransaction(
+        tx = flex.Types.CashTransaction(
             memo=None,
             fitid=sentinel.fitid,
             dttrade=None,
@@ -485,36 +480,38 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(output, tx.fitid)
 
     def testFixCashTransactions(self):
+        """FlexStatement.fixCashTransaction() takes dttrade from dividendsPaid
+        """
         # N.B. flex.reader.FlexStatementReader.dividends is keyed by type
         # datetime.date, but flex.parser.CashTransaction.dtsettle is type
         # datetime.datetime
-        div = types.Dividend(
-            conid=sentinel.conid,
-            exDate=sentinel.exDate,
+        div = ibflex.Types.ChangeInDividendAccrual(
+            date=sentinel.date,
+            conid="UniQUeId",
+            exDate=date(2010, 6, 1),
             payDate=sentinel.payDate,
-            quantity=None,
-            grossRate=None,
-            taxesAndFees=None,
-            total=None,
         )
-        self.reader.dividends[(sentinel.conid, date(2012, 5, 3))] = div
 
-        tx = types.CashTransaction(
+        self.reader.dividendsPaid[(div.conid, date(2012, 5, 3))] = div
+
+        #  (uniqueid, dtsettle) is FlexStatementReader.dividendsPaid lookup key.
+        #  Must use correct typs for these, not sentinel objects.
+        tx = flex.Types.CashTransaction(
             memo=None,
             fitid=None,
             dttrade=None,
             dtsettle=datetime(2012, 5, 3),
             uniqueidtype=None,
-            uniqueid=sentinel.conid,
+            uniqueid=div.conid,
             currency=None,
             total=None,
             incometype=None,
         )
-        output = self.reader.fixCashTransactions(tx)
-        self.assertIsInstance(output, types.CashTransaction)
+        output = self.reader.fixCashTransaction(tx)
+        self.assertIsInstance(output, flex.Types.CashTransaction)
         self.assertEqual(output.memo, tx.memo)
         self.assertEqual(output.fitid, tx.fitid)
-        self.assertEqual(output.dttrade, sentinel.exDate)
+        self.assertEqual(output.dttrade, datetime(2010, 6, 1))  # datetime not date
         self.assertEqual(output.dtsettle, tx.dtsettle)
         self.assertEqual(output.uniqueidtype, tx.uniqueidtype)
         self.assertEqual(output.uniqueid, tx.uniqueid)
@@ -524,17 +521,18 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
 
 
 class CashTransactionWithFilterCancelTestCase(
-    CashTransactionXmlSnippetMixin, unittest.TestCase
+    ReadXmlSnippetMixin, unittest.TestCase
 ):
-    xml = """
-    <CashTransactions>
-    <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF"
-    description="RHDGF(ANN741081064) CASH DIVIDEND 1.00000000 USD PER SHARE (Ordinary Dividend)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-12" amount="27800" type="Dividends" tradeID="" code="" transactionID="6349123456" reportDate="2016-04-14" clientReference="" />
-    <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="138215" type="Dividends" tradeID="" code="" transactionID="6352363694" reportDate="2016-04-14" clientReference="" />
-    <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE - REVERSAL (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="-138215" type="Dividends" tradeID="" code="" transactionID="6356130554" reportDate="2016-04-15" clientReference="" />
-    <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="139000" type="Dividends" tradeID="" code="" transactionID="6356130558" reportDate="2016-04-15" clientReference="" />
-    </CashTransactions>
-    """
+    stmt_sections = [
+        """
+        <CashTransactions>
+        <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 1.00000000 USD PER SHARE (Ordinary Dividend)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-12" amount="27800" type="Dividends" tradeID="" code="" transactionID="6349123456" reportDate="2016-04-14" clientReference="" />
+        <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="138215" type="Dividends" tradeID="" code="" transactionID="6352363694" reportDate="2016-04-14" clientReference="" />
+        <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE - REVERSAL (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="-138215" type="Dividends" tradeID="" code="" transactionID="6356130554" reportDate="2016-04-15" clientReference="" />
+        <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="139000" type="Dividends" tradeID="" code="" transactionID="6356130558" reportDate="2016-04-15" clientReference="" />
+        </CashTransactions>
+        """
+    ]
 
     @property
     def persisted_txs(self):
@@ -542,12 +540,12 @@ class CashTransactionWithFilterCancelTestCase(
         # 3rd CashTransaction cancels 2nd CashTransaction, leaving the last
         # CashTransaction to be persisted.
         return [
-            ReturnOfCapital(
+            inventory.types.ReturnOfCapital(
                 uniqueid=None,
                 datetime=datetime(2016, 4, 13),
                 dtsettle=datetime(2016, 4, 13),
                 memo="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)",
-                currency="USD",
+                currency=models.Currency.USD,
                 cash=Decimal("139000"),
                 fiaccount=self.account,
                 security=self.securities[0],
@@ -556,9 +554,9 @@ class CashTransactionWithFilterCancelTestCase(
 
 
 class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
-    @patch.object(FlexStatementReader, "merge_account_transfer")
+    @patch.object(flex.reader.FlexStatementReader, "merge_account_transfer")
     def testDoTransfers(self, mock_merge_acct_transfer_method):
-        tx0 = types.Transfer(
+        tx0 = flex.Types.Transfer(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -569,7 +567,7 @@ class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
             type=None,
             other_acctid=None,
         )
-        tx1 = types.Transfer(
+        tx1 = flex.Types.Transfer(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -580,7 +578,7 @@ class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
             type=None,
             other_acctid=None,
         )
-        tx2 = types.Transfer(
+        tx2 = flex.Types.Transfer(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -594,7 +592,21 @@ class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.reader.doTransfers([tx0, tx1, tx2])
 
         self.assertEqual(
-            mock_merge_acct_transfer_method.mock_calls, [call(tx0), call(tx1)]
+            mock_merge_acct_transfer_method.mock_calls,
+            [
+                call(
+                    tx0,
+                    session=self.session,
+                    securities={},
+                    account=None,
+                ),
+                call(
+                    tx1,
+                    session=self.session,
+                    securities={},
+                    account=None,
+                ),
+            ]
         )
 
 
@@ -607,261 +619,36 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         with open(path) as file_:
             self.corpActMemos = file_.readlines()
         self.cmptypes = [
-            "SD",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "TO",
-            "TO",
-            "IC",
-            "IC",
-            "TC",
-            "SO",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "IC",
-            "IC",
-            "TC",
-            "TC",
-            "IC",
-            "IC",
-            "TO",
-            "TO",
-            "TC",
-            "TO",
-            "TO",
-            "TC",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "TO",
-            "TC",
-            "TO",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "FS",
-            "FS",
-            "DW",
-            "TO",
-            "TO",
-            "TC",
-            "DW",
-            "SO",
-            "TC",
-            "TC",
-            "SO",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "RI",
-            "TC",
-            "TC",
-            "TC",
-            "SO",
-            "DW",
-            "TC",
-            "DW",
-            "FS",
-            "FS",
-            "DW",
-            "TC",
-            "TC",
-            "SO",
-            "SO",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "SD",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "TC",
-            "SO",
-            "TO",
-            "TO",
-            "SR",
-            "RI",
-            "SR",
-            "TC",
-            "TC",
-            "SO",
-            "TC",
-            "TC",
-            "DW",
-            "SD",
-            "SD",
-            "TC",
-            "TC",
-            "SR",
-            "OR",
-            "SR",
-            "TC",
-            "TC",
-            "OR",
-            "TC",
-            "TC",
-            "SD",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "IC",
-            "IC",
-            "FS",
-            "SO",
-            "SO",
-            "SO",
-            "SO",
-            "TC",
-            "TO",
-            "TO",
-            "TC",
-            "TO",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "FS",
-            "FS",
-            "SD",
-            "TC",
-            "RI",
-            "SO",
-            "SO",
-            "SR",
-            "OR",
-            "SR",
-            "RI",
-            "RI",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "DW",
-            "IC",
-            "IC",
-            "TO",
-            "TO",
-            "TC",
-            "RI",
-            "RI",
-            "SR",
-            "OR",
-            "SR",
-            "SR",
-            "OR",
-            "SR",
-            "TC",
-            "TC",
-            "TC",
-            "OR",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "SO",
-            "SO",
-            "SO",
-            "TC",
-            "TC",
-            "SO",
-            "IC",
-            "IC",
-            "SO",
-            "SO",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "SO",
-            "SO",
-            "TC",
-            "TC",
-            "TC",
-            "TO",
-            "IC",
-            "IC",
-            "TC",
-            "TO",
-            "RI",
-            "SR",
-            "OR",
-            "SR",
-            "TC",
-            "SD",
-            "TC",
-            "TC",
-            "TC",
-            "TC",
-            "TO",
-            "TO",
-            "TC",
-            "TC",
-            "TC",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "FS",
-            "FS",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "TO",
-            "FS",
-            "FS",
-            "BM",
-            "TO",
-            "TO",
-            "FS",
-            "FS",
-            "BM",
-            "TO",
-            "TO",
-            "TC",
-            "TO",
-            "RI",
-            "TO",
-            "SR",
-            "SR",
-            "TC",
-            "TC",
-            "TC",
+            "SD", "TO", "TO", "TC", "TC", "TO", "TO", "IC", "IC", "TC", "SO",
+            "TC", "TC", "TC", "TC", "IC", "IC", "TC", "TC", "IC", "IC", "TO",
+            "TO", "TC", "TO", "TO", "TC", "TO", "TO", "TC", "TC", "TO", "TC",
+            "TO", "TC", "TC", "TC", "TC", "TC", "TO", "TO", "TO", "TO", "TC",
+            "TC", "FS", "FS", "DW", "TO", "TO", "TC", "DW", "SO", "TC", "TC",
+            "SO", "TC", "TC", "TC", "TC", "RI", "TC", "TC", "TC", "SO", "DW",
+            "TC", "DW", "FS", "FS", "DW", "TC", "TC", "SO", "SO", "TO", "TO",
+            "TC", "TC", "SD", "TO", "TO", "TO", "TO", "TC", "SO", "TO", "TO",
+            "SR", "RI", "SR", "TC", "TC", "SO", "TC", "TC", "DW", "SD", "SD",
+            "TC", "TC", "SR", "OR", "SR", "TC", "TC", "OR", "TC", "TC", "SD",
+            "TO", "TO", "TC", "TC", "IC", "IC", "FS", "SO", "SO", "SO", "SO",
+            "TC", "TO", "TO", "TC", "TO", "TC", "TC", "TC", "TC", "FS", "FS",
+            "SD", "TC", "RI", "SO", "SO", "SR", "OR", "SR", "RI", "RI", "TO",
+            "TO", "TC", "TC", "TC", "TC", "DW", "IC", "IC", "TO", "TO", "TC",
+            "RI", "RI", "SR", "OR", "SR", "SR", "OR", "SR", "TC", "TC", "TC",
+            "OR", "TC", "TC", "TC", "TC", "TC", "SO", "SO", "SO", "TC", "TC",
+            "SO", "IC", "IC", "SO", "SO", "TO", "TO", "TC", "TC", "TC", "TC",
+            "TC", "TC", "TC", "TC", "TC", "SO", "SO", "TC", "TC", "TC", "TO",
+            "IC", "IC", "TC", "TO", "RI", "SR", "OR", "SR", "TC", "SD", "TC",
+            "TC", "TC", "TC", "TO", "TO", "TC", "TC", "TC", "TO", "TO", "TO",
+            "TO", "TO", "TO", "FS", "FS", "TO", "TO", "TO", "TO", "TO", "TO",
+            "FS", "FS", "BM", "TO", "TO", "FS", "FS", "BM", "TO", "TO", "TC",
+            "TO", "RI", "TO", "SR", "SR", "TC", "TC", "TC",
         ]
         self.assertEqual(len(self.corpActMemos), len(self.cmptypes))
 
-    def testGroupCorporateAcionsForCancel(self):
-        corpAct = types.CorporateAction(
+    def testGroupCorpActs(self):
+        """FlexStatementReader.group_corpacts() uses the type name, not type
+        """
+        corpAct = flex.Types.CorporateAction(
             fitid=None,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,
@@ -870,23 +657,23 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             units=None,
             currency=None,
             total=None,
-            type=sentinel.type,
+            type=ibflex.enums.Reorg.DELISTWORTHLESS,
             reportdate=None,
             code=None,
         )
-        result = self.reader.groupCorporateActionsForCancel(corpAct)
+        result = flex.reader.group_corpacts(corpAct)
         self.assertEqual(
             result,
             (
                 (corpAct.uniqueidtype, corpAct.uniqueid),
                 corpAct.dttrade,
-                corpAct.type,
+                "DELISTWORTHLESS",
                 corpAct.memo,
             ),
         )
 
     def testFilterCorporateActionCancels(self):
-        corpAct0 = types.CorporateAction(
+        corpAct0 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -897,11 +684,11 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             type=None,
             reportdate=None,
-            code=["Ca", "P"],
+            code=[ibflex.enums.Code.CANCEL, ibflex.enums.Code.PARTIAL],
         )
-        self.assertIs(self.reader.filterCorporateActionCancels(corpAct0), True)
+        self.assertIs(flex.reader.filterCorporateActionCancels(corpAct0), True)
 
-        corpAct0 = types.CorporateAction(
+        corpAct0 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -912,12 +699,12 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             type=None,
             reportdate=None,
-            code=["O", "P"],
+            code=[ibflex.enums.Code.OPENING, ibflex.enums.Code.PARTIAL],
         )
-        self.assertIs(self.reader.filterCorporateActionCancels(corpAct0), False)
+        self.assertIs(flex.reader.filterCorporateActionCancels(corpAct0), False)
 
     def testMatchCorporateActionWithCancel(self):
-        corpAct0 = types.CorporateAction(
+        corpAct0 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -930,7 +717,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        corpAct1 = types.CorporateAction(
+        corpAct1 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -943,7 +730,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        corpAct2 = types.CorporateAction(
+        corpAct2 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -958,14 +745,14 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
         self.assertIs(
-            self.reader.matchCorporateActionWithCancel(corpAct0, corpAct1), False
+            flex.reader.matchCorporateActionWithCancel(corpAct0, corpAct1), False
         )
         self.assertIs(
-            self.reader.matchCorporateActionWithCancel(corpAct0, corpAct2), True
+            flex.reader.matchCorporateActionWithCancel(corpAct0, corpAct2), True
         )
 
     def testSortCanceledCorporateActions(self):
-        corpAct = types.CorporateAction(
+        corpAct = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -980,11 +767,11 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
         self.assertIs(
-            self.reader.sortCanceledCorporateActions(corpAct), sentinel.reportdate
+            flex.reader.sortCanceledCorporateActions(corpAct), sentinel.reportdate
         )
 
-    def testNetCorporateActions(self):
-        corpAct0 = types.CorporateAction(
+    def testNetCorpActs(self):
+        corpAct0 = flex.Types.CorporateAction(
             fitid=sentinel.fitid0,
             dttrade=sentinel.dttrade0,
             memo=sentinel.memo0,
@@ -997,7 +784,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=sentinel.reportdate0,
             code=sentinel.code0,
         )
-        corpAct1 = types.CorporateAction(
+        corpAct1 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -1011,8 +798,8 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             code=None,
         )
 
-        result = self.reader.netCorporateActions(corpAct0, corpAct1)
-        self.assertIsInstance(result, types.CorporateAction)
+        result = flex.reader.net_corpacts(corpAct0, corpAct1)
+        self.assertIsInstance(result, flex.Types.CorporateAction)
         self.assertIs(result.fitid, sentinel.fitid0)
         self.assertIs(result.dttrade, sentinel.dttrade0)
         self.assertIs(result.memo, sentinel.memo0)
@@ -1039,26 +826,25 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             # If so, stitch it back together
             secname = ", ".join(payload)
 
-            typ = self.cmptypes[i]
-            ca = types.CorporateAction(
-                None, None, memo, None, None, None, None, None, typ, None, None
+            type_ = self.cmptypes[i]
+            ca = flex.Types.CorporateAction(
+                None, None, memo, None, None, None, None, None, type_, None, None
             )
-            pca = self.reader.parseCorporateActionMemo(ca)
-            self.assertIsInstance(pca, ParsedCorpAct)
+            pca = flex.reader.parseCorporateActionMemo(
+                self.session,
+                self.securities,
+                ca
+            )
+            self.assertIsInstance(pca, flex.reader.ParsedCorpAct)
             self.assertIs(pca.raw, ca)
-            self.assertEqual(pca.type, typ)
+            self.assertEqual(pca.type, type_)
             self.assertEqual(pca.ticker, ticker)
             self.assertEqual(pca.cusip, cusip)
             self.assertEqual(pca.secname, secname)
             self.assertEqual(pca.memo, mem)
 
-    def testInferCorporateActionType(self):
-        for i, memo in enumerate(self.corpActMemos):
-            inferredType = self.reader.inferCorporateActionType(memo)
-            self.assertEqual(inferredType, self.cmptypes[i])
-
-    def testGroupParsedCorporateActions(self):
-        corpAct = types.CorporateAction(
+    def testGroupParsedCorpActs(self):
+        corpAct = flex.Types.CorporateAction(
             fitid=None,
             dttrade=sentinel.dttrade,
             memo=None,
@@ -1071,21 +857,21 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=sentinel.reportdate,
             code=None,
         )
-        pca = reader.ParsedCorpAct(
+        pca = flex.reader.ParsedCorpAct(
             raw=corpAct,
-            type=sentinel.type,
+            type=ibflex.enums.Reorg.DELISTWORTHLESS,
             ticker=None,
             cusip=None,
             secname=None,
             memo=sentinel.memo,
         )
         self.assertEqual(
-            self.reader.groupParsedCorporateActions(pca),
-            (sentinel.dttrade, sentinel.type, sentinel.memo),
+            flex.reader.group_parsed_corpacts(pca),
+            (sentinel.dttrade, "DELISTWORTHLESS", sentinel.memo),
         )
 
-    def testSortParsedCorporateActions(self):
-        corpAct = types.CorporateAction(
+    def testSortParsedCorpActs(self):
+        corpAct = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=None,
@@ -1098,27 +884,25 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=sentinel.reportdate,
             code=None,
         )
-        pca = reader.ParsedCorpAct(
+        pca = flex.reader.ParsedCorpAct(
             raw=corpAct, type=None, ticker=None, cusip=None, secname=None, memo=None
         )
         self.assertEqual(
-            self.reader.sortParsedCorporateActions(pca), sentinel.reportdate
+            flex.reader.sort_parsed_corpacts(pca), sentinel.reportdate
         )
 
     def testMergeReorg(self):
         pass
 
-    @patch.object(
-        FlexStatementReader, "merge_transaction", return_value=sentinel.transaction
-    )
-    def testMergeSecurityTransfer(self, mock_merge_transaction_method):
+    @patch("capgains.ofx.reader.merge_transaction", return_value=sentinel.transaction)
+    def testMergeSecurityTransfer(self, mock_merge_transaction):
         self.securities[
             (sentinel.uniqueidtype0, sentinel.uniqueid0)
         ] = sentinel.security0
         self.securities[
             (sentinel.uniqueidtype1, sentinel.uniqueid1)
         ] = sentinel.security1
-        src = types.CorporateAction(
+        src = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
             memo=sentinel.memo0,
@@ -1131,7 +915,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        dest = types.CorporateAction(
+        dest = flex.Types.CorporateAction(
             fitid=sentinel.fitid1,
             dttrade=sentinel.dttrade1,
             memo=sentinel.memo1,
@@ -1144,14 +928,20 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        output = self.reader.merge_security_transfer(
-            src=src, dest=dest, memo=sentinel.memo
+        output = flex.reader.merge_security_transfer(
+            self.session,
+            self.securities,
+            self.reader.account,
+            src=src,
+            dest=dest,
+            memo=sentinel.memo,
         )
 
         self.assertEqual(
-            mock_merge_transaction_method.mock_calls,
+            mock_merge_transaction.mock_calls,
             [
                 call(
+                    self.session,
                     type=models.TransactionType.TRANSFER,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid1,
@@ -1166,9 +956,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             ],
         )
 
-        self.assertIsInstance(output, list)
-        self.assertEqual(len(output), 1)
-        self.assertIs(output[0], sentinel.transaction)
+        self.assertIs(output, sentinel.transaction)
 
     def testGuessSecurity(self):
         pass
@@ -1178,12 +966,10 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
 
 
 class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
-    @patch.object(
-        FlexStatementReader, "merge_transaction", return_value=sentinel.transaction
-    )
-    def testMergeSplit(self, mock_merge_transaction_method):
+    @patch("capgains.ofx.reader.merge_transaction", return_value=sentinel.transaction)
+    def testMergeSplit(self, mock_merge_transaction):
         self.securities[(sentinel.uniqueidtype, sentinel.uniqueid)] = sentinel.security
-        corpAct = types.CorporateAction(
+        corpAct = flex.Types.CorporateAction(
             fitid=sentinel.fitid,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,
@@ -1196,16 +982,20 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        output = self.reader.merge_split(
+        output = flex.reader.merge_split(
+            self.session,
+            self.securities,
+            self.reader.account,
             corpAct,
             numerator=sentinel.numerator,
             denominator=sentinel.denominator,
             memo=None,
         )
         self.assertEqual(
-            mock_merge_transaction_method.mock_calls,
+            mock_merge_transaction.mock_calls,
             [
                 call(
+                    self.session,
                     type=models.TransactionType.SPLIT,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid,
@@ -1218,16 +1008,12 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
                 )
             ],
         )
-        self.assertIsInstance(output, list)
-        self.assertEqual(len(output), 1)
-        self.assertIs(output[0], sentinel.transaction)
+        self.assertIs(output, sentinel.transaction)
 
-    @patch.object(
-        FlexStatementReader, "merge_transaction", return_value=sentinel.transaction
-    )
-    def testMergeSplitOverrideMemo(self, mock_merge_transaction_method):
+    @patch("capgains.ofx.reader.merge_transaction", return_value=sentinel.transaction)
+    def testMergeSplitOverrideMemo(self, mock_merge_transaction):
         self.securities[(sentinel.uniqueidtype, sentinel.uniqueid)] = sentinel.security
-        corpAct = types.CorporateAction(
+        corpAct = flex.Types.CorporateAction(
             fitid=sentinel.fitid,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,
@@ -1240,16 +1026,20 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        output = self.reader.merge_split(
+        output = flex.reader.merge_split(
+            self.session,
+            self.securities,
+            self.reader.account,
             corpAct,
             numerator=sentinel.numerator,
             denominator=sentinel.denominator,
             memo=sentinel.override_memo,
         )
         self.assertEqual(
-            mock_merge_transaction_method.mock_calls,
+            mock_merge_transaction.mock_calls,
             [
                 call(
+                    self.session,
                     type=models.TransactionType.SPLIT,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid,
@@ -1262,18 +1052,14 @@ class SplitTestCase(FlexStatementReaderMixin, unittest.TestCase):
                 )
             ],
         )
-        self.assertIsInstance(output, list)
-        self.assertEqual(len(output), 1)
-        self.assertIs(output[0], sentinel.transaction)
+        self.assertIs(output, sentinel.transaction)
 
 
 class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
-    @patch.object(
-        FlexStatementReader, "merge_transaction", return_value=sentinel.transaction
-    )
-    def testSpinoff(self, mock_merge_transaction_method):
+    @patch("capgains.ofx.reader.merge_transaction", return_value=sentinel.transaction)
+    def testSpinoff(self, mock_merge_transaction):
         self.securities[(sentinel.uniqueidtype, sentinel.uniqueid)] = sentinel.security
-        corpAct = types.CorporateAction(
+        corpAct = flex.Types.CorporateAction(
             fitid=sentinel.fitid,
             dttrade=sentinel.dttrade,
             memo=sentinel.memo,
@@ -1286,7 +1072,10 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        output = self.reader.merge_spinoff(
+        output = flex.reader.merge_spinoff(
+            self.session,
+            self.securities,
+            self.reader.account,
             corpAct,
             fromsecurity=sentinel.fromsecurity,
             numerator=sentinel.numerator,
@@ -1294,9 +1083,10 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
             memo=None,
         )
         self.assertEqual(
-            mock_merge_transaction_method.mock_calls,
+            mock_merge_transaction.mock_calls,
             [
                 call(
+                    self.session,
                     type=models.TransactionType.SPINOFF,
                     fiaccount=self.reader.account,
                     uniqueid=sentinel.fitid,
@@ -1310,14 +1100,38 @@ class SpinoffTestCase(FlexStatementReaderMixin, unittest.TestCase):
                 )
             ],
         )
-        self.assertIsInstance(output, list)
-        self.assertEqual(len(output), 1)
-        self.assertIs(output[0], sentinel.transaction)
+        self.assertIs(output, sentinel.transaction)
 
 
 class OptionsExercisTestCase(FlexStatementReaderMixin, unittest.TestCase):
-    def testDoOptionsExercises(self):
-        pass
+    xml = (
+        'OptionEAE>'
+
+        '<OptionEAE accountId="U12345" acctAlias="Test Alias" model="" '
+        'currency="USD" fxRateToBase="1" assetCategory="OPT" '
+        'symbol="VXX   110805C00020000" description="VXX 05AUG11 20.0 C" '
+        'conid="91900358" securityID="" securityIDType="" cusip="" isin="" '
+        'underlyingConid="80789235" underlyingSymbol="VXX" issuer="" '
+        'multiplier="100" strike="20" expiry="2011-08-05" putCall="C" '
+        'principalAdjustFactor="" date="2011-08-05" '
+        'transactionType="Assignment" quantity="20" tradePrice="0.0000" '
+        'markPrice="0.0000" proceeds="0.00" commisionsAndTax="0.00" '
+        'costBasis="21,792.73" realizedPnl="0.00" fxPnl="0.00" '
+        'mtmPnl="20,620.00" tradeID="590365479" />'
+
+        '<OptionEAE accountId="U12345" acctAlias="Test Alias" model="" '
+        'currency="USD" fxRateToBase="1" assetCategory="STK" symbol="VXX" '
+        'description="IPATH S&amp;P 500 VIX S/T FU ETN" conid="80789235" '
+        'securityID="" securityIDType="" cusip="" isin="" underlyingConid="" '
+        'underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" '
+        'putCall="" principalAdjustFactor="" date="2011-08-05" '
+        'transactionType="Sell" quantity="-2,000" tradePrice="20.0000" '
+        'markPrice="34.7800" proceeds="40,000.00" commisionsAndTax="-0.77" '
+        'costBasis="-39,999.23" realizedPnl="0.00" fxPnl="0.00" '
+        'mtmPnl="-29,560.00" tradeID="590365480" />'
+
+        '</OptionEAE>'
+    )
 
 
 if __name__ == "__main__":

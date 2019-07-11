@@ -10,8 +10,8 @@ from decimal import Decimal
 
 # local imports
 from capgains.containers import GroupedList
-from capgains.flex.types import Trade
-from capgains.ofx.reader import cancel
+from capgains.flex.Types import Trade
+from capgains.ofx.reader import make_canceller
 
 
 class GroupedListTestCase(unittest.TestCase):
@@ -185,7 +185,7 @@ class GroupedListTestCase(unittest.TestCase):
             ),
         ]
         net = GroupedList(trades).bind(
-            cancel(
+            make_canceller(
                 filterfunc=lambda tx: "Ca" in tx.notes,
                 matchfunc=lambda tx0, tx1: tx0.units == -tx1.units,
                 sortfunc=None,
@@ -211,7 +211,7 @@ class GroupedListTestCase(unittest.TestCase):
         container = GroupedList(
             [GroupedList(key=0), GroupedList(trades, key=1)], grouped=True, key=None
         ).bind(
-            cancel(
+            make_canceller(
                 filterfunc=lambda tx: "Ca" in tx.notes,
                 matchfunc=lambda tx0, tx1: tx0.units == -tx1.units,
                 sortfunc=None,

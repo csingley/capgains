@@ -14,6 +14,7 @@ import ofxtools
 
 
 # local imports
+from capgains import models
 from capgains.config import CONFIG
 from capgains.ofx.scottrade import OfxStatementReader
 from capgains.models import Fi, FiAccount, Security, Transaction, TransactionType
@@ -43,7 +44,7 @@ class TradeTestCase(OfxSnippetMixin, unittest.TestCase):
             self.assertEqual(tran.fiaccount, self.account)
             self.assertEqual(tran.type, TransactionType.TRADE)
             self.assertEqual(tran.security, self.securities[0])
-            self.assertEqual(tran.currency, "USD")
+            self.assertEqual(tran.currency, models.Currency.USD)
 
         self.assertEqual(sum([t.units for t in trans]), Decimal("149999"))
         self.assertEqual(sum([t.cash for t in trans]), Decimal("-91499.39"))

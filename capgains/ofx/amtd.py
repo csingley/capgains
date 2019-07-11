@@ -6,15 +6,14 @@ import itertools
 
 
 # Local imports
-from capgains.ofx import reader
-from capgains.flex.reader import FlexStatementReader
+from capgains import ofx, flex
 from capgains.containers import GroupedList
 
 
 BROKERID = "ameritrade.com"
 
 
-class OfxStatementReader(reader.OfxStatementReader):
+class OfxStatementReader(ofx.reader.OfxStatementReader):
     @staticmethod
     def filterTrades(transaction):
         """
@@ -64,7 +63,7 @@ class OfxStatementReader(reader.OfxStatementReader):
         transactions.sort(key=lambda x: x.tferaction)
         assert [tx.tferaction for tx in transactions] == ["IN", "OUT"]
         dest, src = transactions
-        tx = FlexStatementReader.merge_security_transfer(self, src, dest, memo)
+        flex.reader.FlexStatementReader.merge_security_transfer(self, src, dest, memo)
 
     def stock_dividend(self, transactions, memo):
         pass
@@ -95,7 +94,8 @@ class OfxStatementReader(reader.OfxStatementReader):
 
         # FIXME - exercise cash is sent as INVBANKTRAN; can't get it from
         # just the TRANSFERS which are dispatched to here.
-        tx = self.merge_transaction(
+        tx = ofx.reader.merge_transaction(
+            self.session,
             type="exercise",
             fiaccount=self.account,
             uniqueid=src.fitid,
@@ -108,6 +108,7 @@ class OfxStatementReader(reader.OfxStatementReader):
             fromsecurity=fromsecurity,
             fromunits=src.units,
         )
+        self.transactions.append(tx)
         return tx
 
     @staticmethod

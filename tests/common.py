@@ -3,12 +3,12 @@
 # stdlib imports
 import inspect
 import xml.etree.ElementTree as ET
+import io
 
 
 # 3rd party imports
 #  import sqlalchemy
 from sqlalchemy import create_engine
-import ibflex
 import ofxtools
 
 
@@ -139,11 +139,79 @@ class OfxSnippetMixin(RollbackMixin):
                 cls.securities.append(sec)
 
         cls.reader.currency_default = "USD"
+        #  cls.reader.currency_default = models.Currency.USD
 
 
-class XmlSnippetMixin(RollbackMixin):
-    txs_entry_point = NotImplemented  # Name of main function (type str)
-    xml = NotImplemented
+class XmlSnippetMixin:
+    stmt_sections = []
+    securities_info = []
+
+    @classmethod
+    def setUpClass(cls):
+        cls._setUpStatement()
+
+    @classmethod
+    def _setUpStatement(cls):
+        #  Mock up a FlexQueryResponse hierarchy.
+        mock_response = ET.Element(
+            "FlexQueryResponse",
+            attrib={
+                "queryName": "Test",
+                "type": "FOO",
+            }
+        )
+        stmts = ET.SubElement(
+            mock_response,
+            "FlexStatements",
+            attrib={"count": "1"},
+        )
+        stmt = ET.SubElement(
+            stmts,
+            "FlexStatement",
+            attrib={
+                "accountId": "U12345",
+                "fromDate": "20060101",
+                "toDate": "20161231",
+                "period": "Foobar",
+                "whenGenerated": "20170101",
+            },
+        )
+        ET.SubElement(
+            stmt,
+            "AccountInformation",
+            attrib={
+                "accountId": "5678",
+                "currency": "USD",
+            },
+        )
+
+        #  Append the transactions under test from the subclass.
+        cls.securities_info = []
+        for stmt_section in cls.stmt_sections:
+            section = ET.fromstring(stmt_section)
+            stmt.append(section)
+            #  Collect securities info for transactions.
+            for tx in section:
+                conid = tx.get("conid")
+                if conid not in [s["conid"] for s in cls.securities_info]:
+                    cls.securities_info.append(
+                        {"conid": conid, "symbol": tx.get("symbol")}
+                    )
+
+        #  Append securities info for transactions.
+        securities_info = ET.SubElement(stmt, "SecuritiesInfo")
+        for sec in cls.securities_info:
+            ET.SubElement(securities_info, "SecurityInfo", attrib=sec)
+
+        #  Parse mocked-up XML
+        source = io.BytesIO(ET.tostring(mock_response))
+        stmts = flex.parser.parse(source)
+        assert len(stmts) == 1
+        cls.statement = stmts[0]
+
+
+class ReadXmlSnippetMixin(RollbackMixin, XmlSnippetMixin):
+    extra_securities = []
 
     @property
     def persisted_txs(self):
@@ -154,7 +222,10 @@ class XmlSnippetMixin(RollbackMixin):
 
     @classmethod
     def setUpClass(cls):
-        super(XmlSnippetMixin, cls).setUpClass()
+        super(ReadXmlSnippetMixin, cls).setUpClass()
+
+        cls._setUpStatement()
+
         # Manually set up fake account; save copy as class attribute.
         cls.fi = models.Fi.merge(
             cls.session, brokerid="4705", name="Dewey Cheatham & Howe"
@@ -163,52 +234,36 @@ class XmlSnippetMixin(RollbackMixin):
             cls.session, fi=cls.fi, number="5678", name="Test"
         )
 
-        # Manually parse XML transactions with ibflex.
-        # Save copies as class attribute.
-        elem = ET.fromstring(cls.xml)
-        root_tag, xml_items = ibflex.parser.parse_list(elem)
-        parse_method = {
-            "Trades": flex.parser.parse_trades,
-            "OptionEAE": flex.parser.parse_optionEAE,
-        }.get(root_tag) or flex.parser.SUBPARSERS[root_tag]
-        cls.parsed_txs = parse_method(
-            xml_items
-        )  # sequence of flex.parser data containers
+        #  Merge models.Security instances for each & store as class attribute
+        #  to compare with reslts of read().
+        cls.securities = []
 
-        # Manually set up FlexStatementReader with fake account/securities
-        # (can't call read() b/c our XML snippet only contains transactions,
-        # not account/securities etc.)
-        cls.reader = flex.reader.FlexStatementReader(cls.session)
-        cls.reader.account = cls.account
-
-        cls.securities = []  # Save copies as class attribute
-        for tx in xml_items:
-            conid = tx["conid"]
-            ticker = tx["symbol"]
-            sec = models.Security.merge(
-                cls.session, ticker=ticker, uniqueidtype="CONID", uniqueid=conid
+        for sec in cls.securities_info:
+            cls.securities.append(
+                models.Security.merge(
+                    cls.session,
+                    ticker=sec["symbol"],
+                    uniqueidtype="CONID",
+                    uniqueid=sec["conid"],
+                )
             )
-            cls.reader.securities[("CONID", conid)] = sec
-            if sec not in cls.securities:
-                cls.securities.append(sec)
 
-        #  If XML dataset doesn't contain needed info for securities
-        #  (e.g. for spinoffs), persist it manually so it can be used by
-        #  e.g. flex.reader.FlexStatementReader.guess_security()
-        if hasattr(cls, "extra_securities"):
-            extra_securities = cls.extra_securities
-            if extra_securities:
-                assert type(extra_securities) in (list, tuple)
-                for extra_security in extra_securities:
-                    cls.securities.append(
-                        models.Security.merge(cls.session, **extra_security)
-                    )
+        #  Merge models.Security instances for any extra securities not part
+        #  of transaction data that are needed for reorgs.
+        for sec in cls.extra_securities:
+            cls.securities.append(
+                models.Security.merge(cls.session, **sec)
+            )
+
+        cls.reader = flex.reader.FlexStatementReader(
+            cls.session,
+            statement=cls.statement,
+        )
+        cls.reader.read()
 
     def testEndToEnd(self):
-        main_fn = getattr(self.reader, self.txs_entry_point)
-        main_fn(self.parsed_txs)
-
-        # Don't order_by() Transaction.type, b/c this sort differently
+        # First test that the transactions made it to the DB correctly.
+        # Don't order_by() Transaction.type, b/c this sorts differently
         # under e.g. sqlite (alpha by string) vs. postgresql (enum order)
         txs = (
             self.session.query(models.Transaction)
@@ -226,14 +281,48 @@ class XmlSnippetMixin(RollbackMixin):
         for predicted, actual in zip(predicted_txs, txs):
             self._testTransaction(predicted, actual)
 
+        #  Sort FlexStatementReader.transactions the same as models.Transaction above.
+        #  FIXME there's some weird sorting going on in sqlalchemy order_by, where
+        #  some kind of enum ordering trumps the memo sorting.  This is my best guess.
+        def sortKey(tx):
+            type_ = {
+                models.TransactionType.TRADE: 3,
+                models.TransactionType.RETURNCAP: 1,
+                models.TransactionType.TRANSFER: 5,
+                models.TransactionType.SPLIT: 2,
+                models.TransactionType.SPINOFF: 6,
+                models.TransactionType.EXERCISE: 4,
+            }[tx.type]
+            return (tx.datetime, type_, tx.memo, tx.cash if tx.cash else 0, tx.units if tx.units else 0)
+
+            #  RETURNCAP = 1
+            #  SPLIT = 2
+            #  SPINOFF = 3
+            #  TRANSFER = 4
+            #  TRADE = 5
+            #  EXERCISE = 6
+
+        txs = sorted(
+            self.reader.transactions,
+            key=sortKey,
+        )
+
+        for predicted, actual in zip(predicted_txs, txs):
+            self._testTransaction(predicted, actual)
+
     def _testTransaction(self, predicted, actual):
         fields = list(type(predicted)._fields)
         # Don't test uniqueid`
         fields.remove("uniqueid")
 
         for field in fields:
-            pred_field = getattr(predicted, field)
-            act_field = getattr(actual, field)
-            if pred_field != act_field:
-                msg = "{} differs from {} in field '{}':\n{} != {}"
-                self.fail(msg.format(predicted, actual, field, pred_field, act_field))
+            pred_value = getattr(predicted, field)
+            act_value = getattr(actual, field)
+            if pred_value != act_value:
+                self.fail(
+                    (
+                        #  f"\n{type(pred_value)} {type(act_value)}"
+                        f"\n{predicted}\ndiffers from\n{actual}\nin field "
+                        f"'{field}':\n{pred_value} != {act_value}"
+                    )
+                )

@@ -1,18 +1,17 @@
 # coding: utf-8
 """
 """
-# stdlib imports
 import logging
 
 
-# 3rd party import
 from sqlalchemy import create_engine
 
 
 # Local imports
-from capgains.ofx import reader
+from . import reader
 from capgains.flex.reader import FlexStatementReader
 from capgains.database import Base, sessionmanager
+
 
 
 BROKERID = "4705"
@@ -64,7 +63,7 @@ class OfxStatementReader(FlexStatementReader):
         memo = transaction.memo.replace(" - REVERSAL", "")
         return transaction.dttrade, security, memo
 
-    def fixCashTransactions(self, transaction):
+    def fixCashTransaction(self, transaction):
         """
         Override the dttrade -> dtsettle jiggery pokery from superclass method
         """

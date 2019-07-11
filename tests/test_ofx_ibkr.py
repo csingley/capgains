@@ -10,6 +10,7 @@ from decimal import Decimal
 
 
 # local imports
+from capgains import models
 from capgains.ofx.ibkr import OfxStatementReader
 from capgains.models import Transaction, TransactionType
 from common import setUpModule, tearDownModule, RollbackMixin, OfxSnippetMixin
@@ -50,7 +51,7 @@ class CashTransactionsTestCase(OfxSnippetMixin, unittest.TestCase):
             tran.memo,
             "RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)",
         )
-        self.assertEqual(tran.currency, "USD")
+        self.assertEqual(tran.currency, models.Currency.USD)
         self.assertEqual(tran.cash, Decimal("139000"))
         self.assertEqual(tran.fiaccount, self.reader.account)
         self.assertEqual(tran.security, rhdgf)

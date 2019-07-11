@@ -3,7 +3,7 @@
 """
 # stdlib imports
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, sentinel
 from datetime import datetime
 from decimal import Decimal
 
@@ -15,8 +15,7 @@ import ofxtools
 
 # local imports
 from capgains.config import CONFIG
-from capgains.ofx.reader import OfxStatementReader
-from capgains import flex
+from capgains import ofx, flex, models
 from capgains.models import (
     Fi,
     FiAccount,
@@ -31,7 +30,7 @@ from common import setUpModule, tearDownModule, RollbackMixin, OfxSnippetMixin
 class OfxReaderMixin(RollbackMixin):
     def setUp(self):
         super(OfxReaderMixin, self).setUp()
-        self.reader = OfxStatementReader(self.session)
+        self.reader = ofx.reader.OfxStatementReader(self.session)
 
 
 class ReadTestCase(OfxReaderMixin, unittest.TestCase):
@@ -48,10 +47,11 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         )
         stockinfo = ofxtools.models.STOCKINFO(secinfo=secinfo)
         self.reader.seclist = ofxtools.models.SECLIST(stockinfo)
+        self.reader.securities = self.reader.read_securities()
 
-    @patch.object(OfxStatementReader, "read_transactions")
-    @patch.object(OfxStatementReader, "read_securities")
-    @patch.object(OfxStatementReader, "read_account")
+    @patch.object(ofx.reader.OfxStatementReader, "read_transactions")
+    @patch.object(ofx.reader.OfxStatementReader, "read_securities")
+    @patch.object(ofx.reader.OfxStatementReader, "read_account")
     def testRead(
         self,
         mock_read_account_method,
@@ -70,9 +70,9 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         ):
             method.assert_called_once()
 
-    @patch.object(OfxStatementReader, "read_transactions")
-    @patch.object(OfxStatementReader, "read_securities")
-    @patch.object(OfxStatementReader, "read_account")
+    @patch.object(ofx.reader.OfxStatementReader, "read_transactions")
+    @patch.object(ofx.reader.OfxStatementReader, "read_securities")
+    @patch.object(ofx.reader.OfxStatementReader, "read_account")
     def testReadNoTransactions(
         self,
         mock_read_account_method,
@@ -89,8 +89,7 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         mock_read_transactions_method.assert_not_called()
 
     def testReadAccount(self):
-        self.reader.read_account()
-        acct = self.reader.account
+        acct = self.reader.read_account(self.reader.statement, self.reader.session)
         self.assertIsInstance(acct, FiAccount)
         self.assertEqual(acct.number, "12345")
         fi = acct.fi
@@ -114,13 +113,13 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         self.assertEqual(sec1.ticker, "YOYO")
 
     @patch.object(
-        OfxStatementReader,
+        ofx.reader.OfxStatementReader,
         "transaction_handlers",
-        wraps=OfxStatementReader.transaction_handlers,
+        wraps=ofx.reader.OfxStatementReader.transaction_handlers,
     )
-    @patch.object(OfxStatementReader, "doTrades")
-    @patch.object(OfxStatementReader, "doCashTransactions")
-    @patch.object(OfxStatementReader, "doTransfers")
+    @patch.object(ofx.reader.OfxStatementReader, "doTrades")
+    @patch.object(ofx.reader.OfxStatementReader, "doCashTransactions")
+    @patch.object(ofx.reader.OfxStatementReader, "doTransfers")
     def testReadTransactions(
         self,
         mock_do_transfers,
@@ -148,7 +147,7 @@ class TradesTestCase(OfxReaderMixin, unittest.TestCase):
         stockinfo = ofxtools.models.STOCKINFO(secinfo=secinfo)
         self.reader.seclist = ofxtools.models.SECLIST(stockinfo)
         self.reader.account = self.account
-        self.reader.read_securities()
+        self.reader.securities = self.reader.read_securities()
         self.reader.currency_default = "USD"
 
         invtran = ofxtools.models.INVTRAN(
@@ -170,9 +169,15 @@ class TradesTestCase(OfxReaderMixin, unittest.TestCase):
         pass
 
     def _mergeTradeTest(self, memo=None):
-        self.reader.merge_trade(self.buystock, memo=memo)
-        self.assertEqual(len(self.reader.transactions), 1)
-        tx = self.reader.transactions.pop()
+        tx = ofx.reader.merge_trade(
+            self.buystock,
+            session=self.session,
+            securities=self.reader.securities,
+            account=self.reader.account,
+            default_currency="USD",
+            sortForTrade=ofx.reader.OfxStatementReader.sortForTrade,
+            memo=memo,
+        )
         self.assertEqual(tx.type, TransactionType.TRADE)
         self.assertIs(tx.fiaccount, self.account)
         self.assertEqual(tx.uniqueid, "deadbeef")
@@ -183,7 +188,7 @@ class TradesTestCase(OfxReaderMixin, unittest.TestCase):
             self.assertEqual(tx.memo, self.buystock.invbuy.invtran.memo)
         self.assertIs(tx.security, self.security)
         self.assertEqual(tx.units, 100)
-        self.assertEqual(tx.currency, "USD")  # self.reader.currency_default
+        self.assertEqual(tx.currency, models.Currency.USD)  # self.reader.currency_default
         self.assertEqual(tx.cash, Decimal("129.99"))
         self.assertIsNone(tx.sort)
 
@@ -202,7 +207,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
         """
         keyCashTransaction() extracts (incometype, (uniqueidtype, uniqueid), memo)
         """
-        tx = flex.types.CashTransaction(
+        tx = flex.Types.CashTransaction(
             fitid="5279100113",
             dttrade=datetime(2015, 4, 24),
             dtsettle=None,
@@ -213,7 +218,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             currency="USD",
             total=Decimal("593517"),
         )
-        key = OfxStatementReader.groupCashTransactionsForCancel(tx)
+        key = ofx.reader.OfxStatementReader.groupCashTransactionsForCancel(tx)
         self.assertIsInstance(key, tuple)
         self.assertEqual(len(key), 3)
         dttrade, security, memo = key
@@ -229,12 +234,12 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
         self.assertIsInstance(memo, str)
         self.assertEqual(memo, "Something")
 
-    def testNetCashTransactions(self):
+    def testNetCash(self):
         """
-        _netCashTransactions() returns CashTransaction with amount summed,
+        net_cash() returns CashTransaction with amount summed,
         earliest dttrade, and other fields from the first transaction.
         """
-        tx0 = flex.types.CashTransaction(
+        tx0 = flex.Types.CashTransaction(
             fitid="5279100113",
             dttrade=datetime(2015, 4, 24),
             dtsettle=None,
@@ -245,7 +250,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             currency="USD",
             total=Decimal("593517"),
         )
-        tx1 = flex.types.CashTransaction(
+        tx1 = flex.Types.CashTransaction(
             fitid="5279100115",
             dttrade=datetime(2015, 4, 23),
             dtsettle=None,
@@ -256,9 +261,9 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             currency="CHF",
             total=Decimal("150"),
         )
-        net = OfxStatementReader(None).netCashTransactions(tx0, tx1)
-        self.assertIsInstance(net, flex.types.CashTransaction)
-        # netCashTransactions() chooses the first transactionID
+        net = ofx.reader.net_cash(tx0, tx1)
+        self.assertIsInstance(net, flex.Types.CashTransaction)
+        # net_cash() chooses the first transactionID
         self.assertEqual(net.fitid, "5279100113")
         self.assertEqual(net.dttrade, datetime(2015, 4, 23))
         self.assertEqual(net.memo, "Something")
@@ -275,7 +280,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
         self.session.add_all([fi, acct, security])
         self.reader.account = acct
         self.reader.securities = {("ISIN", "9999"): security}
-        tx = flex.types.CashTransaction(
+        tx = flex.Types.CashTransaction(
             fitid="deadbeef",
             dttrade=datetime(2015, 4, 1),
             dtsettle=None,
@@ -286,9 +291,14 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             currency="USD",
             total=Decimal("123.45"),
         )
-        self.reader.merge_retofcap(tx, memo=memo)
-        self.assertEqual(len(self.reader.transactions), 1)
-        trans = self.reader.transactions[0]
+        trans = ofx.reader.merge_retofcap(
+            tx,
+            self.session,
+            self.reader.securities,
+            self.reader.account,
+            default_currency="USD",
+            memo=memo
+        )
         self.assertIsInstance(trans, Transaction)
         self.assertEqual(trans.uniqueid, tx.fitid)
         self.assertEqual(trans.datetime, tx.dttrade)
@@ -296,7 +306,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             self.assertEqual(trans.memo, memo)
         else:
             self.assertEqual(trans.memo, tx.memo)
-        self.assertEqual(trans.currency, tx.currency)
+        self.assertEqual(trans.currency, models.Currency[tx.currency])
         self.assertEqual(trans.cash, tx.total)
         self.assertEqual(trans.fiaccount, acct)
         self.assertEqual(trans.security, security)
@@ -315,25 +325,25 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
 
 
 class TransactionTestCase(OfxReaderMixin, unittest.TestCase):
-    @patch.object(Transaction, "merge", return_value="mock_transaction")
+    @patch.object(Transaction, "merge", return_value=sentinel.Transaction)
     def testMergeTransaction(self, mock_merge_method):
-        output = self.reader.merge_transaction(uniqueid="test")
+        output = ofx.reader.merge_transaction(self.session, uniqueid="test")
         mock_merge_method.assert_called_with(self.reader.session, uniqueid="test")
-        self.assertEqual(output, "mock_transaction")
+        self.assertEqual(output, sentinel.Transaction)
 
-    @patch.object(Transaction, "merge", return_value="mock_transaction")
-    @patch.object(OfxStatementReader, "make_uid", return_value="mock_uid")
+    @patch.object(Transaction, "merge", return_value=sentinel.Transaction)
+    @patch("capgains.ofx.reader.make_uid", return_value="mock_uid")
     def testMergeTransactionNoUniqueId(self, mock_make_uid_method, mock_merge_method):
         tx = {
             "uniqueid": None,
             "fiaccount": "test account",
             "datetime": "test datetime",
         }
-        output = self.reader.merge_transaction(**tx)
+        output = ofx.reader.merge_transaction(self.session, **tx)
         mock_make_uid_method.assert_called_with(**tx)
         tx.update({"uniqueid": "mock_uid"})
         mock_merge_method.assert_called_with(self.reader.session, **tx)
-        self.assertEqual(output, "mock_transaction")
+        self.assertEqual(output, sentinel.Transaction)
 
     def testMakeUid(self):
         pass
