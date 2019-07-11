@@ -1,5 +1,6 @@
-# 3rd party imports
 import ofxtools
+
+from . import reader, quirks
 
 
 def read(session, source):

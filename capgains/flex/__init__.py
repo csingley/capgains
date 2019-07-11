@@ -1,16 +1,20 @@
+#  BROKERID must come before importing subpackages, because those
+#  packages want to import BROKERID from the flex namespace.
 BROKERID = "4705"
 
 
 # local imports
-from capgains.flex import parser
-from capgains.flex.reader import FlexResponseReader
+from . import parser
+from . import reader
+from . import Types
+from . import regexes
 
 
 def read(session, source):
     statements = parser.parse(source)
-    reader = FlexResponseReader(session, statements)
-    reader.read()
+    rdr = reader.FlexResponseReader(session, statements)
+    rdr.read()
     transactions = []
-    for stmt in reader.statements:
+    for stmt in rdr.statements:
         transactions.extend(stmt.transactions)
     return transactions

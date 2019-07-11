@@ -55,10 +55,11 @@ whitespace = r"\s+"
 ###############################################################################
 # REGEXES
 ###############################################################################
+
+# IBKR sometimes randomly prepends time/date stamp to ticker ?!
 secSymbolRE = re.compile(r"(\d{14,14})?(?P<ticker>.+)")
 
 
-# IBKR sometimes randomly prepends time/date stamp to ticker ?!
 corpActRE = re.compile(
     r"(?P<memo>.+)"
     + whitespace
