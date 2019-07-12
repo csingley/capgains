@@ -116,7 +116,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         self.transactions: List[models.Transaction] = []
         self.dividendsPaid: DividendsPaid = {}
 
-    def read(self, doTransactions: bool = True) -> None:
+    def read(self, doTransactions: bool = True) -> List[models.Transaction]:
         """Extend OfxStatementReader superclass method - also process unparsed
         ibflex.Types.ChangeInDividendAccruals and ibflex.Types.ConversionRates.
         """
@@ -124,7 +124,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         assert stmt is not None
         self.dividendsPaid = self.read_change_in_dividend_accruals(stmt)
         self.read_currency_rates(stmt, self.session)
-        super(FlexStatementReader, self).read(doTransactions)
+        return super(FlexStatementReader, self).read(doTransactions)
 
     @staticmethod
     def read_default_currency(statement: Statement) -> str:
@@ -170,29 +170,32 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
                 rate=rate.rate,
             )
 
-    def read_securities(self) -> SecuritiesMap:
+    def read_securities(
+        self,
+        session: sqlalchemy.orm.session.Session,
+    ) -> SecuritiesMap:
         securities: SecuritiesMap = {}
-
         assert isinstance(self.statement, Types.FlexStatement)
-        for secinfo in self.statement.securities:
-            sec = models.Security.merge(
-                self.session,
-                uniqueidtype=secinfo.uniqueidtype,
+        securities = {
+            (secinfo.uniqueidtype, secinfo.uniqueid): models.Security.merge(
+                session, uniqueidtype=secinfo.uniqueidtype,
                 uniqueid=secinfo.uniqueid,
                 name=secinfo.secname,
                 ticker=secinfo.ticker,
             )
-            securities[(secinfo.uniqueidtype, secinfo.uniqueid)] = sec
+            for secinfo in self.statement.securities
+        }
+        #  for secinfo in self.statement.securities:
+            #  sec = models.Security.merge(
+                #  session,
+                #  uniqueidtype=secinfo.uniqueidtype,
+                #  uniqueid=secinfo.uniqueid,
+                #  name=secinfo.secname,
+                #  ticker=secinfo.ticker,
+            #  )
+            #  securities[(secinfo.uniqueidtype, secinfo.uniqueid)] = sec
 
         return securities
-
-    transaction_handlers = {
-        "Trade": "doTrades",
-        "CashTransaction": "doCashTransactions",
-        "Transfer": "doTransfers",
-        "CorporateAction": "doCorporateActions",
-        "Exercise": "doOptionsExercises",
-    }
 
     ###########################################################################
     # TRADES
@@ -216,7 +219,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return transaction.memo not in currencyPairs
 
     @staticmethod
-    def filterTradeCancels(transaction: ofx.reader.Trade) -> bool:
+    def is_trade_cancel(transaction: ofx.reader.Trade) -> bool:
         """Is this trade actually a trade cancellation?  Consult trade notes.
 
         Overrides OfxStatementReader superclass method.
@@ -255,7 +258,9 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return transaction.reportdate
 
     @staticmethod
-    def sortForTrade(transaction: ofx.reader.Transaction) -> Any:
+    def sortForTrade(
+        transaction: ofx.reader.Transaction
+    ) -> Optional[models.TransactionSort]:
         return sortForTrade(transaction)
 
     ###########################################################################
@@ -266,12 +271,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
     # their context.
     ###########################################################################
     @staticmethod
-    def filterCashTransactions(transaction: ofx.reader.CashTransaction) -> bool:
-        """Judge whether a transaction should be processed (i.e. it's a return
-        of capital).
-
-        Overrides OfxStatementReader superclass method.
-        """
+    def is_retofcap(transaction: ofx.reader.CashTransaction) -> bool:
         memo = transaction.memo.lower()
         return "return of capital" in memo or "interimliquidation" in memo
 
@@ -282,8 +282,6 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
     ) -> Any:
         """Cash transactions are grouped together for cancellation/netting
         if they're for the same security at the same time with the same memo.
-
-        Overrides OfxStatementReader superclass method.
         """
         security = (transaction.uniqueidtype, transaction.uniqueid)
         memo = cls.stripCashTransactionMemo(transaction.memo)
@@ -351,25 +349,36 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
 
         return transaction
 
-    def doTransfers(self, transactions: Iterable[ofx.reader.Transfer]) -> None:
+    def doTransfers(
+        self,
+        transactions: Iterable[ofx.reader.Transfer],
+        session: sqlalchemy.orm.session.Session,
+        securities: SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+    ) -> List[models.Transaction]:
         """Only handle securities transfers"""
         _merge_acct_transfer = functools.partial(
             merge_account_transfer,
-            session=self.session,
-            securities=self.securities,
-            account=self.account,
+            session=session,
+            securities=securities,
+            account=account,
         )
         transactions = (
             GroupedList(transactions)
             .filter(attrgetter("uniqueid"))
             .map(_merge_acct_transfer)
         )[:]
-        self.transactions.extend(tx for tx in transactions if tx is not None)
+        return [tx for tx in transactions if tx is not None]
 
     def doCorporateActions(
         self,
-        transactions: Iterable[Types.CorporateAction]
-    ) -> None:
+        transactions: Iterable[Types.CorporateAction],
+        session: sqlalchemy.orm.session.Session,
+        securities: SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+    ) -> List[models.Transaction]:
         """
         Group corporate actions by datetime/type/memo; net by security;
         dispatch each group to type-specific handler for further processing.
@@ -389,14 +398,16 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
             "SPINOFF": spinoff,
         }
 
-        group = self.preprocessCorporateActions(
-            self.session,
-            self.securities,
+        group = FlexStatementReader.preprocessCorporateActions(
+            session,
+            securities,
             transactions,
         )
         #  group is now a GroupedList in `grouped` state, containing
         #  GroupedLists of ParsedCorporateAction instances
         assert group.grouped is True
+
+        transactions_: List[models.Transaction] = []
 
         #  Initialize "free parking" state variable to pass partial cost basis
         #  information between different legs of reorgs.
@@ -418,14 +429,16 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
             txs, basis_suspense = handler(
                 parsedCorpActs,
                 memo,
-                self.session,
-                self.securities,
-                self.account,
-                self.currency_default,
+                session,
+                securities,
+                account,
+                default_currency,
                 basis_suspense,
             )
 
-            self.transactions.extend(txs)
+            transactions_.extend(txs)
+
+        return transactions_
 
     @staticmethod
     def preprocessCorporateActions(
@@ -463,27 +476,45 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
 
     def doOptionsExercises(
         self,
-        transactions: Iterable[Types.Exercise]
-    ) -> None:
-        for tx in transactions:
-            security = self.securities[(tx.uniqueidtype, tx.uniqueid)]
-            fromsecurity = self.securities[(tx.uniqueidtypeFrom, tx.uniqueidFrom)]
-            transaction = ofx.reader.merge_transaction(
-                self.session,
-                uniqueid=tx.fitid,
-                datetime=tx.dttrade,
+        transactions: Iterable[Types.Exercise],
+        session: sqlalchemy.orm.session.Session,
+        securities: SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+    ) -> List[models.Transaction]:
+
+        def doOptionsExercise(transaction):
+            security = securities[
+                (transaction.uniqueidtype, transaction.uniqueid)
+            ]
+            fromsecurity = securities[
+                (transaction.uniqueidtypeFrom, transaction.uniqueidFrom)
+            ]
+            return ofx.reader.merge_transaction(
+                session,
+                uniqueid=transaction.fitid,
+                datetime=transaction.dttrade,
                 type=models.TransactionType.EXERCISE,
-                memo=tx.memo,
-                currency=models.Currency[tx.currency],
-                cash=tx.total,
-                fiaccount=self.account,
+                memo=transaction.memo,
+                currency=models.Currency[transaction.currency],
+                cash=transaction.total,
+                fiaccount=account,
                 security=security,
-                units=tx.units,
+                units=transaction.units,
                 fromsecurity=fromsecurity,
-                fromunits=tx.unitsfrom,
-                sort=sortForTrade(tx),
+                fromunits=transaction.unitsfrom,
+                sort=sortForTrade(transaction),
             )
-            self.transactions.append(transaction)
+
+        return [doOptionsExercise(transaction) for transaction in transactions]
+
+    TRANSACTION_HANDLERS = {
+        "Trade": "doTrades",
+        "CashTransaction": "doCashTransactions",
+        "Transfer": "doTransfers",
+        "CorporateAction": "doCorporateActions",
+        "Exercise": "doOptionsExercises",
+    }
 
 
 ########################################################################################

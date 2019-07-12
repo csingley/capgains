@@ -12,7 +12,13 @@ import ibflex
 from capgains import ofx, flex, models, inventory
 from capgains.config import CONFIG
 
-from common import setUpModule, tearDownModule, RollbackMixin, ReadXmlSnippetMixin
+from common import (
+    setUpModule,
+    tearDownModule,
+    RollbackMixin,
+    ReadXmlSnippetMixin,
+    DB_STATE,
+)
 
 
 DB_URI = CONFIG.db_uri
@@ -29,7 +35,7 @@ class FlexStatementReaderMixin(RollbackMixin):
         cls.reader.account = None
 
 
-class ReadTestCase(unittest.TestCase):
+class ReadTestCase(RollbackMixin, unittest.TestCase):
     def setUp(self):
         # Need a default currency
         account = flex.Types.Account(
@@ -47,6 +53,7 @@ class ReadTestCase(unittest.TestCase):
         )
 
         self.reader = flex.reader.FlexStatementReader(None, statement)
+        super().setUp()
 
     @patch.object(ofx.reader.OfxStatementReader, "read")
     @patch.object(flex.reader.FlexStatementReader, "read_change_in_dividend_accruals")
@@ -120,19 +127,19 @@ class ReadTestCase(unittest.TestCase):
             changeInDividendAccruals=None,
             conversionRates=None,
         )
-        self.reader.read_securities()
+        self.reader.read_securities(self.session)
         self.assertEqual(
             mock_security_merge_method.mock_calls,
             [
                 call(
-                    None,
+                    self.session,
                     uniqueidtype=sec0.uniqueidtype,
                     uniqueid=sec0.uniqueid,
                     name=sec0.secname,
                     ticker=sec0.ticker,
                 ),
                 call(
-                    None,
+                    self.session,
                     uniqueidtype=sec1.uniqueidtype,
                     uniqueid=sec1.uniqueid,
                     name=sec1.secname,
@@ -142,8 +149,7 @@ class ReadTestCase(unittest.TestCase):
         )
 
     def testTransactionHandlers(self):
-        handlers = self.reader.transaction_handlers
-        self.assertEqual(len(handlers), 5)
+        handlers = flex.reader.FlexStatementReader.TRANSACTION_HANDLERS
         self.assertEqual(handlers["Trade"], "doTrades")
         self.assertEqual(handlers["CashTransaction"], "doCashTransactions")
         self.assertEqual(handlers["Transfer"], "doTransfers")
@@ -228,7 +234,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.filterTrades(t4), False)
 
-    def testFilterTradeCancels(self):
+    def testIsTradeCancel(self):
         t0 = flex.Types.Trade(
             notes=[ibflex.enums.Code.CANCEL, ibflex.enums.Code.PARTIAL],
             fitid=None,
@@ -242,7 +248,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.filterTradeCancels(t0), True)
+        self.assertEqual(self.reader.is_trade_cancel(t0), True)
 
         t1 = flex.Types.Trade(
             notes=[ibflex.enums.Code.OPENING, ibflex.enums.Code.CLOSING],
@@ -257,7 +263,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.filterTradeCancels(t1), False)
+        self.assertEqual(self.reader.is_trade_cancel(t1), False)
 
     def testSortCanceledTrades(self):
         t0 = flex.Types.Trade(
@@ -339,8 +345,8 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
 
 
 class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
-    def testFilterCashTransactions(self):
-        """filter_cash_transactions() searches memo for text
+    def testIsRetOfCap(self):
+        """is_retofcap() searches memo for text
         `return of capital` / `interimliquidation`.
         """
         t0 = flex.Types.CashTransaction(
@@ -354,7 +360,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             currency=None,
             total=None,
         )
-        self.assertEqual(self.reader.filterCashTransactions(t0), True)
+        self.assertEqual(self.reader.is_retofcap(t0), True)
 
         t1 = flex.Types.CashTransaction(
             incometype="DIV",
@@ -367,7 +373,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             currency=None,
             total=None,
         )
-        self.assertEqual(self.reader.filterCashTransactions(t1), True)
+        self.assertEqual(self.reader.is_retofcap(t1), True)
 
         t2 = flex.Types.CashTransaction(
             incometype="DIV",
@@ -380,7 +386,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             currency=None,
             total=None,
         )
-        self.assertEqual(self.reader.filterCashTransactions(t2), False)
+        self.assertEqual(self.reader.is_retofcap(t2), False)
 
     @patch.object(flex.reader.FlexStatementReader, "stripCashTransactionMemo", wraps=lambda m: m)
     def testGroupCashTransactionsForCancel(
@@ -554,7 +560,7 @@ class CashTransactionWithFilterCancelTestCase(
 
 
 class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
-    @patch.object(flex.reader.FlexStatementReader, "merge_account_transfer")
+    @patch("capgains.flex.reader.merge_account_transfer")
     def testDoTransfers(self, mock_merge_acct_transfer_method):
         tx0 = flex.Types.Transfer(
             fitid=None,
@@ -589,7 +595,13 @@ class TransfersTestCase(FlexStatementReaderMixin, unittest.TestCase):
             type=None,
             other_acctid=None,
         )
-        self.reader.doTransfers([tx0, tx1, tx2])
+        self.reader.doTransfers(
+            [tx0, tx1, tx2],
+            self.session,
+            self.reader.securities,
+            self.reader.account,
+            "USD",
+        )
 
         self.assertEqual(
             mock_merge_acct_transfer_method.mock_calls,

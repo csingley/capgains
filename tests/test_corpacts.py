@@ -5,6 +5,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from collections import namedtuple
 import re
+from typing import List, Tuple
 
 import ibflex
 
@@ -24,11 +25,8 @@ CorpActFields = namedtuple(
 
 class CorpActPreprocessingMixin(object):
     ticker_regex = re.compile(r"(\d{14,14})?(?P<ticker>.+)")
-    # preprocessed_txs is a sequence of duples of
-    # (CorpAct Key, sequence of CorpActFields)
-    # that's fed to _makeParsedCorpAct() to make
-    # flex.reader.ParsedCorpAct instances
-    preprocessed_txs = []  # Implement in subclass
+    # Fed to _makeParsedCorpAct() to make flex.reader.ParsedCorpAct instances
+    preprocessed_txs: List[Tuple[CorpActKey, List[CorpActFields]]] = []  # Implement in subclass
 
     def _makeParsedCorpAct(self, key, fields):
         # For ParsedCorpAct.ticker, strip prepended date

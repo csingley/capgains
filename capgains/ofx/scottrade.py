@@ -9,7 +9,7 @@ BROKERID = "www.scottrade.com"
 
 class OfxStatementReader(reader.OfxStatementReader):
     @staticmethod
-    def filterTradeCancels(transaction):
+    def is_trade_cancel(transaction: reader.Trade) -> bool:
         cancel = False
         memo = transaction.memo
         #  if memo and 'to cancel a previous' in memo.lower():

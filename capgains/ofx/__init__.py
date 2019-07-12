@@ -1,6 +1,6 @@
 import ofxtools
 
-from . import reader, quirks
+from . import reader
 
 
 def read(session, source):

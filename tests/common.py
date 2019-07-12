@@ -4,6 +4,8 @@
 import inspect
 import xml.etree.ElementTree as ET
 import io
+from typing import List
+from mypy_extensions import TypedDict
 
 
 # 3rd party imports
@@ -142,9 +144,12 @@ class OfxSnippetMixin(RollbackMixin):
         #  cls.reader.currency_default = models.Currency.USD
 
 
+SecurityInfoDict = TypedDict("SecurityInfoDict", {"conid": str, "symbol": str})
+
+
 class XmlSnippetMixin:
-    stmt_sections = []
-    securities_info = []
+    stmt_sections: List[str] = []
+    securities_info: List[SecurityInfoDict] = []
 
     @classmethod
     def setUpClass(cls):
@@ -210,8 +215,11 @@ class XmlSnippetMixin:
         cls.statement = stmts[0]
 
 
+ExtraSecuritiesDict = TypedDict("ExtraSecuritiesDict", {"name": str, "ticker": str, "uniqueidtype": str, "uniqueid": str})
+
+
 class ReadXmlSnippetMixin(RollbackMixin, XmlSnippetMixin):
-    extra_securities = []
+    extra_securities: List[ExtraSecuritiesDict] = []
 
     @property
     def persisted_txs(self):

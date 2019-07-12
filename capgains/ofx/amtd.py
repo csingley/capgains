@@ -1,12 +1,13 @@
 # coding: utf-8
 """ """
-# stdlib imports
 import datetime
 import itertools
+from typing import List, Callable, Iterable, Any, cast
 
+import sqlalchemy
+import ofxtools
 
-# Local imports
-from capgains import ofx, flex
+from capgains import ofx, flex, models
 from capgains.containers import GroupedList
 
 
@@ -16,31 +17,37 @@ BROKERID = "ameritrade.com"
 class OfxStatementReader(ofx.reader.OfxStatementReader):
     @staticmethod
     def filterTrades(transaction):
-        """
-        All the trade corrections we have in AMTD datastream are pure BS.
-
-        Args: transaction - ofxtools.models.investment.{BUY*, SELL*} instance
+        """All the trade corrections we have in AMTD datastream are pure BS.
         """
         return "TRADE CORRECTION" not in transaction.memo
 
-    def doTransfers(self, transactions):
-        for key, txs in itertools.groupby(transactions, key=self.groupTransfers):
+    def doTransfers(
+        self,
+        transactions: Iterable[ofx.reader.Transaction],
+        session: sqlalchemy.orm.session.Session,
+        securities: ofx.reader.SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+    ) -> List[models.Transaction]:
+
+        transactions_: List[models.Transaction] = []
+
+        def group_key(transaction: ofx.reader.Transaction) -> Any:
+            """
+            AMTD doesn't always book both legs of a reorg simultaneously;
+            group by transaction date rather than datetime.
+            """
+            assert isinstance(transaction.dttrade, datetime.datetime)
+            return (transaction.dttrade.date(), transaction.memo)
+
+        for key, txs in itertools.groupby(transactions, key=group_key):
             datetrade, memo = key
             handler = self.handler_for_transfer_memo(memo)
-            txs = list(txs)
-            handler(txs, memo)
+            transactions_.extend(handler(list(txs), memo))
 
-    @staticmethod
-    def groupTransfers(tx):
-        """
-        AMTD doesn't always book both legs of a reorg simultaneously;
-        group by transaction date rather than datetime.
-        """
-        dttrade = tx.dttrade
-        date = datetime.date(dttrade.year, dttrade.month, dttrade.day)
-        return (date, tx.memo)
+        return transactions_
 
-    def handler_for_transfer_memo(self, memo):
+    def handler_for_transfer_memo(self, memo: str) -> Callable:
         if "EXCHANGE" in memo:
             handler = self.reorg
         elif "STOCK DIVIDEND" in memo:
@@ -52,36 +59,103 @@ class OfxStatementReader(ofx.reader.OfxStatementReader):
 
         return handler
 
-    def transfer(self, transactions, memo):
-        super(OfxStatementReader, self).doTransfers(transactions)
+    def transfer(
+        self,
+        transactions: List[ofxtools.models.TRANSFER],
+        session: sqlalchemy.orm.session.Session,
+        securities: ofx.reader.SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+        memo: str,
+    ) -> List[models.Transaction]:
+        return super().doTransfers(
+            transactions,
+            session,
+            securities,
+            account,
+            default_currency,
+        )
 
-    def reorg(self, transactions, memo):
+    @staticmethod
+    def reorg(
+        transactions: List[ofxtools.models.TRANSFER],
+        session: sqlalchemy.orm.session.Session,
+        securities: ofx.reader.SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+        memo: str,
+    ) -> List[models.Transaction]:
         """
-        HACK based on assumption that txs is a pair with tfaction={"OUT", "IN"}
+        HACK based on assumption that txs is a pair with tferaction={"OUT", "IN"}
         """
         assert len(transactions) == 2
+        for tx in transactions:
+            assert isinstance(tx, ofxtools.models.TRANSFER)
+            assert tx.tferaction in ("OUT", "IN")
+
         transactions.sort(key=lambda x: x.tferaction)
         assert [tx.tferaction for tx in transactions] == ["IN", "OUT"]
         dest, src = transactions
-        flex.reader.FlexStatementReader.merge_security_transfer(self, src, dest, memo)
+        transaction = flex.reader.merge_security_transfer(
+            session,
+            securities,
+            account,
+            cast(flex.Types.CorporateAction, src),  # HACK FIXME
+            cast(flex.Types.CorporateAction, dest),  # HACK FIXME
+            memo,
+        )
+        return [transaction]
 
-    def stock_dividend(self, transactions, memo):
-        pass
+    @staticmethod
+    def stock_dividend(
+        transactions: List[ofxtools.models.TRANSFER],
+        session: sqlalchemy.orm.session.Session,
+        securities: ofx.reader.SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+        memo: str,
+    ) -> List[models.Transaction]:
+        return []
 
-    def exercise(self, transactions, memo):
+    @staticmethod
+    def exercise(
+        transactions: List[ofxtools.models.TRANSFER],
+        session: sqlalchemy.orm.session.Session,
+        securities: ofx.reader.SecuritiesMap,
+        account: models.FiAccount,
+        default_currency: str,
+        memo: str,
+    ) -> List[models.Transaction]:
         """
         HACK based on assumption that all transactions in list represent a
         single transaction
         """
         # Not ready for prime time
-        return
+        return []
+
+        def group_key(tx):
+            return ((tx.uniqueidtype, tx.uniqueid), tx.tferaction, tx.postype)
+
+        def net_exercises(tx0, tx1):
+            units0 = tx0.units
+            if tx0.postype == "SHORT":
+                units0 *= -1
+                tx0.postype = "LONG"
+            units1 = tx1.units
+            if tx1.postype == "SHORT":
+                units1 *= -1
+            tx0.units += tx1.units
+            return tx0
+
+        def sort_key(tx):
+            return tx.tferaction
 
         txs = (
             GroupedList(transactions)
-            .groupby(self.groupExercises)
-            .reduce(self.netExercises)
+            .groupby(group_key)
+            .reduce(net_exercises)
             .flatten()
-            .sorted(self.sortExercises)
+            .sorted(sort_key)
         )
         txs = txs.pop(None)
         assert len(txs) == 2
@@ -89,15 +163,15 @@ class OfxStatementReader(ofx.reader.OfxStatementReader):
         assert dest.tferaction == "IN"
         assert src.tferaction == "OUT"
 
-        security = self.securities[(dest.uniqueidtype, dest.uniqueid)]
-        fromsecurity = self.securities[(src.uniqueidtype, src.uniqueid)]
+        security = securities[(dest.uniqueidtype, dest.uniqueid)]
+        fromsecurity = securities[(src.uniqueidtype, src.uniqueid)]
 
         # FIXME - exercise cash is sent as INVBANKTRAN; can't get it from
         # just the TRANSFERS which are dispatched to here.
         tx = ofx.reader.merge_transaction(
-            self.session,
+            session,
             type="exercise",
-            fiaccount=self.account,
+            fiaccount=account,
             uniqueid=src.fitid,
             datetime=src.dttrade,
             memo=memo,
@@ -108,25 +182,4 @@ class OfxStatementReader(ofx.reader.OfxStatementReader):
             fromsecurity=fromsecurity,
             fromunits=src.units,
         )
-        self.transactions.append(tx)
-        return tx
-
-    @staticmethod
-    def groupExercises(tx):
-        return ((tx.uniqueidtype, tx.uniqueid), tx.tferaction, tx.postype)
-
-    @staticmethod
-    def netExercises(tx0, tx1):
-        units0 = tx0.units
-        if tx0.postype == "SHORT":
-            units0 *= -1
-            tx0.postype = "LONG"
-        units1 = tx1.units
-        if tx1.postype == "SHORT":
-            units1 *= -1
-        tx0.units += tx1.units
-        return tx0
-
-    @staticmethod
-    def sortExercises(tx):
-        return tx.tferaction
+        return [tx]

@@ -47,7 +47,7 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         )
         stockinfo = ofxtools.models.STOCKINFO(secinfo=secinfo)
         self.reader.seclist = ofxtools.models.SECLIST(stockinfo)
-        self.reader.securities = self.reader.read_securities()
+        self.reader.securities = self.reader.read_securities(self.session)
 
     @patch.object(ofx.reader.OfxStatementReader, "read_transactions")
     @patch.object(ofx.reader.OfxStatementReader, "read_securities")
@@ -99,7 +99,7 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         """
         OfxStatementReader.read_securities() reads SECLIST into securities dict
         """
-        self.reader.read_securities()
+        self.reader.read_securities(self.session)
         securities = self.reader.securities
         self.assertIsInstance(securities, dict)
         # A valid CUSIP in SECLIST also gets you an ISIN for free
@@ -114,9 +114,13 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
 
     @patch.object(
         ofx.reader.OfxStatementReader,
-        "transaction_handlers",
-        wraps=ofx.reader.OfxStatementReader.transaction_handlers,
+        "TRANSACTION_HANDLERS",
+        wraps=ofx.reader.OfxStatementReader.TRANSACTION_HANDLERS,
     )
+    #  @patch(
+        #  "capgains.ofx.reader.TRANSACTION_HANDLERS",
+        #  wraps=ofx.reader.TRANSACTION_HANDLERS,
+    #  )
     @patch.object(ofx.reader.OfxStatementReader, "doTrades")
     @patch.object(ofx.reader.OfxStatementReader, "doCashTransactions")
     @patch.object(ofx.reader.OfxStatementReader, "doTransfers")
@@ -147,7 +151,7 @@ class TradesTestCase(OfxReaderMixin, unittest.TestCase):
         stockinfo = ofxtools.models.STOCKINFO(secinfo=secinfo)
         self.reader.seclist = ofxtools.models.SECLIST(stockinfo)
         self.reader.account = self.account
-        self.reader.securities = self.reader.read_securities()
+        self.reader.securities = self.reader.read_securities(self.session)
         self.reader.currency_default = "USD"
 
         invtran = ofxtools.models.INVTRAN(

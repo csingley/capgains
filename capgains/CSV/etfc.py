@@ -1,25 +1,29 @@
+from __future__ import annotations
+
 import csv
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from collections import namedtuple
 import logging
-
+from typing import Tuple
 
 import sqlalchemy
 
-
 from capgains import models
-from capgains.ofx.reader import OfxStatementReader
+from capgains import ofx, flex
 from capgains.database import Base, sessionmanager
 
 
 class CsvStatement(object):
+    BROKERID = "etrade.com"
+
     def __init__(self):
+        self.acctid = ""
+        self.seclist = ""
         self.transactions = []
 
 
-class CsvTransactionReader(csv.DictReader, OfxStatementReader):
-    BROKERID = "etrade.com"
+class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
 
     def __init__(self, session, csvfile):
         self.session = session
@@ -30,35 +34,64 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
         row = next(csvfile)
         caption, acctid = row.split(",")
         assert caption == "For Account:"
-        acctid = acctid.strip()
-
-        fi = models.Fi.merge(session, brokerid=self.BROKERID)
-
-        self.account = models.FiAccount.merge(session, fi=fi, number=acctid)
+        self.statement.acctid = acctid.strip()
 
         # Skip blank line before headers
         next(csvfile)
-        super(CsvTransactionReader, self).__init__(csvfile)
-        # Skip blank line after headers
-        # next(self)
+        super().__init__(csvfile)
 
-    def read(self):
         # E*Trade CSV files list most recent transactions first
         txs = enumerate(reversed(list(self)))
-        self.statement.transactions = [self.parse(i, tx) for i, tx in txs]
-        self.read_transactions()
-        return self.transactions
+        seclist, transactions = zip(*[self.parse(i, tx) for i, tx in txs])
+        self.seclist = list(seclist)
+        self.statement.transactions = list(transactions)
 
-    def parse(self, index, row):
+    #  def read(self):
+        #  self.read_transactions()
+        #  return self.transactions
+
+    @staticmethod
+    def read_default_currency(statement: ofx.reader.Statement) -> str:
+        return "USD"
+
+    @staticmethod
+    def read_account(
+        statement: ofx.reader.Statement,
+        session: sqlalchemy.orm.session.Session,
+    ) -> models.FiAccount:
+        assert isinstance(statement, CsvStatement)
+        fi = models.Fi.merge(session, brokerid=statement.BROKERID)
+        return models.FiAccount.merge(session, fi=fi, number=statement.acctid)
+
+    #  def read_securities(
+        #  self,
+        #  session: sqlalchemy.orm.session.Session,
+    #  ) -> ofx.reader.SecuritiesMap:
+        #  securities: ofx.reader.SecuritiesMap = {}
+
+    def parse(
+        self,
+        index: int,
+        row: dict
+    ) -> Tuple[flex.Types.Security, CsvTransaction]:
         dt = datetime.strptime(row["TransactionDate"], "%m/%d/%y")
         # CSV file trade dates have a resolution of days, so it's easy
         # to get trades that have all fields identical.
         # To avoid collisions from make_uid(), we increment the datetime
         # by 1 min per row of the file.
         dt += timedelta(minutes=index)
+
+        #  E*Trade CSV files don't include CUSIPS, only tickers, so we create a
+        #  new uniqueidtype=TICKER and use that.
         ticker = row["Symbol"]
-        self.merge_security(ticker)
-        return CsvTransaction(
+        security = flex.Types.Security(
+            uniqueidtype="TICKER",
+            uniqueid=ticker,
+            secname=None,
+            ticker=ticker,
+        )
+        #  self.merge_security(ticker)
+        transaction = CsvTransaction(
             fitid=None,
             dttrade=dt,
             dtsettle=dt,
@@ -70,67 +103,68 @@ class CsvTransactionReader(csv.DictReader, OfxStatementReader):
             total=Decimal(row["Amount"]),
             type=row["TransactionType"],
         )
+        return security, transaction
 
-    def merge_security(self, ticker, name=None):
+    #  def merge_security(self, ticker, name=None):
+        #  """
+        #  E*Trade CSV files don't include CUSIPS, only tickers, so we create a
+        #  new uniqueidtype=TICKER and use that.
+
+        #  CSV files also don't include a list of securities, so we create that
+        #  here as we parse transactions.
+        #  """
+        #  if ("TICKER", ticker) in self.securities:
+            #  return
+
+        #  secid = (
+            #  self.session.query(models.SecurityId)
+            #  .filter_by(uniqueidtype="TICKER", uniqueid=ticker)
+            #  .one_or_none()
+        #  )
+        #  if secid is None:
+            #  security = models.Security.merge(
+                #  self.session, ticker=ticker, uniqueidtype="TICKER", uniqueid=ticker
+            #  )
+        #  else:
+            #  security = secid.security
+        #  self.securities[("TICKER", ticker)] = security
+
+    def name_handler_for_tx(self, transaction: ofx.reader.Transaction) -> str:
         """
-        E*Trade CSV files don't include CUSIPS, only tickers, so we create a
-        new uniqueidtype=TICKER and use that.
-
-        CSV files also don't include a list of securities, so we create that
-        here as we parse transactions.
+        Sort key for grouping transactions for dispatch (TRANSACTION_HANDLERS).
         """
-        if ("TICKER", ticker) in self.securities:
-            return
+        assert isinstance(transaction, CsvTransaction)
+        TRANSACTION_HANDLERS = {
+            "Bought": "doTrades",
+            "Sold": "doTrades",
+            "Cancel Bought": "doTrades",
+            "Cancel Sold": "doTrades",
+            "Dividend": "doCashTransactions",
+            "Reorganization": "",
+        }
+        return TRANSACTION_HANDLERS.get(transaction.type, "")
 
-        secid = (
-            self.session.query(models.SecurityId)
-            .filter_by(uniqueidtype="TICKER", uniqueid=ticker)
-            .one_or_none()
-        )
-        if secid is None:
-            security = models.Security.merge(
-                self.session, ticker=ticker, uniqueidtype="TICKER", uniqueid=ticker
-            )
-        else:
-            security = secid.security
-        self.securities[("TICKER", ticker)] = security
-
-    def groupTransactions(self, transaction):
-        """
-        Sort key for grouping transactions for dispatch (transaction_handlers)
-        """
-        return self.transaction_handlers.get(transaction.type, "")
-
-    transaction_handlers = {
-        "Bought": "doTrades",
-        "Sold": "doTrades",
-        "Cancel Bought": "doTrades",
-        "Cancel Sold": "doTrades",
-        "Dividend": "doCashTransactions",
-        "Reorganization": "",
-    }
 
     ###########################################################################
     # TRADES
     ###########################################################################
     @staticmethod
-    def groupTrades(tx):
-        """
-        E*Trade CSV transaction dttrades only have a resolution of days
+    def group_trades(tx):
+        """E*Trade CSV transaction dttrades only have a resolution of days.
         """
         dttrade = tx.dttrade
-        dttrade = date(dttrade.year, dttrade.month, dttrade.day)
-        return (tx.uniqueidtype, tx.uniqueid, dttrade, abs(tx.units))
+        tradedate = date(dttrade.year, dttrade.month, dttrade.day)
+        return (tx.uniqueidtype, tx.uniqueid, tradedate, abs(tx.units))
 
     @staticmethod
-    def filterTradeCancels(transaction):
+    def is_trade_cancel(transaction):
         return "cancel" in transaction.memo.lower()
 
     ###########################################################################
     # CASH TRANSACTIONS
     ###########################################################################
     @staticmethod
-    def filterCashTransactions(transaction):
+    def is_retofcap(transaction):
         """
         """
         memo = transaction.memo.lower()

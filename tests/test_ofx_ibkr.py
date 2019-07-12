@@ -34,8 +34,13 @@ class CashTransactionsTestCase(OfxSnippetMixin, unittest.TestCase):
     """
 
     def testDoCashTransactions(self):
-        self.reader.doCashTransactions(self.parsed_txs)
-        trans = self.reader.transactions
+        trans = self.reader.doCashTransactions(
+            self.parsed_txs,
+            self.session,
+            self.reader.securities,
+            self.reader.account,
+            self.reader.currency_default,
+        )
 
         # <INVEXPENSE> cancels first <INCOME>
         self.assertEqual(len(trans), 1)

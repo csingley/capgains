@@ -2,16 +2,14 @@
 """
 """
 import logging
-
+from typing import Any
 
 from sqlalchemy import create_engine
 
 
-# Local imports
 from . import reader
 from capgains.flex.reader import FlexStatementReader
 from capgains.database import Base, sessionmanager
-
 
 
 BROKERID = "4705"
@@ -23,18 +21,17 @@ class OfxStatementReader(FlexStatementReader):
     __init__ = reader.OfxStatementReader.__init__  # type: ignore
     read = reader.OfxStatementReader.read
     read_securities = reader.OfxStatementReader.read_securities
-    transaction_handlers = reader.OfxStatementReader.transaction_handlers
+    #  transaction_handlers = reader.OfxStatementReader.transaction_handlers
     doTransfers = reader.OfxStatementReader.doTransfers
 
     @staticmethod
-    def filterTrades(transaction):
-        isFx = False
+    def filterTrades(transaction: reader.Trade) -> bool:
         if transaction.memo and "CASH TRADE" in transaction.memo:
-            isFx = True
-        return not isFx
+            return False
+        return True
 
     @staticmethod
-    def filterTradeCancels(transaction):
+    def is_trade_cancel(transaction: reader.Trade) -> bool:
         cancel = False
         memo = transaction.memo
         if memo and "cancel" in memo.lower():
@@ -42,32 +39,25 @@ class OfxStatementReader(FlexStatementReader):
         return cancel
 
     @staticmethod
-    def sortCanceledTrades(transaction):
+    def sortCanceledTrades(transaction: reader.Trade) -> Any:
         return transaction.fitid
 
     @staticmethod
-    def filterCashTransactions(transaction):
+    def is_retofcap(transaction: reader.CashTransaction) -> bool:
         memo = transaction.memo.lower()
         return "return of capital" in memo or "interimliquidation" in memo
 
     @staticmethod
-    def groupCashTransactionsForCancel(transaction):
-        """
-        Cash transactions are grouped together for cancellation/netting
+    def groupCashTransactionsForCancel(transaction: reader.CashTransaction) -> Any:
+        """Cash transactions are grouped together for cancellation/netting
         if they're for the same security at the same time with the same memo.
-
-        Args: transaction - instance implementing the interface of
-                            ofxtools.models.investment.INCOME
         """
         security = (transaction.uniqueidtype, transaction.uniqueid)
         memo = transaction.memo.replace(" - REVERSAL", "")
         return transaction.dttrade, security, memo
 
-    def fixCashTransaction(self, transaction):
-        """
-        Override the dttrade -> dtsettle jiggery pokery from superclass method
-        """
-        return transaction
+    #  Revert the dttrade -> dtsettle jiggery pokery from FlexStatementReader
+    fixCashTransaction = reader.OfxStatementReader.fixCashTransaction
 
 
 ###############################################################################

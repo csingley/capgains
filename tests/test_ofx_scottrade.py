@@ -37,8 +37,13 @@ class TradeTestCase(OfxSnippetMixin, unittest.TestCase):
         pass
 
     def testTradesCancel(self):
-        self.reader.doTrades(self.parsed_txs)
-        trans = self.reader.transactions
+        trans = self.reader.doTrades(
+            self.parsed_txs,
+            self.session,
+            self.reader.securities,
+            self.reader.account,
+            self.reader.currency_default,
+        )
         self.assertEqual(len(trans), 11)
         for tran in trans:
             self.assertEqual(tran.fiaccount, self.account)
