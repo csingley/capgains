@@ -3,9 +3,8 @@ from __future__ import annotations
 import csv
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from collections import namedtuple
 import logging
-from typing import Tuple
+from typing import Tuple, NamedTuple, Any
 
 import sqlalchemy
 
@@ -31,7 +30,10 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
 
         #  First row gives acct#
         firstrow = next(csvfile)
-        caption, acctid = firstrow.split(",")
+        try:
+            caption, acctid = firstrow.split(",")
+        except ValueError:
+            raise ValueError(f"Bad first row '{firstrow}'")
         assert caption == "For Account:"
         self.statement.acctid = acctid.strip()
 
@@ -140,6 +142,12 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
         }
         return TRANSACTION_HANDLERS.get(transaction.type, "")
 
+    @staticmethod
+    def sort_trades_to_cancel(transaction: ofx.reader.Trade) -> Any:
+        """Use dttrade; CSV files don't provide transaction unique identifiers.
+        """
+        return transaction.dttrade
+
 
     ###########################################################################
     # TRADES
@@ -169,29 +177,24 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
 
 def read(session, file_):
     with open(file_) as f:
-        reader = CsvTransactionReader(session, f)
-        reader.read()
+        reader = CsvTransactionReader(f)
+        return reader.read(session)
 
 
 ###############################################################################
 # DATA CONTAINERS
 ###############################################################################
-CsvTransaction = namedtuple(
-    "CsvTransaction",
-    [
-        "fitid",
-        "dttrade",
-        "dtsettle",
-        "memo",
-        "uniqueidtype",
-        "uniqueid",
-        "units",
-        "currency",
-        "total",
-        "type",
-        # 'reportdate', 'code',
-    ],
-)
+class CsvTransaction(NamedTuple):
+    fitid: str
+    dttrade: datetime
+    dtsettle: datetime
+    memo: str
+    uniqueidtype: str
+    uniqueid: str
+    units: Decimal
+    currency: str
+    total: Decimal
+    type: str
 
 
 ###############################################################################
@@ -215,10 +218,12 @@ def main():
     engine = sqlalchemy.create_engine(args.database)
     Base.metadata.create_all(bind=engine)
 
-    for f in args.file:
-        with sessionmanager(bind=engine) as session:
+    with sessionmanager(bind=engine) as session:
+        for f in args.file:
             print(f)
-            read(session, f)
+            transactions = read(session, f)
+            for transaction in transactions:
+                print(transaction)
 
 
 if __name__ == "__main__":
