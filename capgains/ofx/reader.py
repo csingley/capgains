@@ -296,7 +296,7 @@ class OfxStatementReader(object):
         transactions = (
             GroupedList(transactions)
             .filter(is_interesting)
-            .groupby(self.group_trades)
+            .groupby(self.fingerprint_trade)
             .bind(apply_cancels)
             .filter(operator.attrgetter("units"))  # Removes net 0 unit transactions
             .map(_merge_trade)
@@ -311,7 +311,7 @@ class OfxStatementReader(object):
         return True
 
     @staticmethod
-    def group_trades(transaction: Trade) -> Any:
+    def fingerprint_trade(transaction: Trade) -> Any:
         """
         Transactions are grouped if they have the same security/datetime
         and matching units.  abs(units) is used so that trade cancellations

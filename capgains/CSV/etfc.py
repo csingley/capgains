@@ -104,30 +104,6 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
         )
         return security, transaction
 
-    #  def merge_security(self, ticker, name=None):
-        #  """
-        #  E*Trade CSV files don't include CUSIPS, only tickers, so we create a
-        #  new uniqueidtype=TICKER and use that.
-
-        #  CSV files also don't include a list of securities, so we create that
-        #  here as we parse transactions.
-        #  """
-        #  if ("TICKER", ticker) in self.securities:
-            #  return
-
-        #  secid = (
-            #  self.session.query(models.SecurityId)
-            #  .filter_by(uniqueidtype="TICKER", uniqueid=ticker)
-            #  .one_or_none()
-        #  )
-        #  if secid is None:
-            #  security = models.Security.merge(
-                #  self.session, ticker=ticker, uniqueidtype="TICKER", uniqueid=ticker
-            #  )
-        #  else:
-            #  security = secid.security
-        #  self.securities[("TICKER", ticker)] = security
-
     def name_handler_for_tx(self, transaction: ofx.reader.Transaction) -> str:
         """Sort key to group transactions for dispatch (TRANSACTION_HANDLERS).
         """
@@ -148,12 +124,11 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
         """
         return transaction.dttrade
 
-
     ###########################################################################
     # TRADES
     ###########################################################################
     @staticmethod
-    def group_trades(tx):
+    def fingerprint_trade(tx):
         """E*Trade CSV transaction dttrades only have a resolution of days.
         """
         dttrade = tx.dttrade
@@ -169,8 +144,6 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
     ###########################################################################
     @staticmethod
     def is_retofcap(transaction):
-        """
-        """
         memo = transaction.memo.lower()
         return "liqd" in memo or "ret cap" in memo
 
