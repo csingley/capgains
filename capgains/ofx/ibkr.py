@@ -18,14 +18,14 @@ BROKERID = "4705"
 class OfxStatementReader(FlexStatementReader):
     # Get back OfxStatementReader superclass methods that we need which were
     # overriden in FlexStatementReader class definition
-    __init__ = reader.OfxStatementReader.__init__  # type: ignore
+    __init__ = reader.OfxStatementReader.__init__
     read = reader.OfxStatementReader.read
-    read_default_currency = staticmethod(reader.OfxStatementReader.read_default_currency)
-    read_account = staticmethod(reader.OfxStatementReader.read_account)
+    read_default_currency = staticmethod(reader.OfxStatementReader.read_default_currency)  # type: ignore
+    read_account = staticmethod(reader.OfxStatementReader.read_account)  # type: ignore
     read_securities = reader.OfxStatementReader.read_securities
     doTransfers = reader.OfxStatementReader.doTransfers
     TRANSACTION_HANDLERS = reader.OfxStatementReader.TRANSACTION_HANDLERS
-    sortForTrade = staticmethod(reader.OfxStatementReader.sortForTrade)
+    sortForTrade = staticmethod(reader.OfxStatementReader.sortForTrade)  # type: ignore
     fixCashTransaction = reader.OfxStatementReader.fixCashTransaction
 
 
@@ -44,7 +44,7 @@ class OfxStatementReader(FlexStatementReader):
         return cancel
 
     @staticmethod
-    def sortCanceledTrades(transaction: reader.Trade) -> Any:
+    def sort_trades_to_cancel(transaction: reader.Trade) -> Any:
         return transaction.fitid
 
     @staticmethod

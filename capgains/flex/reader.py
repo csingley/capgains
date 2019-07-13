@@ -244,7 +244,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return ibflex.enums.Code.CANCEL in transaction.notes
 
     @staticmethod
-    def matchTradeWithCancel(
+    def are_trade_cancel_pair(
         canceler: ofx.reader.Trade,
         canceled: ofx.reader.Trade,
     ) -> bool:
@@ -264,10 +264,11 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return match
 
     @staticmethod
-    def sortCanceledTrades(transaction: ofx.reader.Trade) -> Any:
-        """Determines order in which trades are canceled - order by transaction
-        report date (i.e. the date the trade was reported, as opposed to when
-        it was executed).
+    def sort_trades_to_cancel(transaction: ofx.reader.Trade) -> Any:
+        """Determines order in which trades are canceled.
+
+        Order by transaction report date (i.e. date the trade was reported,
+        as opposed to when it was executed).
 
         Overrides OfxStatementReader superclass method.
         """
@@ -293,7 +294,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return "return of capital" in memo or "interimliquidation" in memo
 
     @classmethod
-    def groupCashTransactionsForCancel(
+    def fingerprint_cash(
         cls,
         transaction: ofx.reader.CashTransaction
     ) -> Any:
@@ -314,7 +315,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return memo
 
     @staticmethod
-    def filterCashTransactionCancels(transaction: ofx.reader.CashTransaction) -> bool:
+    def is_cash_cancel(transaction: ofx.reader.CashTransaction) -> bool:
         """Is this cash transaction actually a reversal?
 
         Overrides OfxStatementReader superclass method.
@@ -323,7 +324,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return "REVERSAL" in memo or "CANCEL" in memo
 
     @staticmethod
-    def sortCanceledCashTransactions(transaction: ofx.reader.CashTransaction) -> Any:
+    def sort_cash_for_cancel(transaction: ofx.reader.CashTransaction) -> Any:
         """Determines order in which cash transactions are reversed.
 
         Overrides OfxStatementReader superclass method.
@@ -483,7 +484,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
             .reduce(net_corpacts)
             .flatten()
             .map(parse_memo)  # Transform contents from CorporateAction to ParsedCorpAct
-            .groupby(group_parsed_corpacts)
+            .groupby(fingerprint_parsed_corpacts)
             .sort(sort_parsed_corpacts)
         )
 
@@ -535,7 +536,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
 ########################################################################################
 #  Helper functions
 ########################################################################################
-def group_corpacts(
+def fingerprint_corpacts(
     corpAct: Types.CorporateAction
 ) -> Any:
     """Same security/date/type/memo -> same reorg in same security.
@@ -635,10 +636,10 @@ def parseCorporateActionMemo(
     return pca
 
 
-def group_parsed_corpacts(parsedCorpAct: "ParsedCorpAct") -> Any:
+def fingerprint_parsed_corpacts(parsedCorpAct: "ParsedCorpAct") -> Any:
     """Same date/type/memo -> same reorg.
 
-    Differs from group_corpacts() by potentially including multiple securities
+    Differs from fingerprint_corpacts() by potentially including multiple securities
     as part of the same reorg.
     """
     return parsedCorpAct.raw.dttrade, parsedCorpAct.type.name, parsedCorpAct.memo
@@ -859,13 +860,13 @@ def tender(
         # The 'TO' series contains the cash paid for the subscription, but
         # not the units, while the 'TC' series contains the units data but
         # not the cost.  Neither series, as grouped by
-        # group_parsed_corpacts(), contains all the data.
+        # fingerprint_parsed_corpacts(), contains all the data.
         #
         # Here we extract the cost & open date, and stash it in a dict to
         # be picked up for later processing by merge_reorg().  We assume
         # that the 'TO' series has a dateTime strictly earlier than the
         # 'TC' series, so they'll be sorted in correct time order by
-        # group_parsed_corpacts() and merge_reorg() will have its
+        # fingerprint_parsed_corpacts() and merge_reorg() will have its
         # values ready & waiting from tender().
         assert len(cashportions) == 1
         cashportion = cashportions.pop().raw
@@ -1288,12 +1289,12 @@ def merge_reorg(
         # The 'TO' series contains the cash paid for the subscription, but
         # not the units, while the 'TC' series contains the units data but
         # not the cost.  Neither series, as grouped by
-        # group_parsed_corpacts(), contains all the data.
+        # fingerprint_parsed_corpacts(), contains all the data.
         #
         # Here we pick up the cost & open date from where it was earlier
         # stashed in a dict by tender().  We assume that the 'TO' series
         # has a dateTime strictly earlier than the 'TC' series, so they'll
-        # be sorted in correct time order by group_parsed_corpacts()
+        # be sorted in correct time order by fingerprint_parsed_corpacts()
         # and merge_reorg() will have its values ready & waiting from
         # tender().
         basis_adj = basis_suspense.pop((src.uniqueidtype, src.uniqueid), None)

@@ -207,7 +207,7 @@ class TradesTestCase(OfxReaderMixin, unittest.TestCase):
 
 
 class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
-    def testGroupCashTransactionsForCancel(self):
+    def testFingerprintCash(self):
         """
         keyCashTransaction() extracts (incometype, (uniqueidtype, uniqueid), memo)
         """
@@ -222,7 +222,7 @@ class CashTransactionsTestCase(OfxReaderMixin, unittest.TestCase):
             currency="USD",
             total=Decimal("593517"),
         )
-        key = ofx.reader.OfxStatementReader.groupCashTransactionsForCancel(tx)
+        key = ofx.reader.OfxStatementReader.fingerprint_cash(tx)
         self.assertIsInstance(key, tuple)
         self.assertEqual(len(key), 3)
         dttrade, security, memo = key

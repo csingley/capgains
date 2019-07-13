@@ -265,7 +265,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.is_trade_cancel(t1), False)
 
-    def testSortCanceledTrades(self):
+    def testSortTradesToCancel(self):
         t0 = flex.Types.Trade(
             reportdate="something",
             fitid=None,
@@ -279,7 +279,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             notes=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.sortCanceledTrades(t0), "something")
+        self.assertEqual(self.reader.sort_trades_to_cancel(t0), "something")
 
     def testSortForTrade(self):
         t0 = flex.Types.Trade(
@@ -389,11 +389,11 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         self.assertEqual(self.reader.is_retofcap(t2), False)
 
     @patch.object(flex.reader.FlexStatementReader, "stripCashTransactionMemo", wraps=lambda m: m)
-    def testGroupCashTransactionsForCancel(
+    def testFingerprintCash(
         self, mock_strip_cash_memo_method, wraps=lambda memo: memo
     ):
         """
-        FlexStatementReader.groupCashTransactionsForCancel() returns
+        FlexStatementReader.fingerprint_cash() returns
         (tx.dtsettle, (tx.uniqueidtype, tx.uniqueid), tx.memo)
         """
         tx = flex.Types.CashTransaction(
@@ -407,7 +407,8 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             incometype=None,
         )
-        output = self.reader.groupCashTransactionsForCancel(tx)
+        output = self.reader.fingerprint_cash(tx)
+        (tx)
         self.assertEqual(
             output,
             (
@@ -424,7 +425,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         memo = "foo CANCEL bar"
         self.assertEqual(self.reader.stripCashTransactionMemo(memo), "foo bar")
 
-    def testFilterCashTransactionCancels(self):
+    def testIsCashCancel(self):
         tx = flex.Types.CashTransaction(
             memo="foobar",
             fitid=None,
@@ -436,7 +437,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             incometype=None,
         )
-        output = self.reader.filterCashTransactionCancels(tx)
+        output = self.reader.is_cash_cancel(tx)
         self.assertEqual(output, False)
 
         tx = flex.Types.CashTransaction(
@@ -450,7 +451,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             incometype=None,
         )
-        output = self.reader.filterCashTransactionCancels(tx)
+        output = self.reader.is_cash_cancel(tx)
         self.assertEqual(output, True)
 
         tx = flex.Types.CashTransaction(
@@ -464,12 +465,12 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             incometype=None,
         )
-        output = self.reader.filterCashTransactionCancels(tx)
+        output = self.reader.is_cash_cancel(tx)
         self.assertEqual(output, True)
 
-    def testSortCanceledCashTransactions(self):
+    def testSortCashForCancel(self):
         """
-        FlexStatementReader.sortCanceledCashTransactions() returns tx.fitid
+        FlexStatementReader.sort_cash_for_cancel() returns tx.fitid
         """
         tx = flex.Types.CashTransaction(
             memo=None,
@@ -482,7 +483,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             incometype=None,
         )
-        output = self.reader.sortCanceledCashTransactions(tx)
+        output = self.reader.sort_cash_for_cancel(tx)
         self.assertEqual(output, tx.fitid)
 
     def testFixCashTransactions(self):
@@ -657,8 +658,8 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         ]
         self.assertEqual(len(self.corpActMemos), len(self.cmptypes))
 
-    def testGroupCorpActs(self):
-        """FlexStatementReader.group_corpacts() uses the type name, not type
+    def testFingerpringCorpActs(self):
+        """FlexStatementReader.fingerprint_corpacts() uses the type name, not type
         """
         corpAct = flex.Types.CorporateAction(
             fitid=None,
@@ -673,7 +674,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        result = flex.reader.group_corpacts(corpAct)
+        result = flex.reader.fingerprint_corpacts(corpAct)
         self.assertEqual(
             result,
             (
@@ -836,7 +837,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             self.assertEqual(pca.secname, secname)
             self.assertEqual(pca.memo, mem)
 
-    def testGroupParsedCorpActs(self):
+    def testFingerprintParsedCorpActs(self):
         corpAct = flex.Types.CorporateAction(
             fitid=None,
             dttrade=sentinel.dttrade,
@@ -859,7 +860,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             memo=sentinel.memo,
         )
         self.assertEqual(
-            flex.reader.group_parsed_corpacts(pca),
+            flex.reader.fingerprint_parsed_corpacts(pca),
             (sentinel.dttrade, "DELISTWORTHLESS", sentinel.memo),
         )
 

@@ -280,8 +280,8 @@ class OfxStatementReader(object):
 
         apply_cancels = make_canceller(
             filterfunc=self.is_trade_cancel,  # override
-            matchfunc=self.matchTradeWithCancel,  # override
-            sortfunc=self.sortCanceledTrades,  # override
+            matchfunc=self.are_trade_cancel_pair,  # override
+            sortfunc=self.sort_trades_to_cancel,  # override
         )
 
         _merge_trade = functools.partial(
@@ -333,13 +333,13 @@ class OfxStatementReader(object):
         return False
 
     @staticmethod
-    def matchTradeWithCancel(transaction0: Trade, transaction1: Trade) -> bool:
+    def are_trade_cancel_pair(transaction0: Trade, transaction1: Trade) -> bool:
         """Does one of these trades cancel the other?
         """
         return transaction0.units == -1 * transaction1.units
 
     @staticmethod
-    def sortCanceledTrades(transaction: Trade) -> Any:
+    def sort_trades_to_cancel(transaction: Trade) -> Any:
         """Determines order in which trades are canceled.
         """
         return transaction.fitid
@@ -381,13 +381,13 @@ class OfxStatementReader(object):
         Args: transactions - a sequence of instances implementing the interface
                              of ofxtools.models.investment.INCOME
         """
-        is_interesting = self.is_retofcap # Override
-        group_key = self.groupCashTransactionsForCancel  # Override
+        is_retofcap = self.is_retofcap # Override
+        fingerprint_cash = self.fingerprint_cash  # Override
 
         apply_cancels = make_canceller(
-            filterfunc=self.filterCashTransactionCancels,
+            filterfunc=self.is_cash_cancel,
             matchfunc=lambda x, y: x.total == -1 * y.total,
-            sortfunc=self.sortCanceledCashTransactions,
+            sortfunc=self.sort_cash_for_cancel,
         )  # override this whole thing
 
         _merge_retofcap = functools.partial(
@@ -402,8 +402,8 @@ class OfxStatementReader(object):
 
         transactions_ = (
             GroupedList(transactions)
-            .filter(is_interesting)
-            .groupby(group_key)
+            .filter(is_retofcap)
+            .groupby(fingerprint_cash)
             .bind(apply_cancels)
             .reduce(net_cash)
             .filter(operator.attrgetter("total"))  # Removes net $0 transactions
@@ -420,7 +420,7 @@ class OfxStatementReader(object):
         return False
 
     @staticmethod
-    def groupCashTransactionsForCancel(transaction: CashTransaction) -> Any:
+    def fingerprint_cash(transaction: CashTransaction) -> Any:
         """
         Cash transactions are grouped together for cancellation/netting
         if they're for the same security at the same time with the same memo.
@@ -430,7 +430,7 @@ class OfxStatementReader(object):
         return transaction.dttrade, security, memo
 
     @staticmethod
-    def filterCashTransactionCancels(transaction: CashTransaction) -> Any:
+    def is_cash_cancel(transaction: CashTransaction) -> Any:
         """
         Is this cash transaction actually a reversal?  Implement in subclass.
         Returns: boolean
@@ -438,7 +438,7 @@ class OfxStatementReader(object):
         return False
 
     @staticmethod
-    def sortCanceledCashTransactions(transaction: CashTransaction) -> Any:
+    def sort_cash_for_cancel(transaction: CashTransaction) -> Any:
         """
         Determines order in which cash transactions are reversed.
 
