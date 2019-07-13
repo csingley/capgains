@@ -52,7 +52,7 @@ class ReadTestCase(RollbackMixin, unittest.TestCase):
             conversionRates=(),
         )
 
-        self.reader = flex.reader.FlexStatementReader(None, statement)
+        self.reader = flex.reader.FlexStatementReader(statement)
         super().setUp()
 
     @patch.object(ofx.reader.OfxStatementReader, "read")
@@ -64,10 +64,10 @@ class ReadTestCase(RollbackMixin, unittest.TestCase):
         mock_flex_read_change_in_dividends_method,
         mock_ofx_read_method,
     ):
-        self.reader.read()
+        self.reader.read(self.session)
         mock_flex_read_currency_rates_method.assert_called_once()
         mock_flex_read_change_in_dividends_method.assert_called_once()
-        mock_ofx_read_method.assert_called_with(True)
+        mock_ofx_read_method.assert_called_with(self.session, True)
 
     def testReadChangeInDividendAccruals(self):
         """read_change_in_dividend_accruals()
@@ -684,7 +684,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             ),
         )
 
-    def testFilterCorporateActionCancels(self):
+    def testIsCorpactCancel(self):
         corpAct0 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
@@ -698,7 +698,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=[ibflex.enums.Code.CANCEL, ibflex.enums.Code.PARTIAL],
         )
-        self.assertIs(flex.reader.filterCorporateActionCancels(corpAct0), True)
+        self.assertIs(flex.reader.is_corpact_cancel(corpAct0), True)
 
         corpAct0 = flex.Types.CorporateAction(
             fitid=None,
@@ -713,9 +713,9 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=[ibflex.enums.Code.OPENING, ibflex.enums.Code.PARTIAL],
         )
-        self.assertIs(flex.reader.filterCorporateActionCancels(corpAct0), False)
+        self.assertIs(flex.reader.is_corpact_cancel(corpAct0), False)
 
-    def testMatchCorporateActionWithCancel(self):
+    def testAreCorpActCancelPair(self):
         corpAct0 = flex.Types.CorporateAction(
             fitid=None,
             dttrade=None,
@@ -757,29 +757,10 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
 
         self.assertIs(
-            flex.reader.matchCorporateActionWithCancel(corpAct0, corpAct1), False
+            flex.reader.are_corpact_cancel_pair(corpAct0, corpAct1), False
         )
         self.assertIs(
-            flex.reader.matchCorporateActionWithCancel(corpAct0, corpAct2), True
-        )
-
-    def testSortCanceledCorporateActions(self):
-        corpAct = flex.Types.CorporateAction(
-            fitid=None,
-            dttrade=None,
-            memo=None,
-            uniqueidtype=None,
-            uniqueid=None,
-            units=None,
-            currency=None,
-            total=None,
-            type=None,
-            reportdate=sentinel.reportdate,
-            code=None,
-        )
-
-        self.assertIs(
-            flex.reader.sortCanceledCorporateActions(corpAct), sentinel.reportdate
+            flex.reader.are_corpact_cancel_pair(corpAct0, corpAct2), True
         )
 
     def testNetCorpActs(self):

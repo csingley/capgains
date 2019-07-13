@@ -264,10 +264,9 @@ class ReadXmlSnippetMixin(RollbackMixin, XmlSnippetMixin):
             )
 
         cls.reader = flex.reader.FlexStatementReader(
-            cls.session,
             statement=cls.statement,
         )
-        cls.reader.read()
+        cls.reader.read(cls.session)
 
     def testEndToEnd(self):
         # First test that the transactions made it to the DB correctly.

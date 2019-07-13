@@ -62,7 +62,7 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         OfxStatementReader.read() calls read_account(), read_securities(),
         and (by default) read_transactions()
         """
-        self.reader.read()
+        self.reader.read(self.session)
         for method in (
             mock_read_account_method,
             mock_read_securities_method,
@@ -83,13 +83,13 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
         OfxStatementReader.read() doesn't call read_transactions() when called
         with doTransactions=False
         """
-        self.reader.read(doTransactions=False)
+        self.reader.read(self.session, doTransactions=False)
         for method in (mock_read_account_method, mock_read_securities_method):
             method.assert_called_once()
         mock_read_transactions_method.assert_not_called()
 
     def testReadAccount(self):
-        acct = self.reader.read_account(self.reader.statement, self.reader.session)
+        acct = self.reader.read_account(self.reader.statement, self.session)
         self.assertIsInstance(acct, FiAccount)
         self.assertEqual(acct.number, "12345")
         fi = acct.fi
@@ -332,7 +332,7 @@ class TransactionTestCase(OfxReaderMixin, unittest.TestCase):
     @patch.object(Transaction, "merge", return_value=sentinel.Transaction)
     def testMergeTransaction(self, mock_merge_method):
         output = ofx.reader.merge_transaction(self.session, uniqueid="test")
-        mock_merge_method.assert_called_with(self.reader.session, uniqueid="test")
+        mock_merge_method.assert_called_with(self.session, uniqueid="test")
         self.assertEqual(output, sentinel.Transaction)
 
     @patch.object(Transaction, "merge", return_value=sentinel.Transaction)
@@ -346,7 +346,7 @@ class TransactionTestCase(OfxReaderMixin, unittest.TestCase):
         output = ofx.reader.merge_transaction(self.session, **tx)
         mock_make_uid_method.assert_called_with(**tx)
         tx.update({"uniqueid": "mock_uid"})
-        mock_merge_method.assert_called_with(self.reader.session, **tx)
+        mock_merge_method.assert_called_with(self.session, **tx)
         self.assertEqual(output, sentinel.Transaction)
 
     def testMakeUid(self):

@@ -19,36 +19,38 @@ class CsvStatement(object):
 
     def __init__(self):
         self.acctid = ""
-        self.seclist = ""
+        self.seclist = []
         self.transactions = []
 
 
 class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
 
-    def __init__(self, session, csvfile):
-        self.session = session
-        # Conform to ofx.OfxStatementReader interface
+    def __init__(self, csvfile):
+        #  Set up a statement analogous to INVSTMTRS
         self.statement = CsvStatement()
-        self.securities = {}
-        self.transactions = []
-        row = next(csvfile)
-        caption, acctid = row.split(",")
+
+        #  First row gives acct#
+        firstrow = next(csvfile)
+        caption, acctid = firstrow.split(",")
         assert caption == "For Account:"
         self.statement.acctid = acctid.strip()
 
-        # Skip blank line before headers
+        #  Skip blank line before headers.
         next(csvfile)
+        #  Remaining rows are transaction data; read them.
         super().__init__(csvfile)
 
-        # E*Trade CSV files list most recent transactions first
+        # E*Trade CSV files list most recent transactions first.
         txs = enumerate(reversed(list(self)))
         seclist, transactions = zip(*[self.parse(i, tx) for i, tx in txs])
-        self.seclist = list(seclist)
-        self.statement.transactions = list(transactions)
 
-    #  def read(self):
-        #  self.read_transactions()
-        #  return self.transactions
+        # Conform to the rest of ofx.OfxStatementReader instance attributes.
+        self.statement.transactions = list(transactions)
+        self.seclist = list(seclist)
+
+        #  Initialize reading results collections.
+        self.securities = {}
+        self.transactions = []
 
     @staticmethod
     def read_default_currency(statement: ofx.reader.Statement) -> str:
@@ -62,12 +64,6 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
         assert isinstance(statement, CsvStatement)
         fi = models.Fi.merge(session, brokerid=statement.BROKERID)
         return models.FiAccount.merge(session, fi=fi, number=statement.acctid)
-
-    #  def read_securities(
-        #  self,
-        #  session: sqlalchemy.orm.session.Session,
-    #  ) -> ofx.reader.SecuritiesMap:
-        #  securities: ofx.reader.SecuritiesMap = {}
 
     def parse(
         self,
@@ -83,9 +79,10 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
 
         #  E*Trade CSV files don't include CUSIPS, only tickers, so we create a
         #  new uniqueidtype=TICKER and use that.
+        uniqueidtype = "TICKER"
         ticker = row["Symbol"]
         security = flex.Types.Security(
-            uniqueidtype="TICKER",
+            uniqueidtype=uniqueidtype,
             uniqueid=ticker,
             secname=None,
             ticker=ticker,
@@ -96,7 +93,7 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
             dttrade=dt,
             dtsettle=dt,
             memo=row["Description"],
-            uniqueidtype="TICKER",
+            uniqueidtype=uniqueidtype,
             uniqueid=ticker,
             units=Decimal(row["Quantity"]),
             currency="USD",
@@ -130,8 +127,7 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
         #  self.securities[("TICKER", ticker)] = security
 
     def name_handler_for_tx(self, transaction: ofx.reader.Transaction) -> str:
-        """
-        Sort key for grouping transactions for dispatch (TRANSACTION_HANDLERS).
+        """Sort key to group transactions for dispatch (TRANSACTION_HANDLERS).
         """
         assert isinstance(transaction, CsvTransaction)
         TRANSACTION_HANDLERS = {

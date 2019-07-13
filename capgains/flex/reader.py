@@ -13,7 +13,6 @@ import logging
 from copy import copy
 from typing import (
     Any,
-    Union,
     Optional,
     NamedTuple,
     Tuple,
@@ -30,7 +29,7 @@ from ofxtools.utils import validate_cusip, cusip2isin, validate_isin
 import ibflex
 
 from capgains import ofx, models, utils
-from capgains.ofx.reader import SecuritiesMap, Statement, Trade
+from capgains.ofx.reader import SecuritiesMap, Statement
 from capgains.flex import BROKERID, Types, regexes
 from capgains.database import Base, sessionmanager
 from capgains.containers import GroupedList
@@ -42,9 +41,9 @@ class ParsedCorpAct(NamedTuple):
     Attrs:
         raw: original unparsed CorporateAction
         type: ibflex.enums.Reorg instance from CorporateAction
-        ticker: parsed from CorporateAction.memo
-        cusip: parsed from CorporateAction.memo
-        secname: parsed from CorporateAction.memo
+        ticker: parsed from CorporateAction.memo (the part in parentheses)
+        cusip: parsed from CorporateAction.memo (the part in parentheses)
+        secname: parsed from CorporateAction.memo (the part in parentheses)
         memo: stripped CorporateAction.memo prefix (the part before parentheses)
     """
     raw: Types.CorporateAction
@@ -88,43 +87,70 @@ class FlexResponseReader:
 
     def __init__(
         self,
-        session: sqlalchemy.orm.session.Session,
         response: Iterable[Types.FlexStatement],
     ):
         """
         """
-        self.session = session
-        self.statements = [FlexStatementReader(session, stmt) for stmt in response]
+        self.statements = [FlexStatementReader(stmt) for stmt in response]
 
-    def read(self) -> None:
+    def read(self, session) -> None:
         for stmt in self.statements:
-            stmt.read()
+            stmt.read(session)
 
 
 class FlexStatementReader(ofx.reader.OfxStatementReader):
     """Processor for capgains.flex.parser.FlexStatement instances.
+
+    This subclass is a pretty straightforward extension of OfxStatementReader,
+    except for the extensive processing of corporate actions in
+    doCorporateActions(), which is NOOP in the parent.
+
+    Flex doesn't provide XML attributes for key metadata needed to process
+    CorporateActions; IB's programmers seem to have used a string template
+    to jam it into the transaction memo, whence we must parse it out.
+
+    https://xkcd.com/208/
+
+    The first stage of regex parsing occurs in preprocessCorporateActions() -
+    the actual memo is split from the appended metadata.  All legs of a single
+    corporate action share a memo, so the parsed corporate actions are grouped
+    by memo and type.  doCorporateActions() then dispatches these groups by
+    corporate action type to another level of handlers inserted before the
+    'merge' stage of the OfxStatementReader 'read' / 'do' / 'merge' flow.
+
+    These corporate action handlers perform the next stage of regex parsing -
+    looking within the memo itself for references to securities that can be
+    used to link the legs of the reorg.  The results are passed to the 'merge'
+    layer, which maps the legs to the models.Transaction data model.
     """
 
     def __init__(
         self,
-        session: sqlalchemy.orm.session.Session,
         statement: Optional[Types.FlexStatement] = None,
      ):
-        self.session = session
+        #  Store instance construction args
         self.statement = statement
+
+        #  Initialize reading results collections
         self.securities: SecuritiesMap = {}
         self.transactions: List[models.Transaction] = []
         self.dividendsPaid: DividendsPaid = {}
 
-    def read(self, doTransactions: bool = True) -> List[models.Transaction]:
+    def read(
+        self,
+        session: sqlalchemy.orm.session.Session,
+        doTransactions: bool = True,
+    ) -> List[models.Transaction]:
         """Extend OfxStatementReader superclass method - also process unparsed
         ibflex.Types.ChangeInDividendAccruals and ibflex.Types.ConversionRates.
         """
+        self.session = session
         stmt = self.statement
         assert stmt is not None
+
         self.dividendsPaid = self.read_change_in_dividend_accruals(stmt)
         self.read_currency_rates(stmt, self.session)
-        return super(FlexStatementReader, self).read(doTransactions)
+        return super(FlexStatementReader, self).read(session, doTransactions)
 
     @staticmethod
     def read_default_currency(statement: Statement) -> str:
@@ -185,15 +211,6 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
             )
             for secinfo in self.statement.securities
         }
-        #  for secinfo in self.statement.securities:
-            #  sec = models.Security.merge(
-                #  session,
-                #  uniqueidtype=secinfo.uniqueidtype,
-                #  uniqueid=secinfo.uniqueid,
-                #  name=secinfo.secname,
-                #  ticker=secinfo.ticker,
-            #  )
-            #  securities[(secinfo.uniqueidtype, secinfo.uniqueid)] = sec
 
         return securities
 
@@ -325,11 +342,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         uniqueid = transaction.uniqueid
         assert isinstance(uniqueid, str)
         payDt = transaction.dtsettle
-        try:
-            assert isinstance(payDt, datetime_.datetime)
-        except AssertionError:
-            print(type(payDt), payDt)
-            raise
+        assert isinstance(payDt, datetime_.datetime)
         #  N.B. transaction.dtsettle is a datetime.datetime, but
         #  self.dividendsPaid is keyed by (uniqueid, date).
         #  Transform datetime to date for lookup.
@@ -446,12 +459,13 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         securities: SecuritiesMap,
         transactions: Iterable[Types.CorporateAction]
     ) -> GroupedList:
-        """Factored out from doCorporateActions() for testing purposes.
+        """
+        Factored out from doCorporateActions() for testing purposes.
         """
         apply_cancels = ofx.reader.make_canceller(
-            filterfunc=filterCorporateActionCancels,
-            matchfunc=matchCorporateActionWithCancel,
-            sortfunc=lambda ca: ca.reportdate,
+            filterfunc=is_corpact_cancel,
+            matchfunc=are_corpact_cancel_pair,
+            sortfunc=lambda corpact: corpact.reportdate,
         )
 
         parse_memo = functools.partial(
@@ -460,10 +474,11 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
             securities,
         )
 
-        # See containers.GroupedList for details of this interface.
         group = (
             GroupedList(transactions)
-            .groupby(group_corpacts)
+            .groupby(
+                lambda x: ((x.uniqueidtype, x.uniqueid), x.dttrade, x.type.name, x.memo)
+            )
             .bind(apply_cancels)
             .reduce(net_corpacts)
             .flatten()
@@ -524,8 +539,9 @@ def group_corpacts(
     corpAct: Types.CorporateAction
 ) -> Any:
     """Same security/date/type/memo -> same reorg in same security.
-
     These CorporateActions will be cancelled/netted against each other.
+
+    Factored out from preprocessCorporateActions() for testing purposes.
     """
     return (
         (corpAct.uniqueidtype, corpAct.uniqueid),
@@ -534,24 +550,24 @@ def group_corpacts(
         corpAct.memo,
     )
 
-    return corpAct.raw.dttrade, corpAct.type.name, corpAct.memo
 
-
-def filterCorporateActionCancels(
+def is_corpact_cancel(
     transaction: Types.CorporateAction
 ) -> bool:
+    """
+    Factored out from preprocessCorporateActions() for testing purposes.
+    """
     return ibflex.enums.Code.CANCEL in transaction.code
 
 
-def matchCorporateActionWithCancel(
+def are_corpact_cancel_pair(
     transaction0: Types.CorporateAction,
     transaction1: Types.CorporateAction,
 ):
+    """
+    Factored out from preprocessCorporateActions() for testing purposes.
+    """
     return transaction0.units == -1 * transaction1.units
-
-
-def sortCanceledCorporateActions(corpAct: Types.CorporateAction) -> Any:
-    return corpAct.reportdate
 
 
 def net_corpacts(
@@ -637,7 +653,7 @@ def sort_parsed_corpacts(parsedCorpAct: "ParsedCorpAct") -> Any:
 ########################################################################################
 #  Corporate Action Handlers
 ########################################################################################
-def treat_as_trade(  # BONDMATURITY(BM),  DELISTWORTHLESS(DW), ASSETPURCHASE(OR)
+def treat_as_trade(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -646,7 +662,8 @@ def treat_as_trade(  # BONDMATURITY(BM),  DELISTWORTHLESS(DW), ASSETPURCHASE(OR)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
-    """
+    """Persist models.Transactions for ParsedCorpActs of type BONDMATURITY,
+    DELISTWORTHLESS, ASSETPURCHASE.
     """
     transactions = [
         ofx.reader.merge_trade(
@@ -663,7 +680,7 @@ def treat_as_trade(  # BONDMATURITY(BM),  DELISTWORTHLESS(DW), ASSETPURCHASE(OR)
     return transactions, basis_suspense
 
 
-def subscribe_rights(  # SUBSCRIBERIGHTS (SR)
+def subscribe_rights(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -672,6 +689,8 @@ def subscribe_rights(  # SUBSCRIBERIGHTS (SR)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
+    """Persist models.Transactions for ParsedCorpActs of type SUBSCRIBERIGHTS.
+    """
     regex = regexes.subscribeRE
     match = regex.match(memo)
     assert match
@@ -716,7 +735,7 @@ def subscribe_rights(  # SUBSCRIBERIGHTS (SR)
     return transactions, basis_suspense
 
 
-def change_security(  # ISSSUECHANGE (IC)
+def change_security(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -725,6 +744,8 @@ def change_security(  # ISSSUECHANGE (IC)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
+    """Persist models.Transactions for ParsedCorpActs of type ISSUECHANGE.
+    """
     #  Book as Transfer(same account, different securities).
     regex = regexes.changeSecurityRE
     match = regex.match(memo)
@@ -742,7 +763,7 @@ def change_security(  # ISSSUECHANGE (IC)
     return transactions, basis_suspense
 
 
-def issue_rights(  # RIGHTSISSUE (RI)
+def issue_rights(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -751,6 +772,8 @@ def issue_rights(  # RIGHTSISSUE (RI)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
+    """Persist models.Transactions for ParsedCorpActs of type RIGHTSISSUE.
+    """
     match = regexes.rightsIssueRE.match(memo)
     assert match
     matchgroups = match.groupdict()
@@ -776,7 +799,7 @@ def issue_rights(  # RIGHTSISSUE (RI)
     return transactions, basis_suspense
 
 
-def stock_dividend(  # STOCKDIVIDEND (SD)
+def stock_dividend(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -785,6 +808,11 @@ def stock_dividend(  # STOCKDIVIDEND (SD)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
+    """Persist models.Transactions for ParsedCorpActs of type STOCKDIV.
+
+    Stock dividends are really just forward splits where the numerator reports
+    the new shares issued, rather than new shares exchanged for the old shares.
+    """
     match = regexes.stockDividendRE.match(memo)
     assert match
 
@@ -806,7 +834,7 @@ def stock_dividend(  # STOCKDIVIDEND (SD)
     return transactions, basis_suspense
 
 
-def tender(  # TENDER (TO)
+def tender(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -815,6 +843,8 @@ def tender(  # TENDER (TO)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
+    """Persist models.Transactions for ParsedCorpActs of type TENDER (code=TO).
+    """
     match = regexes.tenderRE.match(memo)
     assert match
 
@@ -864,7 +894,7 @@ def tender(  # TENDER (TO)
     return transactions, basis_suspense
 
 
-def split(  # FORWARDSPLIT (FS), REVERSESPLIT (RS)
+def split(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -873,7 +903,8 @@ def split(  # FORWARDSPLIT (FS), REVERSESPLIT (RS)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
-    """ """
+    """Persist models.Transactions for ParsedCorpActs of type FORWARDSPLIT, REVERSESPLIT.
+    """
     match = regexes.splitRE.match(memo)
     assert match
 
@@ -894,15 +925,15 @@ def split(  # FORWARDSPLIT (FS), REVERSESPLIT (RS)
         return [transaction], basis_suspense
 
     elif len(parsedCorpActs) == 2:
-        # Split with CUSIP change - Book as Transfer
-        #
-        # Of the pair, the transaction booking in the new security has
-        # XML attribute 'symbol' matching the first ticker in the memo.
-        # The other transaction books out the old security.
+        #  Split with CUSIP change - book as Transfer
+        #  Of the pair, the ParsedCorpAct booking in the new security has
+        #  "cusip" (i.e. securities identfier from memo inside parenthesis)
+        #  matching the identifier from the memo outside the parenthesis.
+        #  The other transaction books out the old security.
         isinFrom = match.group("isinFrom")
 
         parsedCorpActs = sorted(
-            list(parsedCorpActs),
+            parsedCorpActs,
             key=lambda x: x.cusip in isinFrom or isinFrom in x.cusip
         )
         assert parsedCorpActs[0].cusip not in isinFrom
@@ -921,7 +952,7 @@ def split(  # FORWARDSPLIT (FS), REVERSESPLIT (RS)
     raise ValueError  # FIXME
 
 
-def merger(  # MERGER (TC)
+def merger(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -930,7 +961,8 @@ def merger(  # MERGER (TC)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
-    """ """
+    """Persist models.Transactions for ParsedCorpActs of type MERGER (code=TC).
+    """
 
     def cashMerger(memo, parsedCorpActs):
         match = regexes.cashMergerRE.match(memo)
@@ -1013,7 +1045,7 @@ def merger(  # MERGER (TC)
     return transactions, basis_suspense
 
 
-def spinoff(  # SPINOFF (SO)
+def spinoff(
     parsedCorpActs: List["ParsedCorpAct"],
     memo: str,
     session: sqlalchemy.orm.session.Session,
@@ -1022,6 +1054,8 @@ def spinoff(  # SPINOFF (SO)
     default_currency: str,
     basis_suspense: BasisSuspense,
 ) -> CorpActHandlerReturn:
+    """Persist models.Transactions for ParsedCorpActs of type SPINOFF.
+    """
     match = regexes.spinoffRE.match(memo)
     if match is None:
         msg = "Couldn't parse memo for spinoff '{}'".format(memo)
@@ -1244,7 +1278,6 @@ def merge_reorg(
             )
             raise ValueError(msg.format(spinoffs))
         spinoff = spinoffs.pop().raw
-        #  spinoff = spinoff.raw
 
         # HACK
         # IBKR processes some rights offerings in two parts -

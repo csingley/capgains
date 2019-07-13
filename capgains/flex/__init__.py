@@ -12,8 +12,8 @@ from . import regexes
 
 def read(session, source):
     statements = parser.parse(source)
-    rdr = reader.FlexResponseReader(session, statements)
-    rdr.read()
+    rdr = reader.FlexResponseReader(statements)
+    rdr.read(session)
     transactions = []
     for stmt in rdr.statements:
         transactions.extend(stmt.transactions)

@@ -85,54 +85,65 @@ SecuritiesMap = MutableMapping[Tuple[str, str], models.Security]
 """
 
 
-#  class OfxResponseReader(object):
-    #  """
-    #  Processor for ofxtools.models.ofx.OFX instance
-    #  """
-
-    #  def __init__(
-        #  self,
-        #  session: sqlalchemy.orm.session.Session,
-        #  response: Optional[ofxtools.models.ofx.OFX] = None,
-    #  ) -> None:
-        #  self.session = session
-        #  response = response or []
-        #  self.statements = [OfxStatementReader(session, stmt) for stmt in response]
-
-    #  def read(self):
-        #  for stmt in self.statements:
-            #  stmt.read()
-
-
 class OfxStatementReader(object):
-    """Processor for ofxtools.models.INVSTMTRS instance
+    """Processor for ofxtools.models.INVSTMTRS instance.
+
+    Transaction processing breaks down into 3 stages - 'read', 'do', & 'merge'.
+
+    The 'read' stage relies on the ofxtools.INVSTMTRS to gather data.  Of the
+    read functions, the most important is read_transactions(), which uses
+    TRANSACTION_HANDLERS to group different kinds of transactions and dispatch
+    the groups to appropriate 'do' handler functions - doTrades(),
+    doCashTransactions(), etc.
+
+    The 'do' handlers use containers.GroupedList to define a standard
+    functional processing pipeline.  Cf. containers module for the interface.
+    Generally the pipelines filter out noise, then net remaining transactions
+    for reversals, cancellations, etc.
+
+    The 'merge' stage consists of wrappers around models.Transaction.merge(),
+    using standardized mappings of processed OFX transactions to the
+    models.Transaction data model to persist them to the database.
+
+    Instance methods can be overridden in subclasses to modify OFX processing
+    for the quirks of different brokers.  By mapping the data to resemble the
+    ofxtools data model, subclasses can also process different formats (e.g.
+    CSV or Interactive Brokers Flex XML) with more extensive customization.
     """
 
     def __init__(
         self,
-        session: sqlalchemy.orm.session.Session,
+        #  session: sqlalchemy.orm.session.Session.
         statement: Optional[Statement] = None,
         seclist: Optional[ofxtools.models.SECLIST] = None,
     ) -> None:
-        self.session = session
+        # Store instance construction args.
         self.statement = statement
         self.seclist = seclist
-        #  self.index = None
+
+        #  Initialize reading results collections.
         self.securities: SecuritiesMap = {}
         self.transactions: List[models.Transaction] = []
 
-    def read(self, doTransactions: bool = True) -> List[models.Transaction]:
+    def read(
+        self,
+        session: sqlalchemy.orm.session.Session,
+        doTransactions: bool = True,
+    ) -> List[models.Transaction]:
+        self.session = session
         assert self.statement is not None
-        self.currency_default = self.read_default_currency(self.statement)
+
+        # Set up the rest of the instance attributes needed globally.
+        self.default_currency = self.read_default_currency(self.statement)
         self.account = self.read_account(self.statement, self.session)
         self.securities = self.read_securities(self.session)
         if doTransactions:
             transactions = self.read_transactions(
                 self.statement,
-                session=self.session,
+                session=session,
                 securities=self.securities,
                 account=self.account,
-                default_currency=self.currency_default,
+                default_currency=self.default_currency,
             )
             self.transactions.extend(transactions)
 
@@ -370,18 +381,7 @@ class OfxStatementReader(object):
         Args: transactions - a sequence of instances implementing the interface
                              of ofxtools.models.investment.INCOME
         """
-        #  {
-            #  "is_interesting": self.is_retofcap,
-            #  "group_key": self.groupCashTransactionsForCancel,
-            #  "apply_cancels": make_canceller(
-                #  filterfunc=self.filterCashTransactionCancels,
-                #  matchfunc=lambda x, y: x.total == -1 * y.total,
-                #  sortfunc=self.sortCanceledCashTransactions,
-            #  ),
-            #  "cleanup": self.fixCashTransaction,
-        #  }
         is_interesting = self.is_retofcap # Override
-
         group_key = self.groupCashTransactionsForCancel  # Override
 
         apply_cancels = make_canceller(
@@ -608,12 +608,10 @@ def make_canceller(
         for cancel in cancels:
             predicate = functools.partial(matchfunc, cancel)
             canceled = utils.first_true(originals, pred=predicate)
-            if canceled is False:
+            if canceled is False:  # first_true() default
                 raise ValueError(
                     f"Can't find Transaction canceled by {cancel}"
                     f"\n in {originals}"
-                    f"\n{predicate}"
-                    f"\n{[predicate(o) for o in originals]}"
                 )
             # N.B. must remove canceled transaction from further iterations
             # to avoid multiple cancels matching the same original, thereby
