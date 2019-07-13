@@ -477,14 +477,12 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
 
         group = (
             GroupedList(transactions)
-            .groupby(
-                lambda x: ((x.uniqueidtype, x.uniqueid), x.dttrade, x.type.name, x.memo)
-            )
+            .groupby(fingerprint_corpact)
             .bind(apply_cancels)
             .reduce(net_corpacts)
             .flatten()
             .map(parse_memo)  # Transform contents from CorporateAction to ParsedCorpAct
-            .groupby(fingerprint_parsed_corpacts)
+            .groupby(fingerprint_parsed_corpact)
             .sort(sort_parsed_corpacts)
         )
 
@@ -536,7 +534,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
 ########################################################################################
 #  Helper functions
 ########################################################################################
-def fingerprint_corpacts(
+def fingerprint_corpact(
     corpAct: Types.CorporateAction
 ) -> Any:
     """Same security/date/type/memo -> same reorg in same security.
@@ -636,10 +634,10 @@ def parseCorporateActionMemo(
     return pca
 
 
-def fingerprint_parsed_corpacts(parsedCorpAct: "ParsedCorpAct") -> Any:
+def fingerprint_parsed_corpact(parsedCorpAct: "ParsedCorpAct") -> Any:
     """Same date/type/memo -> same reorg.
 
-    Differs from fingerprint_corpacts() by potentially including multiple securities
+    Differs from fingerprint_corpact() by potentially including multiple securities
     as part of the same reorg.
     """
     return parsedCorpAct.raw.dttrade, parsedCorpAct.type.name, parsedCorpAct.memo
@@ -860,13 +858,13 @@ def tender(
         # The 'TO' series contains the cash paid for the subscription, but
         # not the units, while the 'TC' series contains the units data but
         # not the cost.  Neither series, as grouped by
-        # fingerprint_parsed_corpacts(), contains all the data.
+        # fingerprint_parsed_corpact(), contains all the data.
         #
         # Here we extract the cost & open date, and stash it in a dict to
         # be picked up for later processing by merge_reorg().  We assume
         # that the 'TO' series has a dateTime strictly earlier than the
         # 'TC' series, so they'll be sorted in correct time order by
-        # fingerprint_parsed_corpacts() and merge_reorg() will have its
+        # fingerprint_parsed_corpact() and merge_reorg() will have its
         # values ready & waiting from tender().
         assert len(cashportions) == 1
         cashportion = cashportions.pop().raw
@@ -1289,12 +1287,12 @@ def merge_reorg(
         # The 'TO' series contains the cash paid for the subscription, but
         # not the units, while the 'TC' series contains the units data but
         # not the cost.  Neither series, as grouped by
-        # fingerprint_parsed_corpacts(), contains all the data.
+        # fingerprint_parsed_corpact(), contains all the data.
         #
         # Here we pick up the cost & open date from where it was earlier
         # stashed in a dict by tender().  We assume that the 'TO' series
         # has a dateTime strictly earlier than the 'TC' series, so they'll
-        # be sorted in correct time order by fingerprint_parsed_corpacts()
+        # be sorted in correct time order by fingerprint_parsed_corpact()
         # and merge_reorg() will have its values ready & waiting from
         # tender().
         basis_adj = basis_suspense.pop((src.uniqueidtype, src.uniqueid), None)

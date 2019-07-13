@@ -658,8 +658,8 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         ]
         self.assertEqual(len(self.corpActMemos), len(self.cmptypes))
 
-    def testFingerpringCorpActs(self):
-        """FlexStatementReader.fingerprint_corpacts() uses the type name, not type
+    def testFingerprintCorpAct(self):
+        """FlexStatementReader.fingerprint_corpact() uses the type name, not type
         """
         corpAct = flex.Types.CorporateAction(
             fitid=None,
@@ -674,7 +674,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             code=None,
         )
-        result = flex.reader.fingerprint_corpacts(corpAct)
+        result = flex.reader.fingerprint_corpact(corpAct)
         self.assertEqual(
             result,
             (
@@ -837,7 +837,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             self.assertEqual(pca.secname, secname)
             self.assertEqual(pca.memo, mem)
 
-    def testFingerprintParsedCorpActs(self):
+    def testFingerprintParsedCorpAct(self):
         corpAct = flex.Types.CorporateAction(
             fitid=None,
             dttrade=sentinel.dttrade,
@@ -860,7 +860,7 @@ class CorporateActionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             memo=sentinel.memo,
         )
         self.assertEqual(
-            flex.reader.fingerprint_parsed_corpacts(pca),
+            flex.reader.fingerprint_parsed_corpact(pca),
             (sentinel.dttrade, "DELISTWORTHLESS", sentinel.memo),
         )
 
