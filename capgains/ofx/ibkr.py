@@ -20,9 +20,14 @@ class OfxStatementReader(FlexStatementReader):
     # overriden in FlexStatementReader class definition
     __init__ = reader.OfxStatementReader.__init__  # type: ignore
     read = reader.OfxStatementReader.read
+    read_default_currency = staticmethod(reader.OfxStatementReader.read_default_currency)
+    read_account = staticmethod(reader.OfxStatementReader.read_account)
     read_securities = reader.OfxStatementReader.read_securities
-    #  transaction_handlers = reader.OfxStatementReader.transaction_handlers
     doTransfers = reader.OfxStatementReader.doTransfers
+    TRANSACTION_HANDLERS = reader.OfxStatementReader.TRANSACTION_HANDLERS
+    sortForTrade = staticmethod(reader.OfxStatementReader.sortForTrade)
+    fixCashTransaction = reader.OfxStatementReader.fixCashTransaction
+
 
     @staticmethod
     def filterTrades(transaction: reader.Trade) -> bool:
@@ -55,9 +60,6 @@ class OfxStatementReader(FlexStatementReader):
         security = (transaction.uniqueidtype, transaction.uniqueid)
         memo = transaction.memo.replace(" - REVERSAL", "")
         return transaction.dttrade, security, memo
-
-    #  Revert the dttrade -> dtsettle jiggery pokery from FlexStatementReader
-    fixCashTransaction = reader.OfxStatementReader.fixCashTransaction
 
 
 ###############################################################################

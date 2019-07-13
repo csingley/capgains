@@ -28,7 +28,7 @@ def read(session, source):
         # Look up OfxReader subclass by brokerid
         Reader = dispatcher.get(fromacct.brokerid, OfxStatementReader)
         # Initialize reader instance with INVSTMTRS, SECLIST
-        reader = Reader(session, stmt, ofx.securities)
-        reader.read()
-        transactions.extend(reader.transactions)
+        rdr = Reader(stmt, ofx.securities)
+        rdr.read(session)
+        transactions.extend(rdr.transactions)
     return transactions

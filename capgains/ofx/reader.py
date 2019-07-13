@@ -726,11 +726,13 @@ def main():
     engine = sqlalchemy.create_engine(args.database)
     Base.metadata.create_all(bind=engine)
 
-    for file in args.file:
-        print(file)
-        with sessionmanager(bind=engine) as session:
+    with sessionmanager(bind=engine) as session:
+        for file in args.file:
+            print(file)
             transactions = read(session, file)
             session.add_all(transactions)
+            for transaction in transactions:
+                print(transaction)
 
     engine.dispose()
 
