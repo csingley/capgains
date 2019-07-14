@@ -25,23 +25,16 @@ class OfxStatementReader(FlexStatementReader):
     read_securities = reader.OfxStatementReader.read_securities
     doTransfers = reader.OfxStatementReader.doTransfers
     TRANSACTION_HANDLERS = reader.OfxStatementReader.TRANSACTION_HANDLERS
-    sortForTrade = staticmethod(reader.OfxStatementReader.sortForTrade)  # type: ignore
-    fixCashTransaction = reader.OfxStatementReader.fixCashTransaction
-
+    get_trade_sort_algo = staticmethod(reader.OfxStatementReader.get_trade_sort_algo)  # type: ignore
+    cash_premerge_hook = reader.OfxStatementReader.cash_premerge_hook
 
     @staticmethod
-    def filterTrades(transaction: reader.Trade) -> bool:
-        if transaction.memo and "CASH TRADE" in transaction.memo:
-            return False
-        return True
+    def is_security_trade(transaction: reader.Trade) -> bool:
+        return "CASH TRADE" not in (transaction.memo or "")
 
     @staticmethod
     def is_trade_cancel(transaction: reader.Trade) -> bool:
-        cancel = False
-        memo = transaction.memo
-        if memo and "cancel" in memo.lower():
-            cancel = True
-        return cancel
+        return "cancel" in (transaction.memo or "").lower()
 
     @staticmethod
     def sort_trades_to_cancel(transaction: reader.Trade) -> Any:
@@ -49,7 +42,7 @@ class OfxStatementReader(FlexStatementReader):
 
     @staticmethod
     def is_retofcap(transaction: reader.CashTransaction) -> bool:
-        memo = transaction.memo.lower()
+        memo = (transaction.memo or "").lower()
         return "return of capital" in memo or "interimliquidation" in memo
 
     @staticmethod

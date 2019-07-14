@@ -81,8 +81,8 @@ CorpActHandlerReturn = Tuple[List[models.Transaction], BasisSuspense]
 
 
 class FlexResponseReader:
-    """Processor for sequences of capgains.flex.parser.FlexStatement instances
-    as created by parser.FlexResponseParser.parse().
+    """Processor for sequences of flex.parser.FlexStatement instances
+    as created by flex.parser.FlexResponseParser.parse().
     """
 
     def __init__(
@@ -99,7 +99,7 @@ class FlexResponseReader:
 
 
 class FlexStatementReader(ofx.reader.OfxStatementReader):
-    """Processor for capgains.flex.parser.FlexStatement instances.
+    """Processor for flex.parser.FlexStatement instances.
 
     This subclass is a pretty straightforward extension of OfxStatementReader,
     except for the extensive processing of corporate actions in
@@ -222,7 +222,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
     # their context.
     ###########################################################################
     @staticmethod
-    def filterTrades(transaction: ofx.reader.Trade) -> bool:
+    def is_security_trade(transaction: ofx.reader.Trade) -> bool:
         """Should this trade be processed?  Discard FX trades.
 
         Overrides OfxStatementReader superclass method.
@@ -276,10 +276,15 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         return transaction.reportdate
 
     @staticmethod
-    def sortForTrade(
+    def get_trade_sort_algo(
         transaction: ofx.reader.Transaction
     ) -> Optional[models.TransactionSort]:
-        return sortForTrade(transaction)
+        """Instance method overrides OfxStatementReader.
+
+        Logic lives in module global namespace b/c it's used by
+        corporate action `merge` layer.
+        """
+        return get_trade_sort_algo(transaction)
 
     ###########################################################################
     # CASH TRANSACTIONS
@@ -302,23 +307,12 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         if they're for the same security at the same time with the same memo.
         """
         security = (transaction.uniqueidtype, transaction.uniqueid)
-        memo = cls.stripCashTransactionMemo(transaction.memo)
+        memo = strip_cash_memo(transaction.memo)
         return transaction.dtsettle, security, memo
-
-    @staticmethod
-    def stripCashTransactionMemo(memo: str) -> str:
-        """Strip "REVERSAL"/"CANCEL" from transaction description so reversals
-        sort together with reversees.
-        """
-        memo = memo.replace(" - REVERSAL", "")
-        memo = memo.replace("CANCEL ", "")
-        return memo
 
     @staticmethod
     def is_cash_cancel(transaction: ofx.reader.CashTransaction) -> bool:
         """Is this cash transaction actually a reversal?
-
-        Overrides OfxStatementReader superclass method.
         """
         memo = transaction.memo
         return "REVERSAL" in memo or "CANCEL" in memo
@@ -326,19 +320,15 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
     @staticmethod
     def sort_cash_for_cancel(transaction: ofx.reader.CashTransaction) -> Any:
         """Determines order in which cash transactions are reversed.
-
-        Overrides OfxStatementReader superclass method.
         """
         return transaction.fitid
 
-    def fixCashTransaction(
+    def cash_premerge_hook(
         self,
         transaction: ofx.reader.CashTransaction
     ) -> ofx.reader.CashTransaction:
         """If we can find a matching record in ChangeInDividendAccruals,
         use the indicated ex-date for the CashTransaction.
-
-        Overrides OfxStatementReader superclass method.
         """
         uniqueid = transaction.uniqueid
         assert isinstance(uniqueid, str)
@@ -517,7 +507,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
                 units=transaction.units,
                 fromsecurity=fromsecurity,
                 fromunits=transaction.unitsfrom,
-                sort=sortForTrade(transaction),
+                sort=get_trade_sort_algo(transaction),
             )
 
         return [doOptionsExercise(transaction) for transaction in transactions]
@@ -671,7 +661,7 @@ def treat_as_trade(
             securities=securities,
             account=account,
             default_currency=default_currency,
-            sortForTrade=sortForTrade,
+            get_trade_sort_algo=get_trade_sort_algo,
             memo=memo,
         )
         for corpAct in parsedCorpActs
@@ -976,7 +966,7 @@ def merger(
                     securities=securities,
                     account=account,
                     default_currency=default_currency,
-                    sortForTrade=sortForTrade,
+                    get_trade_sort_algo=get_trade_sort_algo,
                     memo=memo)
             ]
 
@@ -1317,7 +1307,7 @@ def merge_reorg(
                 securities=securities,
                 account=account,
                 default_currency=default_currency,
-                sortForTrade=sortForTrade,
+                get_trade_sort_algo=get_trade_sort_algo,
             )
             transactions.append(cast(models.Transaction, tx))
         else:
@@ -1339,6 +1329,14 @@ def merge_reorg(
 ########################################################################################
 #  Utility Functions
 ########################################################################################
+def strip_cash_memo(memo: str) -> str:
+    """Strip "REVERSAL"/"CANCEL" from transaction description so reversals
+    sort together with reversees.
+    """
+    memo = memo.replace(" - REVERSAL", "")
+    memo = memo.replace("CANCEL ", "")
+    return memo
+
 def guess_security(
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -1497,7 +1495,7 @@ def _group_reorg(
     return src, dest, parsedCorpActs
 
 
-def sortForTrade(
+def get_trade_sort_algo(
     transaction: ofx.reader.Transaction
 ) -> Optional[models.TransactionSort]:
     """What models.TransactionSort algorithm applies to this transaction?

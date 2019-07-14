@@ -16,7 +16,7 @@ BROKERID = "ameritrade.com"
 
 class OfxStatementReader(ofx.reader.OfxStatementReader):
     @staticmethod
-    def filterTrades(transaction):
+    def is_security_trade(transaction):
         """All the trade corrections we have in AMTD datastream are pure BS.
         """
         return "TRADE CORRECTION" not in transaction.memo

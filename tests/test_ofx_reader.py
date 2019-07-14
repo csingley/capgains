@@ -179,7 +179,7 @@ class TradesTestCase(OfxReaderMixin, unittest.TestCase):
             securities=self.reader.securities,
             account=self.reader.account,
             default_currency="USD",
-            sortForTrade=ofx.reader.OfxStatementReader.sortForTrade,
+            get_trade_sort_algo=ofx.reader.OfxStatementReader.get_trade_sort_algo,
             memo=memo,
         )
         self.assertEqual(tx.type, TransactionType.TRADE)

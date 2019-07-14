@@ -90,11 +90,10 @@ class OfxStatementReader(object):
 
     Transaction processing breaks down into 3 stages - 'read', 'do', & 'merge'.
 
-    The 'read' stage relies on the ofxtools.INVSTMTRS to gather data.  Of the
-    read functions, the most important is read_transactions(), which uses
-    TRANSACTION_HANDLERS to group different kinds of transactions and dispatch
-    the groups to appropriate 'do' handler functions - doTrades(),
-    doCashTransactions(), etc.
+    The 'read' stage relies on the ofxtools.INVSTMTRS structure to gather data.
+    Of the read functions, the most important is read_transactions(), which uses
+    TRANSACTION_HANDLERS to group transactions by type and dispatch them to
+    appropriate 'do' handler functions - doTrades(), doCashTransactions(), etc.
 
     The 'do' handlers use containers.GroupedList to define a standard
     functional processing pipeline.  Cf. containers module for the interface.
@@ -105,10 +104,12 @@ class OfxStatementReader(object):
     using standardized mappings of processed OFX transactions to the
     models.Transaction data model to persist them to the database.
 
-    Instance methods can be overridden in subclasses to modify OFX processing
-    for the quirks of different brokers.  By mapping the data to resemble the
-    ofxtools data model, subclasses can also process different formats (e.g.
-    CSV or Interactive Brokers Flex XML) with more extensive customization.
+    Other modules within this subpackage define subclasses that override some
+    of the instance methods to modify OFX processing for the quirks of
+    different brokers.  Other subpackages define subclasses with more
+    extensive modificatations that process data in other formats (e.g.
+    CSV or Interactive Brokers Flex XML) by mapping it to mimic the ofxtools
+    data model.  `ibflex.parser` and `CSV.etfc.parse()` perform this mapping.
     """
 
     def __init__(
@@ -137,6 +138,7 @@ class OfxStatementReader(object):
         self.default_currency = self.read_default_currency(self.statement)
         self.account = self.read_account(self.statement, self.session)
         self.securities = self.read_securities(self.session)
+
         if doTransactions:
             transactions = self.read_transactions(
                 self.statement,
@@ -159,8 +161,6 @@ class OfxStatementReader(object):
         statement: Statement,
         session: sqlalchemy.orm.session.Session,
     ) -> models.FiAccount:
-        """Factor out from read() for testing purposes.
-        """
         assert isinstance(
             statement,
             (ofxtools.models.INVSTMTRS, flex.Types.FlexStatement)
@@ -259,7 +259,6 @@ class OfxStatementReader(object):
         "TRANSFER": "doTransfers",
     }
 
-
     ###########################################################################
     # TRADES
     ###########################################################################
@@ -276,12 +275,10 @@ class OfxStatementReader(object):
         The logic here eliminates unwanted trades (e.g. FX) and groups trades
         to net out canceled trades.
         """
-        is_interesting = self.filterTrades  # override
-
         apply_cancels = make_canceller(
-            filterfunc=self.is_trade_cancel,  # override
-            matchfunc=self.are_trade_cancel_pair,  # override
-            sortfunc=self.sort_trades_to_cancel,  # override
+            filterfunc=self.is_trade_cancel,
+            matchfunc=self.are_trade_cancel_pair,
+            sortfunc=self.sort_trades_to_cancel,
         )
 
         _merge_trade = functools.partial(
@@ -290,12 +287,12 @@ class OfxStatementReader(object):
             securities=securities,
             account=account,
             default_currency=default_currency,
-            sortForTrade=self.sortForTrade,  # override
+            get_trade_sort_algo=self.get_trade_sort_algo,
         )
 
         transactions = (
             GroupedList(transactions)
-            .filter(is_interesting)
+            .filter(self.is_security_trade)
             .groupby(self.fingerprint_trade)
             .bind(apply_cancels)
             .filter(operator.attrgetter("units"))  # Removes net 0 unit transactions
@@ -305,7 +302,7 @@ class OfxStatementReader(object):
         return transactions
 
     @staticmethod
-    def filterTrades(transaction: Trade) -> bool:
+    def is_security_trade(transaction: Trade) -> bool:
         """Should this trade be processed?  Implement in subclass.
         """
         return True
@@ -345,12 +342,13 @@ class OfxStatementReader(object):
         return transaction.fitid
 
     @staticmethod
-    def sortForTrade(
+    def get_trade_sort_algo(
         transaction: Transaction
     ) -> Optional[models.TransactionSort]:
-        """What models.sort algorithm that applies to this transaction?
+        """What models.TransactionSort algorithm applies to this transaction?
 
-        Implement in subclass.
+        Passed to merge_transaction().  This is unused in OFX; it's provided
+        as an instance method so that FlexResponseReader can override it.
         """
         return None
 
@@ -371,24 +369,18 @@ class OfxStatementReader(object):
         The logic here filters only for return of capital transactions;
         groups them to apply reversals; nets cash transactions remaining in
         each group; and persists to the database after applying any final
-        preprocessing applied by fixCashTransaction().
+        preprocessing applied by cash_premerge_hook().
 
         It's important to net cash transactions remaining in a group that
         aren't cancelled, since the cash totals of reversing transactions
         often don't match the totals of the transactions being reversed
         (e.g. partial reversals to recharacterize to/from payment in lieu).
-
-        Args: transactions - a sequence of instances implementing the interface
-                             of ofxtools.models.investment.INCOME
         """
-        is_retofcap = self.is_retofcap # Override
-        fingerprint_cash = self.fingerprint_cash  # Override
-
         apply_cancels = make_canceller(
             filterfunc=self.is_cash_cancel,
             matchfunc=lambda x, y: x.total == -1 * y.total,
             sortfunc=self.sort_cash_for_cancel,
-        )  # override this whole thing
+        )
 
         _merge_retofcap = functools.partial(
             merge_retofcap,
@@ -396,18 +388,16 @@ class OfxStatementReader(object):
             securities=securities,
             account=account,
             default_currency=default_currency,
-        )  # override
-
-        cleanup = self.fixCashTransaction  # Override
+        )
 
         transactions_ = (
             GroupedList(transactions)
-            .filter(is_retofcap)
-            .groupby(fingerprint_cash)
+            .filter(self.is_retofcap)
+            .groupby(self.fingerprint_cash)
             .bind(apply_cancels)
             .reduce(net_cash)
             .filter(operator.attrgetter("total"))  # Removes net $0 transactions
-            .map(cleanup)
+            .map(self.cash_premerge_hook)
             .map(_merge_retofcap)
             .flatten()
         )[:]
@@ -430,25 +420,23 @@ class OfxStatementReader(object):
         return transaction.dttrade, security, memo
 
     @staticmethod
-    def is_cash_cancel(transaction: CashTransaction) -> Any:
-        """
-        Is this cash transaction actually a reversal?  Implement in subclass.
-        Returns: boolean
-        """
-        return False
-
-    @staticmethod
-    def sort_cash_for_cancel(transaction: CashTransaction) -> Any:
-        """
-        Determines order in which cash transactions are reversed.
+    def is_cash_cancel(transaction: CashTransaction) -> bool:
+        """Is this cash transaction actually a reversal?
 
         Implement in subclass.
         """
         return False
 
-    def fixCashTransaction(self, transaction: CashTransaction) -> CashTransaction:
+    @staticmethod
+    def sort_cash_for_cancel(transaction: CashTransaction) -> Any:
+        """Determines order in which cash transactions are reversed.
+
+        Implement in subclass.
         """
-        Any last processing of the transaction before it's persisted to the DB.
+        return False
+
+    def cash_premerge_hook(self, transaction: CashTransaction) -> CashTransaction:
+        """Any last preprocessing before transaction is passed to the DB merge layer.
 
         Implement in subclass.
         """
@@ -495,9 +483,7 @@ def merge_retofcap(
     Process a return of capital cash transaction into data fields to
     hand off to merge_transaction() to persist in the database.
 
-    Args: transaction - instance implementing the interface of
-                        ofxtools.models.investment.INCOME
-            memo - override transaction memo (type str)
+    If `memo` arg is passed it, it overrides the transaction.memo
     """
     assert transaction.total > 0
     assert transaction.uniqueidtype is not None
@@ -535,7 +521,7 @@ def merge_trade(
     securities: SecuritiesMap,
     account: models.FiAccount,
     default_currency: str,
-    sortForTrade: Callable[[Transaction], Any],
+    get_trade_sort_algo: Callable[[Transaction], Any],
     memo: Optional[str] = None
 ) -> models.Transaction:
     """Process a trade into data fields to hand off to merge_transaction()
@@ -564,7 +550,7 @@ def merge_trade(
         units=tx.units,
         currency=models.Currency[currency],
         cash=tx.total,
-        sort=sortForTrade(tx),
+        sort=get_trade_sort_algo(tx),
     )
     return transaction
 
@@ -629,11 +615,6 @@ def net_cash(
     """
     Combine two cash transactions by summing their totals, and taking
     the earliest of their dates.
-
-    Args: two instances implementing the interface of
-        ofxtools.models.investment.INCOME
-    Returns: a flex.Types.CashTransaction namedtuple instance (which implements the
-            key parts of the INCOME interface)
     """
 
     def _minDateTime(*args: Optional[datetime]) -> Optional[datetime]:

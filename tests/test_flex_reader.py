@@ -12,7 +12,7 @@ import ibflex
 from capgains import ofx, flex, models, inventory
 from capgains.config import CONFIG
 
-from common import (
+from common import (  # noqa
     setUpModule,
     tearDownModule,
     RollbackMixin,
@@ -158,7 +158,7 @@ class ReadTestCase(RollbackMixin, unittest.TestCase):
 
 
 class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
-    def testFilterTrades(self):
+    def testIsSecurityTrade(self):
         t0 = flex.Types.Trade(
             memo="Something",
             fitid=None,
@@ -172,7 +172,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             notes=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.filterTrades(t0), True)
+        self.assertEqual(self.reader.is_security_trade(t0), True)
 
         t1 = flex.Types.Trade(
             memo="USD.CAD",
@@ -187,7 +187,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             notes=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.filterTrades(t1), False)
+        self.assertEqual(self.reader.is_security_trade(t1), False)
 
         t2 = flex.Types.Trade(
             memo="CAD.USD",
@@ -202,7 +202,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             notes=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.filterTrades(t2), False)
+        self.assertEqual(self.reader.is_security_trade(t2), False)
 
         t3 = flex.Types.Trade(
             memo="USD.EUR",
@@ -217,7 +217,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             notes=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.filterTrades(t3), False)
+        self.assertEqual(self.reader.is_security_trade(t3), False)
 
         t4 = flex.Types.Trade(
             memo="EUR.USD",
@@ -232,7 +232,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             notes=None,
             orig_tradeid=None,
         )
-        self.assertEqual(self.reader.filterTrades(t4), False)
+        self.assertEqual(self.reader.is_security_trade(t4), False)
 
     def testIsTradeCancel(self):
         t0 = flex.Types.Trade(
@@ -281,7 +281,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.sort_trades_to_cancel(t0), "something")
 
-    def testSortForTrade(self):
+    def testGetTradeSortAlgo(self):
         t0 = flex.Types.Trade(
             notes=[ibflex.enums.Code.MAXLOSS, ibflex.enums.Code.CLOSING],
             fitid=None,
@@ -295,7 +295,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(flex.reader.sortForTrade(t0), models.TransactionSort.MINGAIN)
+        self.assertEqual(flex.reader.get_trade_sort_algo(t0), models.TransactionSort.MINGAIN)
 
         t1 = flex.Types.Trade(
             notes=[ibflex.enums.Code.LIFO, ibflex.enums.Code.CLOSING],
@@ -310,7 +310,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(flex.reader.sortForTrade(t1), models.TransactionSort.LIFO)
+        self.assertEqual(flex.reader.get_trade_sort_algo(t1), models.TransactionSort.LIFO)
 
         t2 = flex.Types.Trade(
             notes=[ibflex.enums.Code.CANCEL, ibflex.enums.Code.OPENING],
@@ -325,7 +325,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             reportdate=None,
             orig_tradeid=None,
         )
-        self.assertEqual(flex.reader.sortForTrade(t2), None)
+        self.assertEqual(flex.reader.get_trade_sort_algo(t2), None)
 
         t3 = flex.Types.Trade(
             notes=[ibflex.enums.Code.MAXLOSS, ibflex.enums.Code.LIFO],
@@ -341,7 +341,7 @@ class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):
             orig_tradeid=None,
         )
         with self.assertRaises(AssertionError):
-            flex.reader.sortForTrade(t3)
+            flex.reader.get_trade_sort_algo(t3)
 
 
 class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
@@ -388,7 +388,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         )
         self.assertEqual(self.reader.is_retofcap(t2), False)
 
-    @patch.object(flex.reader.FlexStatementReader, "stripCashTransactionMemo", wraps=lambda m: m)
+    @patch("capgains.flex.reader.strip_cash_memo", wraps=lambda m: m)
     def testFingerprintCash(
         self, mock_strip_cash_memo_method, wraps=lambda memo: memo
     ):
@@ -418,12 +418,12 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             ),
         )
 
-    def testStripCashTransactionsMemo(self):
+    def testStripCashMemo(self):
         memo = "foo - REVERSAL bar"
-        self.assertEqual(self.reader.stripCashTransactionMemo(memo), "foo bar")
+        self.assertEqual(flex.reader.strip_cash_memo(memo), "foo bar")
 
         memo = "foo CANCEL bar"
-        self.assertEqual(self.reader.stripCashTransactionMemo(memo), "foo bar")
+        self.assertEqual(flex.reader.strip_cash_memo(memo), "foo bar")
 
     def testIsCashCancel(self):
         tx = flex.Types.CashTransaction(
@@ -486,8 +486,8 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
         output = self.reader.sort_cash_for_cancel(tx)
         self.assertEqual(output, tx.fitid)
 
-    def testFixCashTransactions(self):
-        """FlexStatement.fixCashTransaction() takes dttrade from dividendsPaid
+    def testCashPremergeHook(self):
+        """FlexStatement.cash_premerge_hook() takes dttrade from dividendsPaid
         """
         # N.B. flex.reader.FlexStatementReader.dividends is keyed by type
         # datetime.date, but flex.parser.CashTransaction.dtsettle is type
@@ -514,7 +514,7 @@ class CashTransactionsTestCase(FlexStatementReaderMixin, unittest.TestCase):
             total=None,
             incometype=None,
         )
-        output = self.reader.fixCashTransaction(tx)
+        output = self.reader.cash_premerge_hook(tx)
         self.assertIsInstance(output, flex.Types.CashTransaction)
         self.assertEqual(output.memo, tx.memo)
         self.assertEqual(output.fitid, tx.fitid)
@@ -538,7 +538,7 @@ class CashTransactionWithFilterCancelTestCase(
         <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE - REVERSAL (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="-138215" type="Dividends" tradeID="" code="" transactionID="6356130554" reportDate="2016-04-15" clientReference="" />
         <CashTransaction accountId="5678" acctAlias="Test account" model="" currency="USD" fxRateToBase="1" assetCategory="STK" symbol="RHDGF" description="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)" conid="24" securityID="ANN741081064" securityIDType="ISIN" cusip="" isin="ANN741081064" underlyingConid="" underlyingSymbol="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" dateTime="2016-04-13" amount="139000" type="Dividends" tradeID="" code="" transactionID="6356130558" reportDate="2016-04-15" clientReference="" />
         </CashTransactions>
-        """
+        """  # noqa
     ]
 
     @property
@@ -551,7 +551,10 @@ class CashTransactionWithFilterCancelTestCase(
                 uniqueid=None,
                 datetime=datetime(2016, 4, 13),
                 dtsettle=datetime(2016, 4, 13),
-                memo="RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE (Return of Capital)",
+                memo=(
+                    "RHDGF(ANN741081064) CASH DIVIDEND 5.00000000 USD PER SHARE "
+                    "(Return of Capital)"
+                ),
                 currency=models.Currency.USD,
                 cash=Decimal("139000"),
                 fiaccount=self.account,
