@@ -84,8 +84,6 @@ class Transfer(NamedTuple):
 class CorporateAction(NamedTuple):
     """Synthetic data type to map Flex CorporateAction for OfxStatementReader.
 
-    The main utility of
-
     Type definition analogous to OFX INVBUY/INVSELL, to more conveniently
     handle reorgs that can be treated as trades.
     """

@@ -32,7 +32,7 @@ from capgains import ofx, models, utils
 from capgains.ofx.reader import SecuritiesMap, Statement
 from capgains.flex import BROKERID, Types, regexes
 from capgains.database import Base, sessionmanager
-from capgains.containers import GroupedList
+from capgains.containers import GroupedList, FirstResult
 
 
 class ParsedCorpAct(NamedTuple):
@@ -683,7 +683,7 @@ def subscribe_rights(
     regex = regexes.subscribeRE
     match = regex.match(memo)
     assert match
-    _src, _dest, spinoffs = _group_reorg(parsedCorpActs, match)
+    _src, _dest, spinoffs = apply_reorg_memo_match(parsedCorpActs, match)
     src, dest = _src.raw, _dest.raw
     security = securities[(dest.uniqueidtype, dest.uniqueid)]
     fromsecurity = securities[(src.uniqueidtype, src.uniqueid)]
@@ -862,7 +862,7 @@ def tender(
         assert cash is not None
         assert cash < 0
 
-        src, dest, spinoffs = _group_reorg(parsedCorpActs, match)
+        src, dest, spinoffs = apply_reorg_memo_match(parsedCorpActs, match)
         basis_key = (dest.raw.uniqueidtype, dest.raw.uniqueid)
 
         assert basis_key not in basis_suspense
@@ -1251,7 +1251,7 @@ def merge_reorg(
     Side effect:
         Modifies input basis_suspense dict in place (pops matches).
     """
-    src_, dest_, spinoffs = _group_reorg(parsedCorpActs, match)
+    src_, dest_, spinoffs = apply_reorg_memo_match(parsedCorpActs, match)
     src, dest = src_.raw, dest_.raw
     transactions = [
         merge_security_transfer(
@@ -1261,11 +1261,9 @@ def merge_reorg(
 
     if spinoffs:
         if len(spinoffs) > 1:
-            msg = (
-                "flex.reader.merge_reorg(): "
-                "More than one spinoff {}"
+            raise ValueError(
+                f"flex.reader.merge_reorg(): More than one spinoff {spinoffs}"
             )
-            raise ValueError(msg.format(spinoffs))
         spinoff = spinoffs.pop().raw
 
         # HACK
@@ -1337,163 +1335,6 @@ def strip_cash_memo(memo: str) -> str:
     memo = memo.replace("CANCEL ", "")
     return memo
 
-def guess_security(
-    session: sqlalchemy.orm.session.Session,
-    securities: SecuritiesMap,
-    uniqueid: str,  # CUSIP or ISIN
-    ticker: str
-) -> models.Security:
-    """
-    Given a Security.uniqueid and/or ticker, try to look up corresponding
-    models.Security instance from the FlexStatement securities list
-    or the database.
-    """
-
-    def lookupDbByUid(
-        uniqueidtype: str,
-        uniqueid: str
-    ) -> Optional[models.Security]:
-        secid = (
-            session.query(models.SecurityId)
-            .filter_by(uniqueidtype=uniqueidtype, uniqueid=uniqueid)
-            .one_or_none()
-        )
-        if secid:
-            return secid.security
-        return None
-
-    def lookupSeclistByTicker(ticker: str) -> Optional[models.Security]:
-        hits = [
-            sec for sec in set(securities.values()) if sec.ticker == ticker
-        ]
-        assert len(hits) <= 1  # triggers self.multipleMatchErrs
-        if hits:
-            return hits.pop()
-        return None
-
-    security = None
-
-    #  Highest confidence - look up security by unique identifier
-    #  from the current statement or, failing that, the DB.
-    uniqueidtype = (
-        (validate_isin(uniqueid) and "ISIN")
-        or (validate_cusip(uniqueid) and "CUSIP")
-        or None
-    )
-    if uniqueidtype:
-        security = (
-            securities.get((uniqueidtype, uniqueid), None)
-            or lookupDbByUid(uniqueidtype, uniqueid)
-        )
-
-    #  Fallback - look up security by ticker symbol
-    #  from the current statement or, failing that, the DB.
-    if (not security) and ticker:
-        security = (
-            lookupSeclistByTicker(ticker)
-            or session.query(models.Security)
-            .filter_by(ticker=ticker)
-            .one_or_none()
-        )
-
-    if not security:
-        sec = session.query(models.Security).filter_by(ticker="ELAN.TEMP").one_or_none()
-        if sec:
-            for secid in sec.ids:
-                print(secid)
-        raise ValueError(
-            (
-                f"Can't find security with uniqueidtype={uniqueidtype!r}, "
-                f"uniqueid={uniqueid!r}, ticker={ticker!r}"
-            )
-        )
-
-    return security
-
-
-def _group_reorg(
-    parsedCorpActs: List["ParsedCorpAct"],
-    match: Match,
-) -> Tuple[
-    "ParsedCorpAct",
-    "ParsedCorpAct",
-    List["ParsedCorpAct"]
-]:
-    """
-    Given ParsedCorpActs representing a single reorg, group them into source
-    (i.e. security being booked out in the reorg), destination (i.e. security
-    being booked in by the reorg), and additional in-kind reorg consideration
-    which we treat as spinoffs from the destination security.
-
-    Args:
-        parsedCorpActs: a sequence of ParsedCorpAct instances
-        match: a re.match instance capturing named groups (i.e. one of
-               the flex.regexes applied to a CorporateTransaction.memo)
-
-    Returns: tuple of (ParsedCorpAct for source security,
-                       ParsedCorpAct for destination security,
-                       list of spinoff ParsedCorpActs)
-    """
-    # Avoid side effects.
-    # We're going to remove items from the list, so don't touch the
-    # original data; operate on a copy
-    parsedCorpActs = copy(parsedCorpActs)
-
-    matchgroups = match.groupdict()
-    isinFrom = matchgroups["isinFrom"]
-    tickerFrom = matchgroups["tickerFrom"]
-    isinTo0 = matchgroups.get("isinTo0", None)
-    tickerTo0 = matchgroups.get("tickerTo0", None)
-
-    def matchFirst(*testFuncs: Callable) -> ParsedCorpAct:
-        return utils.first_true(
-            [
-                utils.first_true(parsedCorpActs, pred=testFunc)
-                for testFunc in testFuncs
-            ]
-        )
-
-    def isinFromTestFunc(ca: ParsedCorpAct) -> bool:
-        return ca.cusip in isinFrom or isinFrom in ca.cusip
-
-    def tickerFromTestFunc(ca):
-        return ca.ticker == tickerFrom
-
-    src = matchFirst(isinFromTestFunc, tickerFromTestFunc)
-    if not src:
-        msg = ("Can't find source transaction for {} within {}").format(
-            {k: v for k, v in match.groupdict().items() if v},
-            [ca.raw for ca in parsedCorpActs],
-        )
-        raise ValueError(msg)
-    parsedCorpActs.remove(src)
-
-    def isinToTestFunc(ca: ParsedCorpAct) -> bool:
-        return (isinTo0 is not None and ca.cusip is not None) and (
-            ca.cusip in isinTo0 or isinTo0 in ca.cusip
-        )
-
-    def tickerToTestFunc(ca: ParsedCorpAct) -> bool:
-        return tickerTo0 is not None and ca.ticker == tickerTo0
-
-    def loneCandidate() -> Optional[ParsedCorpAct]:
-        if len(parsedCorpActs) == 1 and parsedCorpActs[0].cusip not in "isinFrom":
-            return parsedCorpActs[0]
-        return None
-
-    dest = matchFirst(isinToTestFunc, tickerToTestFunc) or loneCandidate()
-    if not dest:
-        msg = (
-            "On {}, can't find transaction with CUSIP/ISIN "
-            "or ticker matching destination security "
-            "for corporate action {}"
-        ).format(src.rawdttrade, src.memo)
-        raise ValueError(msg)
-    parsedCorpActs.remove(dest)
-
-    # Remaining ParsedCorpActs not matched as src/dest pairs treated as spinoffs
-    return src, dest, parsedCorpActs
-
 
 def get_trade_sort_algo(
     transaction: ofx.reader.Transaction
@@ -1517,6 +1358,143 @@ def get_trade_sort_algo(
         return sorts[0]
 
     return None
+
+
+def guess_security(
+    session: sqlalchemy.orm.session.Session,
+    securities: SecuritiesMap,
+    uniqueid: str,  # CUSIP or ISIN
+    ticker: str
+) -> models.Security:
+    """
+    Given a Security.uniqueid and/or ticker, try to look up corresponding
+    models.Security instance from the FlexStatement securities list
+    or the database.
+    """
+
+    def lookupDbByUid(
+        uniqueidtype: Optional[str],
+        uniqueid: str,
+        _
+    ) -> Optional[models.Security]:
+        if uniqueidtype is None:
+            return None
+        secid = (
+            session.query(models.SecurityId)
+            .filter_by(uniqueidtype=uniqueidtype, uniqueid=uniqueid)
+            .one_or_none()
+        )
+        if secid:
+            return secid.security
+        return None
+
+    def lookupSeclistByTicker(_, __, ticker: str) -> Optional[models.Security]:
+        hits = [
+            sec for sec in set(securities.values()) if sec.ticker == ticker
+        ]
+        assert len(hits) <= 1
+        if hits:
+            return hits.pop()
+        return None
+
+    security = None
+
+    uniqueidtype = (
+        FirstResult(uniqueid)
+        .attempt(lambda x: "ISIN" if validate_isin(x) else None)
+        .attempt(lambda x: "CUSIP" if validate_cusip(x) else None)
+        .result
+    )
+
+    security = (
+        FirstResult(uniqueidtype, uniqueid, ticker)
+        # Try to use uniqued to look up security (either statement or DB).
+        .attempt(lambda typ, id_, _: securities.get((typ, id_), None) if typ is not None else None)
+        .attempt(lookupDbByUid)
+        # Failing tat, try to use ticker to look up security (either statement or DB).
+        .attempt(lookupSeclistByTicker)
+        .attempt(lambda _, __, tkr: session.query(models.Security).filter_by(ticker=tkr).one_or_none())
+        .result
+    )
+
+    if not security:
+        raise ValueError(
+            f"Can't find security with uniqueidtype={uniqueidtype!r}, "
+            f"uniqueid={uniqueid!r}, ticker={ticker!r}"
+        )
+
+    return security
+
+
+def apply_reorg_memo_match(
+    parsedCorpActs: List["ParsedCorpAct"],
+    match: Match,
+) -> Tuple[
+    "ParsedCorpAct",
+    "ParsedCorpAct",
+    List["ParsedCorpAct"]
+]:
+    """
+    Given ParsedCorpActs representing a single reorg, group them into source
+    (i.e. security being booked out in the reorg), destination (i.e. security
+    being booked in by the reorg), and additional in-kind reorg consideration
+    which we treat as spinoffs from the destination security.
+
+    Args:
+        parsedCorpActs: a sequence of ParsedCorpAct instances
+        match: a re.match instance capturing named groups (i.e. one of
+               the flex.regexes applied to a CorporateTransaction.memo)
+
+    Returns: tuple of (ParsedCorpAct for source security,
+                       ParsedCorpAct for destination security,
+                       list of spinoff ParsedCorpActs)
+    """
+    #  Avoid side effects - in some cases, e.g. tender() or unit tests, the input
+    #  sequence of ParsedCorpActs is reused.
+    parsedCorpActs = copy(parsedCorpActs)
+
+    matchgroups = match.groupdict()
+    isinFrom = matchgroups["isinFrom"]
+    tickerFrom = matchgroups["tickerFrom"]
+    isinTo0 = matchgroups.get("isinTo0", None)
+    tickerTo0 = matchgroups.get("tickerTo0", None)
+
+    def matchFirst(*testFuncs: Callable) -> ParsedCorpAct:
+        return utils.first_true(
+            [
+                utils.first_true(parsedCorpActs, pred=testFunc)
+                for testFunc in testFuncs
+            ]
+        )
+
+    src = matchFirst(
+        lambda pca: pca.cusip in isinFrom or isinFrom in pca.cusip,
+        lambda pca: pca.ticker == tickerFrom
+    )
+    if not src:
+        msg = ("Can't find source transaction for {} within {}").format(
+            {k: v for k, v in match.groupdict().items() if v},
+            [ca.raw for ca in parsedCorpActs],
+        )
+        raise ValueError(msg)
+    parsedCorpActs.remove(src)
+
+    dest = matchFirst(
+        lambda pca: isinTo0 and (pca.cusip in isinTo0 or isinTo0 in pca.cusip),
+        lambda pca: tickerTo0 and pca.ticker == tickerTo0,
+        lambda pca: len(parsedCorpActs) == 1 and pca.cusip not in isinFrom
+    )
+    if not dest:
+        msg = (
+            "On {}, can't find transaction with CUSIP/ISIN "
+            "or ticker matching destination security "
+            "for corporate action {}"
+        ).format(src.rawdttrade, src.memo)
+        raise ValueError(msg)
+    parsedCorpActs.remove(dest)
+
+    # Remaining ParsedCorpActs not matched as src/dest pairs treated as spinoffs
+    return src, dest, parsedCorpActs
 
 
 ###############################################################################

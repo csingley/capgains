@@ -10,13 +10,42 @@
     .filter(operator.attrgetter("total"))
     .map(sum)
 """
-# stdlib imports
+from __future__ import annotations
+
 import functools
 import itertools
-from typing import Callable, Iterable, Optional, Any
+from dataclasses import dataclass
+from typing import Tuple, Callable, Iterable, Optional, Any, TypeVar
 
 
 ListFunction = Callable[[Iterable], Iterable]
+
+
+@dataclass(frozen=True, init=False)
+class FirstResult:
+    """Container that composes a series of functions taking the same input
+    args, applying each function in sequence until it receives a result that
+    isn't None.  The first non-None result is stored, after which the
+    remainder of function chain isn't evaluated.
+
+    From a performance standpoint it would be better to make use of
+    short-circuiting, using e.g. boolean functions or the "first_true"
+    recipe from the itertools module.  However, this approach is much
+    more readable.
+    """
+    args: tuple
+    result: Any
+
+    __slots__ = "args", "result"
+
+    def __init__(self, *args, result=None) -> None:
+        object.__setattr__(self, "args", args)
+        object.__setattr__(self, "result", result)
+
+    def attempt(self, func: Callable) -> FirstResult:
+        if self.result:
+            return self
+        return self.__class__(*self.args, result=func(*self.args))
 
 
 class GroupedList(list):
