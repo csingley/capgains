@@ -15,10 +15,7 @@ from __future__ import annotations
 import functools
 import itertools
 from dataclasses import dataclass
-from typing import Tuple, Callable, Iterable, Optional, Any, TypeVar
-
-
-ListFunction = Callable[[Iterable], Iterable]
+from typing import Callable, Iterable, Optional, Any
 
 
 @dataclass(frozen=True, init=False)
@@ -62,6 +59,33 @@ class GroupedList(list):
                  If True, the instance contains other GroupedList instances.
         key: the output value of the function used to form the group.
              This value is None for the root instance.
+
+    >>> grp = GroupedList(range(8))
+    >>> grp.groupby(lambda x: x >= 4)
+    GroupedList([GroupedList([0, 1, 2, 3], grouped=False, key=False), GroupedList([4, 5, 6, 7], grouped=False, key=True)], grouped=True, key=None)
+    >>> grp_ = grp.groupby(lambda x: x >= 4).groupby(lambda x: x % 2)
+    >>> for g in grp_:
+    ...     print(g)
+    ...
+    GroupedList([GroupedList([0, 2], grouped=False, key=0), GroupedList([1, 3], grouped=False, key=1)], grouped=True, key=False)
+    GroupedList([GroupedList([4, 6], grouped=False, key=0), GroupedList([5, 7], grouped=False, key=1)], grouped=True, key=True)
+    >>> grp_.flatten()
+    GroupedList([0, 2, 1, 3, 4, 6, 5, 7], grouped=False, key=None)
+    >>> grp_.flatten().sort() == grp
+    True
+    >>> # bind() operates on innermost GroupedList; takes function that returns an iterable
+    ... for g in grp_.bind(lambda l: l + [99]):
+    ...     print(g)
+    ...
+    GroupedList([GroupedList([0, 2, 4, 99], grouped=False, key=0), GroupedList([1, 3, 99], grouped=False, key=1)], grouped=True, key=False)
+    GroupedList([GroupedList([6, 8, 99], grouped=False, key=0), GroupedList([5, 7, 99], grouped=False, key=1)], grouped=True, key=True)
+    >>> grp_.bind(lambda l: l + [99]).filter(lambda x: x < 99) == grp_
+    True
+    >>> # map() and reduce() operate on data items
+    >>> grp_.map(str).flatten()
+    GroupedList(['0', '2', '4', '1', '3', '6', '8', '5', '7'], grouped=False, key=None)
+    >>> grp_.reduce(lambda x, y: x + y).flatten()[:]
+    [6, 4, 14, 12]
     """
 
     def __init__(self, *args, **kwargs):
@@ -72,7 +96,7 @@ class GroupedList(list):
     def __repr__(self):
         return f"GroupedList({list(self)}, grouped={self.grouped}, key={self.key})"
 
-    def groupby(self, func: Callable) -> "GroupedList":
+    def groupby(self, func: Callable) -> GroupedList:
         """Group bottom-level data items with function, preserving structure above.
 
         Increases nesting depth by 1,
@@ -90,7 +114,7 @@ class GroupedList(list):
             ]
             return self.__class__(items, grouped=True, key=self.key)
 
-    def flatten(self) -> "GroupedList":
+    def flatten(self) -> GroupedList:
         """Chain bottom-level data items.  Reduces nesting depth to zero.
         """
         if self.grouped:
@@ -102,7 +126,7 @@ class GroupedList(list):
         else:
             return type(self)(self, grouped=False, key=None)
 
-    def bind(self, func: ListFunction) -> "GroupedList":
+    def bind(self, func: Callable[[Iterable], Iterable]) -> GroupedList:
         """Applies function to bottom-level GroupedList instances (data-bearing).
 
         Args:
@@ -114,19 +138,19 @@ class GroupedList(list):
             items = list(func(self))
         return self.__class__(items, grouped=self.grouped, key=self.key)
 
-    def sort(self, func: Callable[[Any], Any]) -> "GroupedList":  # type: ignore
+    def sort(self, func: Optional[Callable] = None) -> GroupedList:  # type: ignore
         return self.bind(functools.partial(sorted, key=func))
 
-    def filter(self, func: Optional[Callable[[Any], bool]] = None) -> "GroupedList":
+    def filter(self, func: Optional[Callable[[Any], bool]] = None) -> GroupedList:
         # "If function is None, the identity function is assumed,
         # that is, all elements of iterable that are false are removed."
         # https://docs.python.org/3/library/functions.html#filter
         return self.bind(functools.partial(filter, func))
 
-    def map(self, func: Callable[[Any], Any]) -> "GroupedList":
+    def map(self, func: Callable[[Any], Any]) -> GroupedList:
         return self.bind(functools.partial(map, func))
 
-    def reduce(self, func: Callable[[Any, Any], Any]) -> "GroupedList":
+    def reduce(self, func: Callable[[Any, Any], Any]) -> GroupedList:
         """Bind function with functools.reduce() to bottom-level GroupedList instances.
 
         Args:
