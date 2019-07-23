@@ -122,6 +122,92 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
     looking within the memo itself for references to securities that can be
     used to link the legs of the reorg.  The results are passed to the 'merge'
     layer, which maps the legs to the models.Transaction data model.
+
+                                     +---------+
+                                     |  read   |
+                                     +-+-+-+-+-+
+                                       | | | |
+         +-----------------------------+ | | +-------------------+
+         |                +--------------+ |                     |
+         |                |                +--+                  |
+         |                |                   |                  |
+         v                v                   v                  |
+    +---------+  +------------------+  +------------+            |
+    |   read  |  |       read       |  |    read    |            |
+    | account |  | default currency |  | securities |            |
+    +----+----+  +--------+---------+  +-----+------+            v
+         |                |                  |           +--------------+
+         |                |                  +---------->|     read     |
+         |                +----------------------------->| transactions |
+         +----------------+----------------------------->|              |
+                                                         +-------+------+
+                                                                 |
+                                                                 |
+         +------------------+----------------+----------+--------+------+
+         |                  |                |          |               |
+         v                  v                v          v               v
+    +----------+  +-------------------+  +-------+  +-------+  +------------------+
+    |    do    |  |        do         |  |  do   |  |  do   |  |       do         |
+    | transfer |  | return of capital |  | trade |  | reorg |  | options exercise |
+    +----+-----+  +--------+----------+  +---+---+  +--+----+  +--------+---------+
+         |                 |                 |         |                |
+    +----+                 |                 |         |                |
+    | +--------------------+                 |         |                |
+    | | +------------------------------------+         |                +--------------+
+    | | |                                              |                               |
+    | | | <==========================================> | <== doCorporateActions() ===> |
+    | | |                                              |                               |
+    | | |         +----------+------------+------------+-----------+---------+------+  |
+    | | |         |          |            |            |           |         |      |  |
+    | | |         v          v            v            v           v         v      |  |
+    | | |     +-------+  +--------+  +----------+  +--------+  +-------+  +------+  |  |
+    | | |     | treat |  | merger |  |  change  |  | tender |  | issue |  | spin |  |  |
+    | | |     | trade |  |        |  | security |  |        |  | right |  | off  |  |  |
+    | | |     +---+---+  +---+----+  +----+-----+  +---+----+  +---+---+  +--+---+  |  |
+    | | |         |          |            |            |           |         |      |  |
+    | | |         |          |         +--+            |           |         |      |  |
+    | | |         |          |         |    +----------+           |         |      |  |
+    | | |         |          |         |    | +--------------------+         |      |  |
+    | | |         |          |         |    | | +----------------------------+      |  |
+    | | |         |          |         |    | | |      +----------+------------+----+  |
+    | | |         |          |         |    | | |      |          |            |       |
+    | | |         |          |         |    | | |      v          v            v       |
+    | | |         |          |         |    | | |  +-------+  +-------+  +-----------+ |
+    | | |         |          |         |    | | |  | split |  | stock |  | subscribe | |
+    | | |         |          |         |    | | |  |       |  |  div  |  |   rights  | |
+    | | |         |          |         |    | | |  +---+---+  +----+--+  +-----+-----+ |
+    | | |         |          |         |    | | |      |           |           |       |
+    | | |         |          |         |    | | |      +-------+   |      +----+       |
+    | | |         |          |         |    | | +-------+      |   |      |            |
+    | | |         |          |         |    | +-------+ |      |   |      |            |
+    | | |         |          +-------+ | +--+         | |      |   |      |            |
+    | | |         |                  | | |            | |      |   |      |            |
+    | | |         |                  v v v            | |      |   |      |            |
+    | | |         |                +-+-+-+-+          | |      |   |      |            |
+    | | |         |                | merge |          | |      |   |      |            |
+    | | |         |                | reorg |          | |      |   |      |            |
+    | | |         |                +-+-+-+-+          | |      |   |      |            |
+    | | |         |                    |              | |      |   |      |            |
+    | | |         +-------------+ +----+---+--------+ | |      |   |      |   +--------+
+    | | +---------------------+ | |        |        | | |      |   |      |   |
+    | +-------------+         | | |        |        | | |      |   |      |   |
+    + - +           |         | | |        |        | | |      |   |      |   |
+        |           |         | | |        |        | | |      |   |      |   |
+    <== | ========  | ======= | | | ====== | ====== | | | ==== | = | ==== | = | =======>
+        |           |         | | |        |        | | |      |   |      |   |
+        v           v         v v v        v        v v v      v   v      v   v
+    +-------+  +---------+  +-------+  +-------+  +-------+  +-------+  +--------+
+    | merge |  | merge   |  | merge |  | merge |  | merge |  | merge |  | merge  |
+    | acct  |  | return  |  | trade |  |  sec  |  | spin  |  | split |  | option |
+    | xfer  |  | capital |  |       |  | xfer  |  |  off  |  |       |  | exerc  |
+    +-------+  +---------+  +-------+  +-------+  +-------+  +-------+  +--------+
+        |           |           |          |          |          |           |
+        v           v           v          v          v          v           v
+    +----------------------------------------------------------------------------+
+    |                                                                            |
+    |                            merge transaction                               |
+    |                                                                            |
+    +----------------------------------------------------------------------------+
     """
 
     def __init__(
@@ -487,7 +573,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
         default_currency: str,
     ) -> List[models.Transaction]:
 
-        def doOptionsExercise(transaction):
+        def merge_options_exercise(transaction):
             security = securities[
                 (transaction.uniqueidtype, transaction.uniqueid)
             ]
@@ -510,7 +596,7 @@ class FlexStatementReader(ofx.reader.OfxStatementReader):
                 sort=get_trade_sort_algo(transaction),
             )
 
-        return [doOptionsExercise(transaction) for transaction in transactions]
+        return [merge_options_exercise(transaction) for transaction in transactions]
 
     TRANSACTION_HANDLERS = {
         "Trade": "doTrades",
@@ -574,7 +660,7 @@ def parseCorporateActionMemo(
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
     transaction: Types.CorporateAction
-) -> "ParsedCorpAct":
+) -> ParsedCorpAct:
     """Parse memo; pack results in ParsedCorpAct tuple.
 
     Side effect:
@@ -624,7 +710,7 @@ def parseCorporateActionMemo(
     return pca
 
 
-def fingerprint_parsed_corpact(parsedCorpAct: "ParsedCorpAct") -> Any:
+def fingerprint_parsed_corpact(parsedCorpAct: ParsedCorpAct) -> Any:
     """Same date/type/memo -> same reorg.
 
     Differs from fingerprint_corpact() by potentially including multiple securities
@@ -633,7 +719,7 @@ def fingerprint_parsed_corpact(parsedCorpAct: "ParsedCorpAct") -> Any:
     return parsedCorpAct.raw.dttrade, parsedCorpAct.type.name, parsedCorpAct.memo
 
 
-def sort_parsed_corpacts(parsedCorpAct: "ParsedCorpAct") -> Any:
+def sort_parsed_corpacts(parsedCorpAct: ParsedCorpAct) -> Any:
     reportdate = parsedCorpAct.raw.reportdate
     assert reportdate is not None
     return reportdate
@@ -643,7 +729,7 @@ def sort_parsed_corpacts(parsedCorpAct: "ParsedCorpAct") -> Any:
 #  Corporate Action Handlers
 ########################################################################################
 def treat_as_trade(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -670,7 +756,7 @@ def treat_as_trade(
 
 
 def subscribe_rights(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -725,7 +811,7 @@ def subscribe_rights(
 
 
 def change_security(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -753,7 +839,7 @@ def change_security(
 
 
 def issue_rights(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -789,7 +875,7 @@ def issue_rights(
 
 
 def stock_dividend(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -824,7 +910,7 @@ def stock_dividend(
 
 
 def tender(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -884,7 +970,7 @@ def tender(
 
 
 def split(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -942,7 +1028,7 @@ def split(
 
 
 def merger(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -1035,7 +1121,7 @@ def merger(
 
 
 def spinoff(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     memo: str,
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
@@ -1233,7 +1319,7 @@ def merge_reorg(
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
     account: models.FiAccount,
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     match: Match,
     memo: str,
     default_currency: str,
@@ -1247,6 +1333,8 @@ def merge_reorg(
     (booking in the new security); process this pair as a Transfer.
     Any transactions remaining in the sequence of ParsedCorpActs are processed
     as Spinoffs from the new destination security.
+
+    Called by merger(), change_security(), tender().
 
     Side effect:
         Modifies input basis_suspense dict in place (pops matches).
@@ -1427,12 +1515,12 @@ def guess_security(
 
 
 def apply_reorg_memo_match(
-    parsedCorpActs: List["ParsedCorpAct"],
+    parsedCorpActs: List[ParsedCorpAct],
     match: Match,
 ) -> Tuple[
-    "ParsedCorpAct",
-    "ParsedCorpAct",
-    List["ParsedCorpAct"]
+    ParsedCorpAct,
+    ParsedCorpAct,
+    List[ParsedCorpAct]
 ]:
     """
     Given ParsedCorpActs representing a single reorg, group them into source

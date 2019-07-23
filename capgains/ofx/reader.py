@@ -104,6 +104,48 @@ class OfxStatementReader(object):
     using standardized mappings of processed OFX transactions to the
     models.Transaction data model to persist them to the database.
 
+                                     +---------+
+                                     |  read   |
+                                     +-+-+-+-+-+
+                                       | | | |
+         +-----------------------------+ | | +-------------------+
+         |                +--------------+ |                     |
+         |                |                +--+                  |
+         |                |                   |                  |
+         v                v                   v                  |
+    +---------+  +------------------+  +------------+            |
+    |   read  |  |       read       |  |    read    |            |
+    | account |  | default currency |  | securities |            |
+    +----+----+  +--------+---------+  +-----+------+            v
+         |                |                  |           +--------------+
+         |                |                  +---------->|     read     |
+         |                +----------------------------->| transactions |
+         +----------------+----------------------------->|              |
+                                                         +-------+------+
+                                                                 |
+                                                                 |
+        +----------------+-----------------+-----------------+---+------------+
+        |                |                 |                 |                |
+        v                v                 v                 v                v
+    +-------+  +-------------------+  +----------+  +------------------+  +-------+
+    |  do   |  |        do         |  |    do    |  |       do         |  |  do   |
+    | trade |  | return of capital |  | transfer |  | options exercise |  | reorg |
+    +---+---+  +---------+---------+  +----+-----+  +--------+---------+  +---+---+
+        |                |                 |                 |                |
+        v                v                 |                 |                |
+    +-------+  +-------------------+       |                 |                |
+    | merge |  |      merge        |       |                 |                |
+    | trade |  | return of capital |       |                 |                |
+    +---+---+  +---------+---------+       |                 |                |
+        |                |                 |                 |                |
+        +-----------+    |                 |                 |                |
+                    |    |                 |                 |                |
+                    v    v                 v                 v                v
+               +-------------+        +----------------------------------------------+
+               |    merge    |        | NOT HANDLED IN OfxStatementReader BASE CLASS |
+               | transaction |        |          overriden in subclasses             |
+               +-------------+        +----------------------------------------------+
+
     Other modules within this subpackage define subclasses that override some
     of the instance methods to modify OFX processing for the quirks of
     different brokers.  Other subpackages define subclasses with more
@@ -516,7 +558,7 @@ def merge_retofcap(
 
 
 def merge_trade(
-    tx: Union[Trade, flex.Types.CorporateAction],  # q.v. flex.reader.treat_as_trade()
+    tx: Union[Trade, flex.Types.CorporateAction],  # cf. flex.reader.treat_as_trade()
     session: sqlalchemy.orm.session.Session,
     securities: SecuritiesMap,
     account: models.FiAccount,
