@@ -114,13 +114,9 @@ class ReadTestCase(OfxReaderMixin, unittest.TestCase):
 
     @patch.object(
         ofx.reader.OfxStatementReader,
-        "TRANSACTION_HANDLERS",
-        wraps=ofx.reader.OfxStatementReader.TRANSACTION_HANDLERS,
+        "TRANSACTION_DISPATCHER",
+        wraps=ofx.reader.OfxStatementReader.TRANSACTION_DISPATCHER,
     )
-    #  @patch(
-        #  "capgains.ofx.reader.TRANSACTION_HANDLERS",
-        #  wraps=ofx.reader.TRANSACTION_HANDLERS,
-    #  )
     @patch.object(ofx.reader.OfxStatementReader, "doTrades")
     @patch.object(ofx.reader.OfxStatementReader, "doCashTransactions")
     @patch.object(ofx.reader.OfxStatementReader, "doTransfers")

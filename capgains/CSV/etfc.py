@@ -4,7 +4,7 @@ import csv
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import logging
-from typing import Tuple, NamedTuple, Any
+from typing import Tuple, NamedTuple, Any, Callable, Iterable, List, Optional
 
 import sqlalchemy
 
@@ -23,7 +23,6 @@ class CsvStatement(object):
 
 
 class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
-
     def __init__(self, csvfile):
         #  Set up a statement analogous to INVSTMTRS
         self.statement = CsvStatement()
@@ -104,19 +103,41 @@ class CsvTransactionReader(csv.DictReader, ofx.reader.OfxStatementReader):
         )
         return security, transaction
 
-    def name_handler_for_tx(self, transaction: ofx.reader.Transaction) -> str:
-        """Sort key to group transactions for dispatch (TRANSACTION_HANDLERS).
+    def dispatch_transaction(
+        self,
+        transaction: ofx.reader.Transaction,
+    ) -> Optional[
+        Callable[
+            [
+                Iterable[ofx.reader.Trade],
+                sqlalchemy.orm.session.Session,
+                ofx.reader.SecuritiesMap,
+                models.FiAccount,
+                str,
+            ],
+            List[models.Transaction]
+        ]
+    ]:
+        """Sort key to group transactions for dispatch (TRANSACTION_DISPATCHER).
         """
         assert isinstance(transaction, CsvTransaction)
-        TRANSACTION_HANDLERS = {
-            "Bought": "doTrades",
-            "Sold": "doTrades",
-            "Cancel Bought": "doTrades",
-            "Cancel Sold": "doTrades",
-            "Dividend": "doCashTransactions",
-            "Reorganization": "",
-        }
-        return TRANSACTION_HANDLERS.get(transaction.type, "")
+        key = transaction.type
+        handler = self.TRANSACTION_DISPATCHER.get(key, None)
+        if handler is None:
+            return handler
+        #  Bind class method to instance.
+        #  Python functions use descriptor protocol to call types.MethodType
+        #  to bind functions as methods; hook into that machinery here.
+        #  https://docs.python.org/3/howto/descriptor.html#functions-and-methods
+        return handler.__get__(self)
+
+    TRANSACTION_DISPATCHER = {  # type: ignore
+        "Bought": ofx.reader.OfxStatementReader.doTrades,
+        "Sold": ofx.reader.OfxStatementReader.doTrades,
+        "Cancel Bought": ofx.reader.OfxStatementReader.doTrades,
+        "Cancel Sold": ofx.reader.OfxStatementReader.doTrades,
+        "Dividend": ofx.reader.OfxStatementReader.doCashTransactions,
+    }
 
     @staticmethod
     def sort_trades_to_cancel(transaction: ofx.reader.Trade) -> Any:

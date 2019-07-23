@@ -149,12 +149,12 @@ class ReadTestCase(RollbackMixin, unittest.TestCase):
         )
 
     def testTransactionHandlers(self):
-        handlers = flex.reader.FlexStatementReader.TRANSACTION_HANDLERS
-        self.assertEqual(handlers["Trade"], "doTrades")
-        self.assertEqual(handlers["CashTransaction"], "doCashTransactions")
-        self.assertEqual(handlers["Transfer"], "doTransfers")
-        self.assertEqual(handlers["CorporateAction"], "doCorporateActions")
-        self.assertEqual(handlers["Exercise"], "doOptionsExercises")
+        handlers = flex.reader.FlexStatementReader.TRANSACTION_DISPATCHER
+        self.assertEqual(handlers[flex.Types.Trade], ofx.reader.OfxStatementReader.doTrades)
+        self.assertEqual(handlers[flex.Types.CashTransaction], ofx.reader.OfxStatementReader.doCashTransactions)
+        self.assertEqual(handlers[flex.Types.Transfer], flex.reader.FlexStatementReader.doTransfers)
+        self.assertEqual(handlers[flex.Types.CorporateAction], flex.reader.FlexStatementReader.doCorporateActions)
+        self.assertEqual(handlers[flex.Types.Exercise], flex.reader.FlexStatementReader.doOptionsExercises)
 
 
 class TradesTestCase(FlexStatementReaderMixin, unittest.TestCase):

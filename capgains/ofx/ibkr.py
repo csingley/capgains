@@ -24,7 +24,7 @@ class OfxStatementReader(FlexStatementReader):
     read_account = staticmethod(reader.OfxStatementReader.read_account)  # type: ignore
     read_securities = reader.OfxStatementReader.read_securities
     doTransfers = reader.OfxStatementReader.doTransfers
-    TRANSACTION_HANDLERS = reader.OfxStatementReader.TRANSACTION_HANDLERS
+    TRANSACTION_DISPATCHER = reader.OfxStatementReader.TRANSACTION_DISPATCHER  # type: ignore
     get_trade_sort_algo = staticmethod(reader.OfxStatementReader.get_trade_sort_algo)  # type: ignore
     cash_premerge_hook = reader.OfxStatementReader.cash_premerge_hook
 

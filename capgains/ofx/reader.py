@@ -31,7 +31,7 @@ import ofxtools
 
 # Local imports
 from capgains import flex, models, utils
-from capgains.containers import GroupedList, ListFunction
+from capgains.containers import GroupedList
 from capgains.database import Base, sessionmanager
 
 if TYPE_CHECKING:
@@ -92,7 +92,7 @@ class OfxStatementReader(object):
 
     The 'read' stage relies on the ofxtools.INVSTMTRS structure to gather data.
     Of the read functions, the most important is read_transactions(), which uses
-    TRANSACTION_HANDLERS to group transactions by type and dispatch them to
+    TRANSACTION_DISPATCHER to group transactions by type and dispatch them to
     appropriate 'do' handler functions - doTrades(), doCashTransactions(), etc.
 
     The 'do' handlers use containers.GroupedList to define a standard
@@ -109,8 +109,7 @@ class OfxStatementReader(object):
                                      +-+-+-+-+-+
                                        | | | |
          +-----------------------------+ | | +-------------------+
-         |                +--------------+ |                     |
-         |                |                +--+                  |
+         |                +--------------+ +--+                  |
          |                |                   |                  |
          v                v                   v                  |
     +---------+  +------------------+  +------------+            |
@@ -122,7 +121,6 @@ class OfxStatementReader(object):
          |                +----------------------------->| transactions |
          +----------------+----------------------------->|              |
                                                          +-------+------+
-                                                                 |
                                                                  |
         +----------------+-----------------+-----------------+---+------------+
         |                |                 |                 |                |
@@ -266,40 +264,52 @@ class OfxStatementReader(object):
 
         transactions: List[models.Transaction] = []
 
-        statement.transactions.sort(key=self.name_handler_for_tx)
-        for handler_name, transactions_ in itertools.groupby(
-            statement.transactions, key=self.name_handler_for_tx
+        #  Can't sort by function (no comparison methods), so sort
+        #  by function name as a proxy.
+        def dispatch_sort_proxy(tx):
+            handler = self.dispatch_transaction(tx)
+            return handler.__name__ if handler else None
+
+        statement.transactions.sort(key=dispatch_sort_proxy)
+        for handler, transactions_ in itertools.groupby(
+            statement.transactions, key=self.dispatch_transaction
         ):
-            txs = getattr(self, handler_name)(
+            txs = handler(
                 transactions_,
-                session=session,
-                securities=securities,
-                account=account,
-                default_currency=default_currency,
-            ) if handler_name else []
+                session,
+                securities,
+                account,
+                default_currency,
+            ) if handler else []
             transactions.extend(txs)
 
         return transactions
 
-    def name_handler_for_tx(self, transaction: Transaction) -> str:
+    def dispatch_transaction(
+        self,
+        transaction: Transaction,
+    ) -> Optional[
+        Callable[
+            [
+                Iterable[Trade],
+                sqlalchemy.orm.session.Session,
+                SecuritiesMap,
+                models.FiAccount,
+                str,
+            ],
+            List[models.Transaction]
+        ]
+    ]:
         """ Overridden by CsvTransactionReader. """
-        return self.TRANSACTION_HANDLERS.get(type(transaction).__name__, "")
-
-    TRANSACTION_HANDLERS = {
-        "BUYDEBT": "doTrades",
-        "SELLDEBT": "doTrades",
-        "BUYMF": "doTrades",
-        "SELLMF": "doTrades",
-        "BUYOPT": "doTrades",
-        "SELLOPT": "doTrades",
-        "BUYOTHER": "doTrades",
-        "SELLOTHER": "doTrades",
-        "BUYSTOCK": "doTrades",
-        "SELLSTOCK": "doTrades",
-        "INCOME": "doCashTransactions",
-        "INVEXPENSE": "doCashTransactions",
-        "TRANSFER": "doTransfers",
-    }
+        key = type(transaction)
+        handler = self.TRANSACTION_DISPATCHER.get(key, None)
+        if handler is None:
+            return handler
+        #  Bind class method to instance.
+        #  Python functions use descriptor protocol to call types.MethodType
+        #  to bind functions as methods; hook into that machinery here.
+        #  https://docs.python.org/3/howto/descriptor.html#functions-and-methods
+        return handler.__get__(self)
 
     ###########################################################################
     # TRADES
@@ -509,6 +519,22 @@ class OfxStatementReader(object):
 
         return []
 
+    TRANSACTION_DISPATCHER = {
+        ofxtools.models.BUYDEBT: doTrades,
+        ofxtools.models.SELLDEBT: doTrades,
+        ofxtools.models.BUYMF: doTrades,
+        ofxtools.models.SELLMF: doTrades,
+        ofxtools.models.BUYOPT: doTrades,
+        ofxtools.models.SELLOPT: doTrades,
+        ofxtools.models.BUYOTHER: doTrades,
+        ofxtools.models.SELLOTHER: doTrades,
+        ofxtools.models.BUYSTOCK: doTrades,
+        ofxtools.models.SELLSTOCK: doTrades,
+        ofxtools.models.INCOME: doCashTransactions,
+        ofxtools.models.INVEXPENSE: doCashTransactions,
+        ofxtools.models.TRANSFER: doTransfers,
+    }
+
 
 ########################################################################################
 #  Merge functions
@@ -616,7 +642,7 @@ def make_canceller(
     filterfunc: Callable[[Any], bool],
     matchfunc: Callable[[Any, Any], bool],
     sortfunc: Callable[[Any], Any],
-) -> ListFunction:
+) -> Callable[[Iterable], Iterable]:
     """Factory for functions that identify and apply cancelling Transactions,
     e.g. trade cancellations or dividened reversals/reclassifications.
 
